@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sales Boat Race — April 2026</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ocean:#0a1628;--deep:#060e1c;--card:#132744;--card2:#172f50;
+    --accent:#00d4ff;--accent2:#00ff94;--gold:#ffd166;--silver:#b0bec5;
+    --bronze:#ff8c42;--danger:#ff4d6d;--warn:#fbbf24;
+    --text:#e8f4fd;--muted:#6b8db5;--border:rgba(0,212,255,0.12);--border2:rgba(0,212,255,0.06);
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--ocean);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;overflow-x:hidden;
+    background-image:radial-gradient(ellipse 80% 40% at 50% -10%,rgba(0,212,255,0.08) 0%,transparent 60%),
+    radial-gradient(ellipse 40% 30% at 80% 60%,rgba(0,255,148,0.04) 0%,transparent 50%);}
+  body::before{content:'';position:fixed;inset:0;
+    background-image:repeating-linear-gradient(0deg,transparent,transparent 60px,rgba(0,212,255,0.018) 60px,rgba(0,212,255,0.018) 61px);
+    pointer-events:none;z-index:0;}
+  main{position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:2rem 1.5rem 5rem;}
+
+  .header{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:2rem;flex-wrap:wrap;gap:1rem;}
+  .header h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(2.8rem,6vw,5rem);letter-spacing:.04em;line-height:.9;}
+  .header h1 span{color:var(--accent);}
+  .header p{font-size:13px;color:var(--muted);margin-top:6px;font-family:'DM Mono',monospace;}
+  .live-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(0,255,148,0.1);border:1px solid rgba(0,255,148,0.3);
+    color:var(--accent2);font-size:12px;font-weight:500;padding:5px 12px;border-radius:20px;letter-spacing:.06em;}
+  .live-dot{width:7px;height:7px;background:var(--accent2);border-radius:50%;animation:pulse 1.8s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+
+  .source-banner{display:flex;align-items:center;gap:10px;background:rgba(0,212,255,0.06);border:1px solid var(--border);
+    border-radius:10px;padding:10px 16px;margin-bottom:1.5rem;font-size:13px;}
+  .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+  .dot-live{background:var(--accent2);animation:pulse 1.8s infinite;}
+  .dot-local{background:var(--warn);}
+
+  .tabs{display:flex;gap:4px;margin-bottom:2rem;background:var(--deep);border-radius:12px;padding:4px;width:fit-content;}
+  .tab{padding:8px 20px;border-radius:9px;border:none;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:500;background:transparent;color:var(--muted);transition:all .2s;}
+  .tab.active{background:var(--card);color:var(--text);box-shadow:0 2px 8px rgba(0,0,0,.3);}
+  .tab:hover:not(.active){color:var(--text);}
+
+  .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:2rem;}
+  .stat-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px;position:relative;overflow:hidden;}
+  .stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent-line,var(--accent));}
+  .stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;}
+  .stat-val{font-family:'Bebas Neue',sans-serif;font-size:2rem;line-height:1;}
+  .stat-sub{font-size:11px;color:var(--muted);margin-top:4px;}
+
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;}
+  @media(max-width:860px){.grid-2{grid-template-columns:1fr;}}
+
+  .panel{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px 22px;margin-bottom:16px;}
+  .panel-title{font-family:'Bebas Neue',sans-serif;font-size:1.25rem;letter-spacing:.06em;color:var(--accent);margin-bottom:16px;}
+
+  /* RACE */
+  .race-row{display:grid;grid-template-columns:36px 1fr 220px 72px;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border2);}
+  .race-row:last-child{border-bottom:none;}
+  .race-rank{font-family:'Bebas Neue',sans-serif;font-size:1.4rem;text-align:center;}
+  .rank-gold{color:var(--gold)}.rank-silver{color:var(--silver)}.rank-bronze{color:var(--bronze)}.rank-other{color:var(--muted);font-size:1rem;}
+  .agent-top{display:flex;align-items:center;gap:8px;}
+  .agent-color{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+  .agent-name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .team-badge{font-size:9px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;padding:2px 6px;border-radius:4px;flex-shrink:0;}
+  .badge-sales{background:rgba(0,212,255,.15);color:var(--accent);border:1px solid rgba(0,212,255,.3);}
+  .badge-service{background:rgba(0,255,148,.12);color:var(--accent2);border:1px solid rgba(0,255,148,.25);}
+  .pill-row{display:flex;gap:3px;flex-wrap:wrap;margin-top:3px;}
+  .pill{font-size:9px;padding:2px 5px;border-radius:4px;background:rgba(255,255,255,.06);color:var(--muted);font-family:'DM Mono',monospace;}
+  .pill-neg{background:rgba(255,77,109,.12);color:var(--danger);}
+  .race-bar-bg{background:rgba(255,255,255,.06);border-radius:20px;height:24px;overflow:hidden;}
+  .race-bar-fill{height:100%;border-radius:20px;display:flex;align-items:center;padding-left:10px;transition:width 1.4s cubic-bezier(.34,1.2,.64,1);min-width:0;}
+  .race-bar-text{font-size:11px;font-weight:600;color:rgba(255,255,255,.9);white-space:nowrap;}
+  .deduct-bar{margin-top:4px;height:5px;border-radius:3px;background:rgba(255,77,109,.1);overflow:hidden;}
+  .deduct-fill{height:100%;border-radius:3px;background:var(--danger);opacity:.7;transition:width 1.4s cubic-bezier(.34,1.2,.64,1);}
+  .race-score-col{text-align:right;}
+  .race-score{font-family:'DM Mono',monospace;font-size:15px;font-weight:500;}
+  .race-deduct{font-family:'DM Mono',monospace;font-size:11px;color:var(--danger);}
+  .race-gross{font-size:10px;color:var(--muted);}
+
+  /* PODIUM */
+  .podium-wrap{display:flex;align-items:flex-end;justify-content:center;gap:12px;height:200px;margin:8px 0 16px;}
+  .podium-col{display:flex;flex-direction:column;align-items:center;}
+  .podium-name{font-size:12px;font-weight:600;margin-bottom:4px;text-align:center;max-width:90px;line-height:1.2;}
+  .podium-pts{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);margin-bottom:6px;}
+  .podium-trophy{font-size:22px;margin-bottom:2px;}
+  .podium-block{width:90px;border-radius:8px 8px 0 0;display:flex;align-items:flex-start;justify-content:center;padding-top:8px;font-family:'Bebas Neue',sans-serif;font-size:2rem;}
+  .podium-1{background:linear-gradient(180deg,rgba(255,209,102,.3),rgba(255,209,102,.1));border:1px solid rgba(255,209,102,.4);color:var(--gold);}
+  .podium-2{background:linear-gradient(180deg,rgba(176,190,197,.3),rgba(176,190,197,.1));border:1px solid rgba(176,190,197,.35);color:var(--silver);}
+  .podium-3{background:linear-gradient(180deg,rgba(255,140,66,.25),rgba(255,140,66,.08));border:1px solid rgba(255,140,66,.35);color:var(--bronze);}
+
+  /* KEY */
+  .key-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;}
+  .key-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;background:var(--card2);border:1px solid var(--border2);}
+  .key-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+  .key-type{font-size:12px;font-weight:500;}
+  .key-pts{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;}
+
+  /* DEDUCT BOX */
+  .deduct-box{background:rgba(255,77,109,.07);border:1px solid rgba(255,77,109,.2);border-radius:12px;padding:14px 18px;margin-top:14px;}
+  .deduct-box h4{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--danger);margin-bottom:10px;}
+  .deduct-row{display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;}
+  .deduct-row span:first-child{color:var(--muted);}
+  .deduct-row span:last-child{font-family:'DM Mono',monospace;color:var(--danger);}
+
+  /* HBARS */
+  .hbar-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+  .hbar-label{font-size:12px;width:100px;text-align:right;color:var(--muted);flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .hbar-track{flex:1;background:rgba(255,255,255,.06);border-radius:8px;height:18px;overflow:hidden;}
+  .hbar-fill{height:100%;border-radius:8px;transition:width 1.2s cubic-bezier(.34,1.2,.64,1);}
+  .hbar-val{font-family:'DM Mono',monospace;font-size:12px;width:45px;}
+
+  /* ADMIN */
+  .admin-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;}
+  .admin-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px 22px;}
+  .admin-card h3{font-family:'Bebas Neue',sans-serif;font-size:1.1rem;letter-spacing:.06em;color:var(--accent);margin-bottom:14px;}
+  .agent-admin-row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border2);}
+  .agent-admin-row:last-child{border-bottom:none;}
+  .agent-admin-name{font-size:13px;font-weight:500;}
+  .team-toggle{display:flex;border-radius:8px;overflow:hidden;border:1px solid var(--border);}
+  .team-toggle button{padding:5px 12px;font-size:11px;font-weight:600;letter-spacing:.05em;border:none;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;background:transparent;color:var(--muted);}
+  .team-toggle button.active-sales{background:rgba(0,212,255,.2);color:var(--accent);}
+  .team-toggle button.active-service{background:rgba(0,255,148,.2);color:var(--accent2);}
+  .input-table{width:100%;border-collapse:collapse;}
+  .input-table th{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:0 5px 8px;text-align:left;font-weight:500;}
+  .input-table td{padding:4px 5px;border-bottom:1px solid var(--border2);font-size:12px;}
+  .input-table tr:last-child td{border-bottom:none;}
+  .input-table input[type=number]{width:62px;background:var(--deep);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:6px;font-size:12px;font-family:'DM Mono',monospace;text-align:right;}
+  .input-table input:focus{outline:none;border-color:var(--accent);}
+  .save-btn{margin-top:16px;padding:10px 28px;background:var(--accent);color:var(--ocean);border:none;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;}
+  .save-btn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(0,212,255,.35);}
+
+  /* SHEETS */
+  .sheets-box{background:rgba(0,212,255,.05);border:1px solid rgba(0,212,255,.2);border-radius:14px;padding:18px 20px;margin-bottom:16px;}
+  .sheets-box h3{font-family:'Bebas Neue',sans-serif;font-size:1.15rem;color:var(--accent);margin-bottom:4px;}
+  .sheets-box p{font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.5;}
+  .cfg-row{display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap;}
+  .cfg-label{font-size:12px;color:var(--muted);width:110px;flex-shrink:0;}
+  .cfg-input{flex:1;min-width:180px;background:var(--card);border:1px solid var(--border);color:var(--text);padding:7px 12px;border-radius:8px;font-size:13px;font-family:'DM Mono',monospace;}
+  .cfg-input:focus{outline:none;border-color:var(--accent);}
+  .cfg-btn{padding:7px 18px;background:rgba(0,212,255,.15);color:var(--accent);border:1px solid rgba(0,212,255,.3);border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;font-family:'DM Sans',sans-serif;transition:all .15s;white-space:nowrap;}
+  .cfg-btn:hover{background:rgba(0,212,255,.25);}
+
+  .wave-footer{position:fixed;bottom:0;left:0;right:0;height:4px;z-index:10;background:linear-gradient(90deg,var(--accent),var(--accent2),var(--accent));background-size:200% 100%;animation:waveSlide 3s linear infinite;opacity:.7;}
+  @keyframes waveSlide{0%{background-position:0%}100%{background-position:200%}}
+
+  @media(max-width:640px){
+    .race-row{grid-template-columns:28px 1fr 130px 55px;}
+    .team-badge{display:none;}
+  }
+</style>
+</head>
+<body>
+<main>
+
+<div class="header">
+  <div>
+    <h1>BOAT <span>RACE</span></h1>
+    <p id="dateLabel">APRIL 2026 · LOADING...</p>
+  </div>
+  <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
+    <div class="live-badge"><span class="live-dot"></span>LIVE</div>
+    <div style="font-size:12px;color:var(--muted);">Updated: <span id="lastUpdate">—</span></div>
+  </div>
+</div>
+
+<div class="source-banner">
+  <span class="dot dot-local" id="sourceDot"></span>
+  <span id="sourceText">Using local data — connect Google Sheets in Manage tab for automated email sync</span>
+</div>
+
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('race')">&#127960; Race</button>
+  <button class="tab" onclick="switchTab('stats')">&#128202; Stats</button>
+  <button class="tab" onclick="switchTab('admin')">&#9881; Manage</button>
+</div>
+
+<!-- ══ RACE ══ -->
+<div id="tab-race">
+  <div class="stats-row" id="statsRow"></div>
+  <div class="panel">
+    <div class="panel-title">&#127947; PODIUM</div>
+    <div class="podium-wrap" id="podiumWrap"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">&#9875; FULL STANDINGS</div>
+    <div id="raceTrack"></div>
+  </div>
+  <div style="background:var(--deep);border:1px solid var(--border);border-radius:12px;padding:16px 18px;">
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:12px;">&#9875; Policy Horsepower Key</div>
+    <div class="key-grid" id="keyGrid"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px;">
+      <div>
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:10px;">&#128222; Phone Points Earned</div>
+        <div style="font-size:12px;display:flex;flex-direction:column;gap:6px;">
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted)">Placed Calls (Sales)</span><span style="font-family:'DM Mono',monospace">+1 pt</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted)">Placed Calls (Service)</span><span style="font-family:'DM Mono',monospace">+0.25 pt</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted)">Answered Calls (Sales)</span><span style="font-family:'DM Mono',monospace">+1 pt</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted)">Answered Calls (Service)</span><span style="font-family:'DM Mono',monospace">+5 pts</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted)">Total Talk Time</span><span style="font-family:'DM Mono',monospace">+0.1 pt/min</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted)">Avg Talk Time</span><span style="font-family:'DM Mono',monospace">+2 pts/min avg</span></div>
+        </div>
+      </div>
+      <div class="deduct-box" style="margin-top:0;height:fit-content;">
+        <h4>&#128308; Deductions — Race Wide</h4>
+        <div class="deduct-row"><span>Missed Call</span><span>-3 pts each</span></div>
+        <div class="deduct-row"><span>Voicemail Received</span><span>-2 pts each</span></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:8px;">Applied equally to both Sales and Service teams</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ STATS ══ -->
+<div id="tab-stats" style="display:none;">
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel-title">&#127919; Top Scorers — Net Points</div>
+      <div id="chartTopAll"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">&#128308; Deductions Leaderboard</div>
+      <div id="chartDeductions"></div>
+    </div>
+  </div>
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel-title">&#128296; Policy Sales Breakdown</div>
+      <div style="height:240px;position:relative;"><canvas id="chartPolicies" role="img" aria-label="Policy sales stacked bar chart by agent"></canvas></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">&#128222; Phone Activity — Calls</div>
+      <div style="height:240px;position:relative;"><canvas id="chartPhone" role="img" aria-label="Phone calls placed answered missed and voicemails by agent"></canvas></div>
+    </div>
+  </div>
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel-title">&#9875; Sales vs Service Split</div>
+      <div style="height:220px;position:relative;"><canvas id="chartTeams" role="img" aria-label="Sales vs service total points donut chart"></canvas></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">&#127381; Points Source Stack</div>
+      <div style="height:220px;position:relative;"><canvas id="chartSource" role="img" aria-label="Stacked points by source including deductions"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ADMIN ══ -->
+<div id="tab-admin" style="display:none;">
+
+  <div class="sheets-box">
+    <h3>&#128279; Google Sheets Live Sync</h3>
+    <p>Paste your published Google Sheet JSON URL here. Your Apps Script (included in this package as <code style="font-size:12px;color:var(--accent)">gas/EmailParser.gs</code>) monitors your daily email reports and writes data to the sheet automatically. The race refreshes on the interval you set.</p>
+    <div class="cfg-row">
+      <span class="cfg-label">Sheet JSON URL</span>
+      <input type="text" class="cfg-input" id="sheetsUrl" placeholder="https://docs.google.com/spreadsheets/d/YOUR_ID/gviz/tq?tqx=out:json">
+      <button class="cfg-btn" onclick="connectSheets()">Connect &#8594;</button>
+    </div>
+    <div class="cfg-row">
+      <span class="cfg-label">Auto-refresh</span>
+      <select class="cfg-input" id="refreshInterval" style="flex:unset;min-width:unset;width:160px;">
+        <option value="60">Every 1 min</option>
+        <option value="300" selected>Every 5 min</option>
+        <option value="900">Every 15 min</option>
+        <option value="3600">Every hour</option>
+      </select>
+    </div>
+    <div style="font-size:12px;margin-top:6px;" id="configStatus"></div>
+  </div>
+
+  <div class="admin-grid">
+    <div class="admin-card">
+      <h3>&#128101; Team Assignment</h3>
+      <div id="teamAssignList"></div>
+    </div>
+    <div class="admin-card">
+      <h3>&#128196; Policy Sales</h3>
+      <div style="overflow-x:auto;">
+        <table class="input-table">
+          <thead><tr><th>Agent</th><th>WL</th><th>UL</th><th>Term</th><th>Hlth</th><th>Auto</th><th>Fire</th></tr></thead>
+          <tbody id="policyBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="admin-card">
+      <h3>&#128222; Phone Activity</h3>
+      <div style="overflow-x:auto;">
+        <table class="input-table">
+          <thead><tr><th>Agent</th><th>Placed</th><th>Ans</th><th>Missed</th><th>VM</th><th>Talk</th><th>Avg</th></tr></thead>
+          <tbody id="phoneBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <button class="save-btn" onclick="saveData()">&#9989; Save &amp; Update Race</button>
+  <div id="saveMsg" style="margin-top:10px;font-size:13px;color:var(--accent2);display:none;">Saved! Race updated.</div>
+</div>
+
+</main>
+<div class="wave-footer"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const POLICY_KEY=[
+  {id:'wl',   label:'Whole Life',    pts:100,color:'#a78bfa'},
+  {id:'ul',   label:'Universal Life',pts:75, color:'#60a5fa'},
+  {id:'term', label:'Term Life',     pts:50, color:'#34d399'},
+  {id:'health',label:'Health',       pts:30, color:'#86efac'},
+  {id:'auto', label:'Auto',          pts:15, color:'#fbbf24'},
+  {id:'fire', label:'Fire',          pts:10, color:'#fb923c'},
+];
+const DEDUCTIONS={missed:-3,voicemail:-2};
+const COLORS=['#00d4ff','#00ff94','#ffd166','#ff4d6d','#a78bfa','#fb923c','#60a5fa','#f472b6','#34d399','#facc15','#38bdf8'];
+
+let DATA={
+  sheetUrl:'',refreshSecs:300,
+  agents:[
+    {id:'susan',   name:'Susan Navarro',    team:'sales'},
+    {id:'peyton',  name:'Peyton Tooze',     team:'sales'},
+    {id:'joseph',  name:'Joseph Underwood', team:'sales'},
+    {id:'tiffany', name:'Tiffany Dabe',     team:'sales'},
+    {id:'amin',    name:'Amin Kalas',        team:'sales'},
+    {id:'tracy',   name:'Tracy Ankrah',      team:'service'},
+    {id:'ashley',  name:'Ashley McEniry',    team:'service'},
+    {id:'fiona',   name:'Fiona Rodriguez',   team:'service'},
+    {id:'jocelyn', name:'Jocelyn Hernandez', team:'service'},
+    {id:'andy',    name:'Andy Rose',         team:'service'},
+    {id:'russel',  name:'Russel Williams',   team:'service'},
+  ],
+  policies:{
+    susan:  {wl:0,ul:0,term:1,health:0,auto:12,fire:6},
+    peyton: {wl:0,ul:0,term:1,health:0,auto:13,fire:1},
+    joseph: {wl:0,ul:0,term:1,health:1,auto:10,fire:3},
+    tiffany:{wl:0,ul:0,term:0,health:0,auto:8, fire:5},
+    amin:   {wl:0,ul:0,term:0,health:0,auto:4, fire:3},
+    tracy:  {wl:0,ul:0,term:0,health:0,auto:3, fire:0},
+    ashley: {wl:0,ul:0,term:0,health:0,auto:2, fire:1},
+    fiona:  {wl:0,ul:0,term:0,health:0,auto:3, fire:0},
+    jocelyn:{wl:0,ul:0,term:0,health:0,auto:2, fire:0},
+    andy:   {wl:0,ul:0,term:0,health:0,auto:1, fire:1},
+    russel: {wl:0,ul:0,term:0,health:0,auto:1, fire:0},
+  },
+  phone:{
+    susan:  {placed:45,answered:38,missed:7, voicemail:4, talkMin:210,avgMin:5.5},
+    peyton: {placed:52,answered:41,missed:11,voicemail:6, talkMin:240,avgMin:5.8},
+    joseph: {placed:38,answered:30,missed:8, voicemail:3, talkMin:185,avgMin:6.2},
+    tiffany:{placed:42,answered:35,missed:7, voicemail:5, talkMin:195,avgMin:5.6},
+    amin:   {placed:28,answered:22,missed:6, voicemail:2, talkMin:130,avgMin:5.9},
+    tracy:  {placed:15,answered:62,missed:3, voicemail:8, talkMin:320,avgMin:5.2},
+    ashley: {placed:12,answered:48,missed:4, voicemail:10,talkMin:260,avgMin:5.4},
+    fiona:  {placed:10,answered:55,missed:2, voicemail:7, talkMin:290,avgMin:5.3},
+    jocelyn:{placed:18,answered:50,missed:5, voicemail:9, talkMin:275,avgMin:5.5},
+    andy:   {placed:8, answered:44,missed:3, voicemail:6, talkMin:230,avgMin:5.2},
+    russel: {placed:9, answered:40,missed:4, voicemail:5, talkMin:210,avgMin:5.3},
+  }
+};
+try{const s=localStorage.getItem('brd3');if(s)DATA=JSON.parse(s);}catch(e){}
+
+function calcScore(id){
+  const ag=DATA.agents.find(a=>a.id===id);
+  const p=DATA.policies[id]||{};
+  const ph=DATA.phone[id]||{};
+  const svc=ag.team==='service';
+  const polPts=(p.wl||0)*100+(p.ul||0)*75+(p.term||0)*50+(p.health||0)*30+(p.auto||0)*15+(p.fire||0)*10;
+  const placed=(ph.placed||0)*(svc?.25:1);
+  const ans=(ph.answered||0)*(svc?5:1);
+  const talk=(ph.talkMin||0)*.1;
+  const avg=(ph.avgMin||0)*2;
+  const missD=(ph.missed||0)*DEDUCTIONS.missed;
+  const vmD=(ph.voicemail||0)*DEDUCTIONS.voicemail;
+  const gross=Math.round(polPts+placed+ans+talk+avg);
+  const deduct=Math.round(missD+vmD);
+  return{
+    total:Math.max(0,gross+deduct),gross,deduct,
+    polPts:Math.round(polPts),
+    ansPts:Math.round(ans),
+    placedPts:Math.round(placed),
+    talkPts:Math.round(talk+avg),
+    missD:Math.round(missD),vmD:Math.round(vmD)
+  };
+}
+
+function scored(){
+  return DATA.agents.map((a,i)=>({...a,color:COLORS[i%COLORS.length],...calcScore(a.id)}))
+    .sort((a,b)=>b.total-a.total);
+}
+
+let charts={};
+function dc(id){if(charts[id]){charts[id].destroy();delete charts[id];}}
+
+function render(){
+  const sc=scored();
+  const mx=Math.max(...sc.map(a=>a.total),1);
+  const mxD=Math.max(...sc.map(a=>Math.abs(a.deduct)),1);
+  document.getElementById('dateLabel').textContent='APRIL 2026 · '+sc.length+' AGENTS';
+  document.getElementById('lastUpdate').textContent=new Date().toLocaleTimeString();
+
+  const totPts=sc.reduce((s,a)=>s+a.total,0);
+  const totDed=sc.reduce((s,a)=>s+Math.abs(a.deduct),0);
+  const totPols=DATA.agents.reduce((s,a)=>{const p=DATA.policies[a.id]||{};return s+Object.values(p).reduce((x,v)=>x+(+v||0),0);},0);
+  document.getElementById('statsRow').innerHTML=`
+    <div class="stat-card" style="--accent-line:var(--gold)"><div class="stat-label">Top Score</div><div class="stat-val">${sc[0]?.total||0}</div><div class="stat-sub">${sc[0]?.name.split(' ')[0]||''}</div></div>
+    <div class="stat-card" style="--accent-line:var(--accent)"><div class="stat-label">Team Total</div><div class="stat-val">${totPts.toLocaleString()}</div><div class="stat-sub">net points</div></div>
+    <div class="stat-card" style="--accent-line:var(--accent2)"><div class="stat-label">Policies</div><div class="stat-val">${totPols}</div><div class="stat-sub">written</div></div>
+    <div class="stat-card" style="--accent-line:var(--danger)"><div class="stat-label">Deductions</div><div class="stat-val">-${totDed}</div><div class="stat-sub">team-wide</div></div>`;
+
+  // PODIUM
+  const top3=sc.slice(0,3);
+  const ord=[top3[1],top3[0],top3[2]].filter(Boolean);
+  const ht=[95,130,70];const bc=['podium-2','podium-1','podium-3'];const med=['&#129352;','&#127947;','&#129353;'];
+  document.getElementById('podiumWrap').innerHTML=ord.map((a,i)=>`
+    <div class="podium-col">
+      <div class="podium-trophy">${med[i]}</div>
+      <div class="podium-name" style="color:${a.color}">${a.name.split(' ')[0]}</div>
+      <div class="podium-pts">${a.total} pts</div>
+      <div class="podium-block ${bc[i]}" style="height:${ht[i]}px">${i===1?1:i===0?2:3}</div>
+    </div>`).join('');
+
+  // STANDINGS
+  document.getElementById('raceTrack').innerHTML=sc.map((a,i)=>{
+    const r=i+1;
+    const rc=r===1?'rank-gold':r===2?'rank-silver':r===3?'rank-bronze':'rank-other';
+    const rl=r<=3?['&#127947;','&#129352;','&#129353;'][r-1]:r;
+    const pct=Math.round((a.total/mx)*100);
+    const dpct=Math.round((Math.abs(a.deduct)/mxD)*100);
+    const badge=a.team==='sales'?'<span class="team-badge badge-sales">Sales</span>':'<span class="team-badge badge-service">Service</span>';
+    const pills=[a.polPts?`Pol:${a.polPts}`:'',a.ansPts?`Ans:${a.ansPts}`:'',a.placedPts?`Placed:${a.placedPts}`:'',a.talkPts?`Talk:${a.talkPts}`:''].filter(Boolean);
+    const npills=[a.missD?`Miss:${a.missD}`:'',a.vmD?`VM:${a.vmD}`:''].filter(Boolean);
+    return`<div class="race-row">
+      <div class="race-rank ${rc}">${rl}</div>
+      <div>
+        <div class="agent-top"><span class="agent-color" style="background:${a.color}"></span><span class="agent-name">${a.name}</span>${badge}</div>
+        <div class="pill-row">${pills.map(p=>`<span class="pill">${p}</span>`).join('')}${npills.map(p=>`<span class="pill pill-neg">${p}</span>`).join('')}</div>
+      </div>
+      <div>
+        <div class="race-bar-bg"><div class="race-bar-fill" id="rf-${a.id}" style="background:${a.color};width:0%;opacity:.85;"><span class="race-bar-text">${a.total}</span></div></div>
+        ${a.deduct<0?`<div class="deduct-bar"><div class="deduct-fill" id="df-${a.id}" style="width:0%;"></div></div>`:''}
+      </div>
+      <div class="race-score-col">
+        <div class="race-score">${a.total}</div>
+        ${a.deduct<0?`<div class="race-deduct">${a.deduct}</div><div class="race-gross">(${a.gross})</div>`:''}
+      </div>
+    </div>`;
+  }).join('');
+
+  setTimeout(()=>{sc.forEach((a,i)=>{
+    const pct=Math.round((a.total/mx)*100);
+    const dpct=Math.round((Math.abs(a.deduct)/mxD)*100);
+    setTimeout(()=>{
+      const rf=document.getElementById(`rf-${a.id}`);
+      const df=document.getElementById(`df-${a.id}`);
+      if(rf)rf.style.width=pct+'%';
+      if(df)df.style.width=dpct+'%';
+    },i*80);
+  });},60);
+
+  // KEY
+  document.getElementById('keyGrid').innerHTML=POLICY_KEY.map(k=>`
+    <div class="key-item"><div class="key-dot" style="background:${k.color}"></div><div><div class="key-type">${k.label}</div><div class="key-pts">${k.pts} pts</div></div></div>`).join('');
+
+  renderCharts(sc);
+  renderAdmin();
+}
+
+function renderCharts(sc){
+  // Top scorers
+  const ct=document.getElementById('chartTopAll');
+  ct.innerHTML=sc.map(a=>`<div class="hbar-row">
+    <div class="hbar-label" title="${a.name}">${a.name.split(' ')[0]}</div>
+    <div class="hbar-track"><div class="hbar-fill" style="background:${a.color};opacity:.85;width:0%;" data-pct="${Math.round((a.total/sc[0].total)*100)}"></div></div>
+    <div class="hbar-val">${a.total}</div></div>`).join('');
+  setTimeout(()=>ct.querySelectorAll('.hbar-fill').forEach(el=>{el.style.transition='width 1.2s cubic-bezier(.34,1.2,.64,1)';el.style.width=el.dataset.pct+'%';}),80);
+
+  // Deductions
+  const cd=document.getElementById('chartDeductions');
+  const withD=sc.filter(a=>a.deduct<0).sort((a,b)=>a.deduct-b.deduct);
+  const mxD=Math.max(...withD.map(a=>Math.abs(a.deduct)),1);
+  cd.innerHTML=withD.length?withD.map(a=>`<div class="hbar-row">
+    <div class="hbar-label" title="${a.name}">${a.name.split(' ')[0]}</div>
+    <div class="hbar-track"><div class="hbar-fill" style="background:var(--danger);opacity:.7;width:0%;" data-pct="${Math.round((Math.abs(a.deduct)/mxD)*100)}"></div></div>
+    <div class="hbar-val" style="color:var(--danger)">${a.deduct}</div></div>`).join('')
+    :'<div style="color:var(--muted);font-size:13px;padding:20px 0">No deductions recorded</div>';
+  setTimeout(()=>cd.querySelectorAll('.hbar-fill').forEach(el=>{el.style.transition='width 1.2s cubic-bezier(.34,1.2,.64,1)';el.style.width=el.dataset.pct+'%';}),80);
+
+  // Policy stacked
+  dc('cp');charts['cp']=new Chart(document.getElementById('chartPolicies').getContext('2d'),{
+    type:'bar',data:{labels:sc.map(a=>a.name.split(' ')[0]),datasets:POLICY_KEY.map(k=>({label:k.label,data:sc.map(a=>(DATA.policies[a.id]||{})[k.id]||0),backgroundColor:k.color+'cc',borderColor:k.color,borderWidth:1,borderRadius:2}))},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{stacked:true,ticks:{color:'#6b8db5',font:{size:10}},grid:{color:'rgba(0,212,255,.06)'}},y:{stacked:true,ticks:{color:'#6b8db5'},grid:{color:'rgba(0,212,255,.06)'}}}}
+  });
+
+  // Phone (placed/answered/missed/vm)
+  dc('cph');charts['cph']=new Chart(document.getElementById('chartPhone').getContext('2d'),{
+    type:'bar',data:{labels:sc.map(a=>a.name.split(' ')[0]),datasets:[
+      {label:'Placed',  data:sc.map(a=>(DATA.phone[a.id]||{}).placed||0),   backgroundColor:'#fbbf24aa',borderColor:'#fbbf24',borderWidth:1,borderRadius:3},
+      {label:'Answered',data:sc.map(a=>(DATA.phone[a.id]||{}).answered||0), backgroundColor:'#00d4ffaa',borderColor:'#00d4ff',borderWidth:1,borderRadius:3},
+      {label:'Missed',  data:sc.map(a=>(DATA.phone[a.id]||{}).missed||0),   backgroundColor:'#ff4d6daa',borderColor:'#ff4d6d',borderWidth:1,borderRadius:3},
+      {label:'Voicemail',data:sc.map(a=>(DATA.phone[a.id]||{}).voicemail||0),backgroundColor:'#fb923caa',borderColor:'#fb923c',borderWidth:1,borderRadius:3},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'top',labels:{color:'#6b8db5',font:{size:10},boxWidth:10,padding:10}}},scales:{x:{ticks:{color:'#6b8db5',font:{size:10}},grid:{color:'rgba(0,212,255,.06)'}},y:{ticks:{color:'#6b8db5'},grid:{color:'rgba(0,212,255,.06)'}}}}
+  });
+
+  // Donut
+  dc('ct');const sT=sc.filter(a=>a.team==='sales').reduce((s,a)=>s+a.total,0);const svT=sc.filter(a=>a.team==='service').reduce((s,a)=>s+a.total,0);
+  charts['ct']=new Chart(document.getElementById('chartTeams').getContext('2d'),{
+    type:'doughnut',data:{labels:['Sales','Service'],datasets:[{data:[sT,svT],backgroundColor:['#00d4ffcc','#00ff94cc'],borderColor:['#00d4ff','#00ff94'],borderWidth:2,hoverOffset:6}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'bottom',labels:{color:'#6b8db5',font:{size:12},boxWidth:12,padding:14}}},cutout:'62%'}
+  });
+
+  // Source stack
+  dc('cs');charts['cs']=new Chart(document.getElementById('chartSource').getContext('2d'),{
+    type:'bar',data:{labels:sc.map(a=>a.name.split(' ')[0]),datasets:[
+      {label:'Policy', data:sc.map(a=>a.polPts),   backgroundColor:'#a78bfacc',borderColor:'#a78bfa',borderWidth:1,borderRadius:2},
+      {label:'Answered',data:sc.map(a=>a.ansPts),  backgroundColor:'#00d4ffcc',borderColor:'#00d4ff',borderWidth:1,borderRadius:2},
+      {label:'Placed', data:sc.map(a=>a.placedPts),backgroundColor:'#fbbf24cc',borderColor:'#fbbf24',borderWidth:1,borderRadius:2},
+      {label:'Talk',   data:sc.map(a=>a.talkPts),  backgroundColor:'#34d399cc',borderColor:'#34d399',borderWidth:1,borderRadius:2},
+      {label:'Deducts',data:sc.map(a=>a.deduct),   backgroundColor:'#ff4d6dcc',borderColor:'#ff4d6d',borderWidth:1,borderRadius:2},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'top',labels:{color:'#6b8db5',font:{size:10},boxWidth:10,padding:10}}},scales:{x:{stacked:true,ticks:{color:'#6b8db5',font:{size:10}},grid:{color:'rgba(0,212,255,.06)'}},y:{stacked:true,ticks:{color:'#6b8db5'},grid:{color:'rgba(0,212,255,.06)'}}}}
+  });
+}
+
+function renderAdmin(){
+  document.getElementById('teamAssignList').innerHTML=DATA.agents.map(a=>`
+    <div class="agent-admin-row">
+      <div class="agent-admin-name">${a.name}</div>
+      <div class="team-toggle">
+        <button onclick="setTeam('${a.id}','sales')" class="${a.team==='sales'?'active-sales':''}">Sales</button>
+        <button onclick="setTeam('${a.id}','service')" class="${a.team==='service'?'active-service':''}">Service</button>
+      </div>
+    </div>`).join('');
+
+  document.getElementById('policyBody').innerHTML=DATA.agents.map(a=>{
+    const p=DATA.policies[a.id]||{};
+    return`<tr><td style="font-size:11px;color:var(--muted);white-space:nowrap;">${a.name.split(' ')[0]}</td>${['wl','ul','term','health','auto','fire'].map(k=>`<td><input type="number" min="0" value="${p[k]||0}" data-agent="${a.id}" data-key="${k}" class="pol-input"></td>`).join('')}</tr>`;
+  }).join('');
+
+  document.getElementById('phoneBody').innerHTML=DATA.agents.map(a=>{
+    const p=DATA.phone[a.id]||{};
+    return`<tr><td style="font-size:11px;color:var(--muted);white-space:nowrap;">${a.name.split(' ')[0]}</td>${['placed','answered','missed','voicemail','talkMin','avgMin'].map(k=>`<td><input type="number" min="0" step="${k==='avgMin'?'.1':'1'}" value="${p[k]||0}" data-agent="${a.id}" data-key="${k}" class="ph-input"></td>`).join('')}</tr>`;
+  }).join('');
+
+  document.getElementById('sheetsUrl').value=DATA.sheetUrl||'';
+  document.getElementById('refreshInterval').value=DATA.refreshSecs||300;
+}
+
+// ═════ SHEETS LIVE SYNC ═════
+let timer=null;
+function connectSheets(){
+  const url=document.getElementById('sheetsUrl').value.trim();
+  const secs=parseInt(document.getElementById('refreshInterval').value);
+  if(!url){document.getElementById('configStatus').innerHTML='<span style="color:var(--danger)">Enter a URL first.</span>';return;}
+  DATA.sheetUrl=url;DATA.refreshSecs=secs;saveLocal();
+  document.getElementById('configStatus').innerHTML='<span style="color:var(--warn)">Connecting...</span>';
+  fetchSheet(url);
+  if(timer)clearInterval(timer);
+  timer=setInterval(()=>fetchSheet(url),secs*1000);
+}
+function fetchSheet(url){
+  fetch(url).then(r=>r.text()).then(txt=>{
+    const json=JSON.parse(txt.replace(/^[^(]*\(/,'').replace(/\);\s*$/,''));
+    parseSheet(json);
+    document.getElementById('configStatus').innerHTML=`<span style="color:var(--accent2)">Connected — synced ${new Date().toLocaleTimeString()}</span>`;
+    document.getElementById('sourceDot').className='dot dot-live';
+    document.getElementById('sourceText').textContent='Live — auto-syncing from Google Sheets';
+    render();
+  }).catch(e=>{
+    document.getElementById('configStatus').innerHTML=`<span style="color:var(--danger)">Error: ${e.message}</span>`;
+  });
+}
+/*
+  Sheet columns expected (GAS writes this):
+  A:AgentID  B:Name  C:Team  D:WL  E:UL  F:Term  G:Health  H:Auto  I:Fire
+  J:Placed  K:Answered  L:Missed  M:Voicemail  N:TalkMin  O:AvgMin
+*/
+function parseSheet(json){
+  (json.table.rows||[]).forEach(row=>{
+    const c=row.c;const v=i=>c[i]?.v??0;
+    const id=String(v(0));
+    const existing=DATA.agents.find(a=>a.id===id);
+    const team=String(v(2)).toLowerCase().includes('service')?'service':'sales';
+    if(!existing)DATA.agents.push({id,name:String(v(1)),team});
+    else existing.team=team;
+    DATA.policies[id]={wl:+v(3)||0,ul:+v(4)||0,term:+v(5)||0,health:+v(6)||0,auto:+v(7)||0,fire:+v(8)||0};
+    DATA.phone[id]={placed:+v(9)||0,answered:+v(10)||0,missed:+v(11)||0,voicemail:+v(12)||0,talkMin:+v(13)||0,avgMin:+v(14)||0};
+  });
+}
+
+function setTeam(id,team){const a=DATA.agents.find(x=>x.id===id);if(a)a.team=team;renderAdmin();}
+function saveData(){
+  document.querySelectorAll('.pol-input').forEach(el=>{const{agent,key}=el.dataset;if(!DATA.policies[agent])DATA.policies[agent]={};DATA.policies[agent][key]=parseFloat(el.value)||0;});
+  document.querySelectorAll('.ph-input').forEach(el=>{const{agent,key}=el.dataset;if(!DATA.phone[agent])DATA.phone[agent]={};DATA.phone[agent][key]=parseFloat(el.value)||0;});
+  saveLocal();render();
+  const m=document.getElementById('saveMsg');m.style.display='block';setTimeout(()=>m.style.display='none',3000);
+  switchTab('race');
+}
+function saveLocal(){try{localStorage.setItem('brd3',JSON.stringify(DATA));}catch(e){}}
+function switchTab(t){
+  ['race','stats','admin'].forEach(x=>document.getElementById('tab-'+x).style.display=x===t?'':'none');
+  document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',['race','stats','admin'][i]===t));
+  if(t==='stats')setTimeout(()=>renderCharts(scored()),100);
+}
+if(DATA.sheetUrl){fetchSheet(DATA.sheetUrl);timer=setInterval(()=>fetchSheet(DATA.sheetUrl),(DATA.refreshSecs||300)*1000);}
+render();
+</script>
+</body>
+</html>
