@@ -292,8 +292,6 @@
       </div>
     </div>
   </div>
-  <button class="save-btn" onclick="saveData()">&#9989; Save &amp; Update Race</button>
-  <div id="saveMsg" style="margin-top:10px;font-size:13px;color:var(--accent2);display:none;">Saved! Race updated.</div>
 </div>
 
 </main>
@@ -538,12 +536,12 @@ function renderAdmin(){
 
   document.getElementById('policyBody').innerHTML=DATA.agents.map(a=>{
     const p=DATA.policies[a.id]||{};
-    return`<tr><td style="font-size:11px;color:var(--muted);white-space:nowrap;">${a.name.split(' ')[0]}</td>${['wl','ul','term','health','auto','fire'].map(k=>`<td><input type="number" min="0" value="${p[k]||0}" data-agent="${a.id}" data-key="${k}" class="pol-input"></td>`).join('')}</tr>`;
+    return`<tr><td style="font-size:11px;color:var(--muted);white-space:nowrap;">${a.name.split(' ')[0]}</td>${['wl','ul','term','health','auto','fire'].map(k=>`<td style="font-family:'DM Mono',monospace;font-size:12px;text-align:right;padding:6px 5px;">${p[k]||0}</td>`).join('')}</tr>`;
   }).join('');
 
   document.getElementById('phoneBody').innerHTML=DATA.agents.map(a=>{
     const p=DATA.phone[a.id]||{};
-    return`<tr><td style="font-size:11px;color:var(--muted);white-space:nowrap;">${a.name.split(' ')[0]}</td>${['placed','answered','missed','voicemail','talkMin','avgMin'].map(k=>`<td><input type="number" min="0" step="${k==='avgMin'?'.1':'1'}" value="${p[k]||0}" data-agent="${a.id}" data-key="${k}" class="ph-input"></td>`).join('')}</tr>`;
+    return`<tr><td style="font-size:11px;color:var(--muted);white-space:nowrap;">${a.name.split(' ')[0]}</td>${['placed','answered','missed','voicemail','talkMin','avgMin'].map(k=>`<td style="font-family:'DM Mono',monospace;font-size:12px;text-align:right;padding:6px 5px;">${p[k]||0}</td>`).join('')}</tr>`;
   }).join('');
 
   document.getElementById('sheetsUrl').value=DATA.sheetUrl||'';
@@ -587,7 +585,7 @@ function parseSheet(json){
     const existing=DATA.agents.find(a=>a.id===id);
     const team=String(v(2)).toLowerCase().includes('service')?'service':'sales';
     if(!existing)DATA.agents.push({id,name:String(v(1)),team});
-    else{existing.team=team;existing.name=String(v(1));}
+    else existing.name=String(v(1)); // preserve manually set team assignment
     DATA.policies[id]={wl:+v(3)||0,ul:+v(4)||0,term:+v(5)||0,health:+v(6)||0,auto:+v(7)||0,fire:+v(8)||0};
     DATA.phone[id]={placed:+v(9)||0,answered:+v(10)||0,missed:+v(11)||0,voicemail:+v(12)||0,talkMin:+v(13)||0,avgMin:+v(14)||0};
     // Race-wide deductions (same value on every row — grab from any row)
@@ -601,7 +599,7 @@ function parseSheet(json){
   });
 }
 
-function setTeam(id,team){const a=DATA.agents.find(x=>x.id===id);if(a)a.team=team;renderAdmin();}
+function setTeam(id,team){const a=DATA.agents.find(x=>x.id===id);if(a)a.team=team;saveLocal();renderAdmin();}
 function saveData(){
   document.querySelectorAll('.pol-input').forEach(el=>{const{agent,key}=el.dataset;if(!DATA.policies[agent])DATA.policies[agent]={};DATA.policies[agent][key]=parseFloat(el.value)||0;});
   document.querySelectorAll('.ph-input').forEach(el=>{const{agent,key}=el.dataset;if(!DATA.phone[agent])DATA.phone[agent]={};DATA.phone[agent][key]=parseFloat(el.value)||0;});
