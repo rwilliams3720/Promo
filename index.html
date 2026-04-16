@@ -313,7 +313,7 @@ const DEDUCTIONS={missed:-3,voicemail:-2};
 const COLORS=['#00d4ff','#00ff94','#ffd166','#ff4d6d','#a78bfa','#fb923c','#60a5fa','#f472b6','#34d399','#facc15','#38bdf8'];
 
 let DATA={
-  sheetUrl:'https://docs.google.com/spreadsheets/d/1gfqzLbjNgt7KVvhGNETtBB6TN7qMZAK13R_yKh6RMHA/gviz/tq?tqx=out:json&gid=471942583',refreshSecs:300,
+  sheetUrl:'/api/sheet',refreshSecs:300,
   agents:[
     {id:'susan',   name:'Susan Navarro',    team:'sales'},
     {id:'peyton',  name:'Peyton Tooze',     team:'sales'},
@@ -355,7 +355,7 @@ let DATA={
   }
 };
 try{const s=localStorage.getItem('brd3');if(s)DATA=JSON.parse(s);}catch(e){}
-DATA.sheetUrl='https://docs.google.com/spreadsheets/d/1gfqzLbjNgt7KVvhGNETtBB6TN7qMZAK13R_yKh6RMHA/gviz/tq?tqx=out:json&gid=471942583';
+DATA.sheetUrl='/api/sheet';
 
 function calcScore(id){
   const ag=DATA.agents.find(a=>a.id===id);
