@@ -203,8 +203,8 @@
       </div>
       <div class="deduct-box" style="margin-top:0;height:fit-content;">
         <h4>&#128308; Deductions — Race Wide</h4>
-        <div class="deduct-row"><span>Missed Call</span><span>-3 pts each</span></div>
-        <div class="deduct-row"><span>Voicemail Received</span><span>-2 pts each</span></div>
+        <div class="deduct-row"><span>Missed Calls</span><span id="rwMissed">—</span></div>
+        <div class="deduct-row"><span>Voicemails Received</span><span id="rwVoicemail">—</span></div>
         <div style="font-size:11px;color:var(--muted);margin-top:8px;">Applied equally to both Sales and Service teams</div>
       </div>
     </div>
@@ -313,7 +313,7 @@ const DEDUCTIONS={missed:-3,voicemail:-2};
 const COLORS=['#00d4ff','#00ff94','#ffd166','#ff4d6d','#a78bfa','#fb923c','#60a5fa','#f472b6','#34d399','#facc15','#38bdf8'];
 
 let DATA={
-  sheetUrl:'',refreshSecs:300,
+  sheetUrl:'https://docs.google.com/spreadsheets/d/1gfqzLbjNgt7KVvhGNETtBB6TN7qMZAK13R_yKh6RMHA/gviz/tq?tqx=out:json&gid=471942583',refreshSecs:300,
   agents:[
     {id:'susan',   name:'Susan Navarro',    team:'sales'},
     {id:'peyton',  name:'Peyton Tooze',     team:'sales'},
@@ -355,12 +355,14 @@ let DATA={
   }
 };
 try{const s=localStorage.getItem('brd3');if(s)DATA=JSON.parse(s);}catch(e){}
+DATA.sheetUrl='https://docs.google.com/spreadsheets/d/1gfqzLbjNgt7KVvhGNETtBB6TN7qMZAK13R_yKh6RMHA/gviz/tq?tqx=out:json&gid=471942583';
 
 function calcScore(id){
   const ag=DATA.agents.find(a=>a.id===id);
   const p=DATA.policies[id]||{};
   const ph=DATA.phone[id]||{};
   const svc=ag.team==='service';
+  const n=DATA.agents.length||1;
   const polPts=(p.wl||0)*100+(p.ul||0)*75+(p.term||0)*50+(p.health||0)*30+(p.auto||0)*15+(p.fire||0)*10;
   const placed=(ph.placed||0)*(svc?.25:1);
   const ans=(ph.answered||0)*(svc?5:1);
@@ -368,15 +370,17 @@ function calcScore(id){
   const avg=(ph.avgMin||0)*2;
   const missD=(ph.missed||0)*DEDUCTIONS.missed;
   const vmD=(ph.voicemail||0)*DEDUCTIONS.voicemail;
+  const rwMissD=(DATA.raceWideMissed||0)*DEDUCTIONS.missed;
+  const rwVmD=(DATA.raceWideVoicemail||0)*DEDUCTIONS.voicemail;
   const gross=Math.round(polPts+placed+ans+talk+avg);
-  const deduct=Math.round(missD+vmD);
+  const deduct=Math.round(missD+vmD+rwMissD+rwVmD);
   return{
     total:Math.max(0,gross+deduct),gross,deduct,
     polPts:Math.round(polPts),
     ansPts:Math.round(ans),
     placedPts:Math.round(placed),
     talkPts:Math.round(talk+avg),
-    missD:Math.round(missD),vmD:Math.round(vmD)
+    missD:Math.round(missD+rwMissD),vmD:Math.round(vmD+rwVmD)
   };
 }
 
@@ -393,7 +397,10 @@ function render(){
   const mx=Math.max(...sc.map(a=>a.total),1);
   const mxD=Math.max(...sc.map(a=>Math.abs(a.deduct)),1);
   document.getElementById('dateLabel').textContent='APRIL 2026 · '+sc.length+' AGENTS';
-  document.getElementById('lastUpdate').textContent=new Date().toLocaleTimeString();
+  if(!DATA.sheetUrl)document.getElementById('lastUpdate').textContent=new Date().toLocaleTimeString();
+  const rwm=document.getElementById('rwMissed');const rwv=document.getElementById('rwVoicemail');
+  if(rwm)rwm.textContent=DATA.raceWideMissed!=null?`${DATA.raceWideMissed} (${(DATA.raceWideMissed*3)} pts)`:'—';
+  if(rwv)rwv.textContent=DATA.raceWideVoicemail!=null?`${DATA.raceWideVoicemail} (${(DATA.raceWideVoicemail*2)} pts)`:'—';
 
   const totPts=sc.reduce((s,a)=>s+a.total,0);
   const totDed=sc.reduce((s,a)=>s+Math.abs(a.deduct),0);
@@ -402,7 +409,7 @@ function render(){
     <div class="stat-card" style="--accent-line:var(--gold)"><div class="stat-label">Top Score</div><div class="stat-val">${sc[0]?.total||0}</div><div class="stat-sub">${sc[0]?.name.split(' ')[0]||''}</div></div>
     <div class="stat-card" style="--accent-line:var(--accent)"><div class="stat-label">Team Total</div><div class="stat-val">${totPts.toLocaleString()}</div><div class="stat-sub">net points</div></div>
     <div class="stat-card" style="--accent-line:var(--accent2)"><div class="stat-label">Policies</div><div class="stat-val">${totPols}</div><div class="stat-sub">written</div></div>
-    <div class="stat-card" style="--accent-line:var(--danger)"><div class="stat-label">Deductions</div><div class="stat-val">-${totDed}</div><div class="stat-sub">team-wide</div></div>`;
+    <div class="stat-card" style="--accent-line:var(--danger)"><div class="stat-label">Deductions</div><div class="stat-val">-${Math.abs((DATA.raceWideMissed||0)*3+(DATA.raceWideVoicemail||0)*2)}</div><div class="stat-sub">race-wide per agent</div></div>`;
 
   // PODIUM
   const top3=sc.slice(0,3);
@@ -573,15 +580,24 @@ function fetchSheet(url){
   J:Placed  K:Answered  L:Missed  M:Voicemail  N:TalkMin  O:AvgMin
 */
 function parseSheet(json){
-  (json.table.rows||[]).forEach(row=>{
+  const rows=json.table.rows||[];
+  rows.forEach(row=>{
     const c=row.c;const v=i=>c[i]?.v??0;
     const id=String(v(0));
     const existing=DATA.agents.find(a=>a.id===id);
     const team=String(v(2)).toLowerCase().includes('service')?'service':'sales';
     if(!existing)DATA.agents.push({id,name:String(v(1)),team});
-    else existing.team=team;
+    else{existing.team=team;existing.name=String(v(1));}
     DATA.policies[id]={wl:+v(3)||0,ul:+v(4)||0,term:+v(5)||0,health:+v(6)||0,auto:+v(7)||0,fire:+v(8)||0};
     DATA.phone[id]={placed:+v(9)||0,answered:+v(10)||0,missed:+v(11)||0,voicemail:+v(12)||0,talkMin:+v(13)||0,avgMin:+v(14)||0};
+    // Race-wide deductions (same value on every row — grab from any row)
+    DATA.raceWideMissed=+v(15)||0;
+    DATA.raceWideVoicemail=+v(16)||0;
+    // Last updated timestamp from sheet
+    const ts=c[17]?.v;
+    if(ts&&typeof ts==='string'&&ts.startsWith('Date(')){
+      try{const parts=ts.replace('Date(','').replace(')','').split(',').map(Number);const d=new Date(Date.UTC(...parts));if(!isNaN(d))document.getElementById('lastUpdate').textContent=d.toLocaleString('en-US',{timeZone:'America/Los_Angeles',month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true})+' PST';}catch(e){}
+    }
   });
 }
 
