@@ -696,7 +696,8 @@ function uploadFile(file,type){
         status.innerHTML='<span style="color:var(--accent2)">&#10003; '+result.message+extra+'</span>';
         if(DATA.sheetUrl)setTimeout(()=>fetchSheet(DATA.sheetUrl),2000);
       }else{
-        status.innerHTML='<span style="color:var(--danger)">&#10007; '+(result.error||'Upload failed')+'</span>';
+        var diagInfo = result.diag ? ' | bytes:'+result.diag.bytes+' magic:'+result.diag.magic+' xlsx:'+result.diag.isXlsx+(result.diag.errors&&result.diag.errors.length?' errs:['+result.diag.errors.join('; ')+']':'') : '';
+        status.innerHTML='<span style="color:var(--danger)">&#10007; '+(result.error||'Upload failed')+diagInfo+'</span>';
       }
     })
     .catch(err=>{

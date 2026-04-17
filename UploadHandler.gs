@@ -53,25 +53,45 @@ function doPost(e) {
 function processCallUpload(blob) {
   var bytes = blob.getBytes();
   var rows  = [];
+  var diagErrors = [];
+
+  // Verify magic bytes — XLSX (ZIP) files start with PK (0x50 0x4B)
+  var magic = bytes.length >= 4
+    ? [bytes[0] & 0xFF, bytes[1] & 0xFF, bytes[2] & 0xFF, bytes[3] & 0xFF]
+    : [];
+  var magicHex = magic.map(function(b){ return ('0'+b.toString(16)).slice(-2); }).join(' ');
+  Logger.log('File bytes received: ' + bytes.length + ', magic: ' + magicHex);
+  var isXlsx = (magic[0] === 0x50 && magic[1] === 0x4B); // PK signature
 
   // Attempt 1 — direct bytes (fastest)
-  rows = parseXlsxBytes(bytes);
+  try {
+    rows = parseXlsxBytes(bytes);
+  } catch(e1) { diagErrors.push('Attempt1: ' + e1.message); }
 
   // Attempt 2 — Drive round-trip (mirrors email path, normalizes bytes)
   if (!rows || rows.length === 0) {
-    Logger.log('Direct parse empty — trying Drive round-trip (mirrors email path)');
-    var driveBytes = getXlsxBytesViaDrive(blob);
-    if (driveBytes) rows = parseXlsxBytes(driveBytes);
+    Logger.log('Direct parse empty — trying Drive round-trip');
+    try {
+      var driveBytes = getXlsxBytesViaDrive(blob);
+      if (driveBytes) rows = parseXlsxBytes(driveBytes);
+      else diagErrors.push('Attempt2: Drive upload returned null');
+    } catch(e2) { diagErrors.push('Attempt2: ' + e2.message); }
   }
 
   // Attempt 3 — Script 3 parser on original bytes
   if (!rows || rows.length === 0) {
     Logger.log('Drive round-trip empty — trying parseXlsxBytesToRows fallback');
-    rows = parseXlsxBytesToRows(bytes);
+    try {
+      rows = parseXlsxBytesToRows(bytes);
+    } catch(e3) { diagErrors.push('Attempt3: ' + e3.message); }
   }
 
   if (!rows || rows.length === 0)
-    return { success: false, error: 'Could not parse call report. Ensure it is a valid .xlsx file containing a "Call Direction" column.' };
+    return {
+      success: false,
+      error: 'Could not parse call report. Ensure it is a valid .xlsx file containing a "Call Direction" column.',
+      diag: { bytes: bytes.length, magic: magicHex, isXlsx: isXlsx, errors: diagErrors }
+    };
 
   // Verify the call direction header is present before proceeding
   var hasHeader = false;
