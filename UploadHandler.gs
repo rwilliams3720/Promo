@@ -17,18 +17,21 @@
 
 function doPost(e) {
   try {
-    var payload  = JSON.parse(e.postData.contents);
-    var type     = payload.fileType;   // 'calls' or 'sales'
-    var bytes    = Utilities.base64Decode(payload.fileBase64);
-    var fname    = payload.fileName || 'upload.xlsx';
-    var mime     = payload.mimeType  || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-    var blob     = Utilities.newBlob(bytes, mime, fname);
+    var payload = JSON.parse(e.postData.contents);
+    var type    = payload.fileType;
 
+    // Handle non-file actions first — before any base64 decode
     if (type === 'setteam') {
       return ContentService
         .createTextOutput(JSON.stringify(updateAgentTeam(payload.agentId, payload.team)))
         .setMimeType(ContentService.MimeType.JSON);
     }
+
+    // File upload actions
+    var bytes = Utilities.base64Decode(payload.fileBase64);
+    var fname = payload.fileName || 'upload.xlsx';
+    var mime  = payload.mimeType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    var blob  = Utilities.newBlob(bytes, mime, fname);
 
     var result = (type === 'sales') ? processSalesUpload(blob) : processCallUpload(blob);
 
@@ -48,14 +51,30 @@ function doPost(e) {
 // CALL REPORT — reuses EmailParser functions
 // ─────────────────────────────────────────────────────────────
 function processCallUpload(blob) {
-  var rows = parseXlsxBytes(blob.getBytes());
+  var bytes = blob.getBytes();
+
+  // Try Script 1 parser first, fall back to Script 3 parser
+  var rows = parseXlsxBytes(bytes);
+  if (!rows || rows.length === 0) {
+    Logger.log('parseXlsxBytes returned empty — trying parseXlsxBytesToRows fallback');
+    rows = parseXlsxBytesToRows(bytes);
+  }
   if (!rows || rows.length === 0)
-    return { success: false, error: 'Could not parse call report. Make sure it is a valid .xlsx file.' };
+    return { success: false, error: 'Could not parse call report. Ensure it is a valid .xlsx file containing a "Call Direction" column.' };
+
+  // Verify the call direction header is present before proceeding
+  var hasHeader = false;
+  for (var r = 0; r < Math.min(rows.length, 20); r++) {
+    if (rows[r].join('|').indexOf('Call Direction') !== -1) { hasHeader = true; break; }
+  }
+  if (!hasHeader)
+    return { success: false, error: 'File parsed but no "Call Direction" header found. Make sure you are uploading the Search Call Details report, not a different file.' };
 
   var ss        = SpreadsheetApp.openById('1gfqzLbjNgt7KVvhGNETtBB6TN7qMZAK13R_yKh6RMHA');
   var raceSheet = getOrCreateSheet(ss, RACE_CONFIG.RACE_SHEET);
   var logSheet  = getOrCreateSheet(ss, RACE_CONFIG.LOG_SHEET);
 
+  // Script 1 flow: log-based dedup → per-agent phone stats → RaceData
   var knownHashes = loadKnownHashes(logSheet);
   var result      = classifyCalls(rows, knownHashes);
 
@@ -76,6 +95,15 @@ function processCallUpload(blob) {
     raceSheet.getRange(2, 18, n, 1).setValue(now);
   }
   SpreadsheetApp.flush();
+
+  // Script 3 flow: aggregate raw rows → write to Performance Tracking sheet
+  try {
+    var aggregated = aggregateCallData(rows);
+    if (aggregated) writeToPerformanceSheet(aggregated);
+    Logger.log('Performance Tracking sheet updated.');
+  } catch(perfErr) {
+    Logger.log('Performance sheet write error (non-fatal): ' + perfErr.message);
+  }
 
   return {
     success:  true,
