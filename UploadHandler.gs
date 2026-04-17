@@ -86,6 +86,14 @@ function processCallUpload(blob) {
     } catch(e3) { diagErrors.push('Attempt3: ' + e3.message); }
   }
 
+  // Attempt 4 — Convert to Google Sheet via Drive (same approach as sales parser)
+  if (!rows || rows.length === 0) {
+    Logger.log('All byte parsers empty — trying Drive→Sheets conversion');
+    try {
+      rows = readXlsxBlobViaSheets(blob);
+    } catch(e4) { diagErrors.push('Attempt4: ' + e4.message); }
+  }
+
   if (!rows || rows.length === 0)
     return {
       success: false,
@@ -215,6 +223,56 @@ function getXlsxBytesViaDrive(blob) {
         { method:'DELETE', headers:{Authorization:'Bearer '+ScriptApp.getOAuthToken()},
           muteHttpExceptions:true }); } catch(e) {}
     }
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// Attempt 4 — Convert XLSX blob to Google Sheet via Drive, read all rows.
+// Bypasses parseXlsxBytes entirely; works on any valid .xlsx file.
+// ─────────────────────────────────────────────────────────────
+function readXlsxBlobViaSheets(blob) {
+  var fileId = null;
+  try {
+    var token    = ScriptApp.getOAuthToken();
+    var mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    var meta     = JSON.stringify({ name: '__call_upload_tmp__', mimeType: 'application/vnd.google-apps.spreadsheet' });
+    var boundary = 'calluploadboundary';
+    var head     = Utilities.newBlob('--'+boundary+'\r\nContent-Type: application/json\r\n\r\n'+meta+'\r\n--'+boundary+'\r\nContent-Type: '+mimeType+'\r\n\r\n').getBytes();
+    var tail     = Utilities.newBlob('\r\n--'+boundary+'--').getBytes();
+    var payload  = head.concat(blob.getBytes()).concat(tail);
+
+    var up = UrlFetchApp.fetch(
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&convert=true',
+      { method: 'POST', contentType: 'multipart/related; boundary="'+boundary+'"',
+        payload: payload, headers: { Authorization: 'Bearer '+token }, muteHttpExceptions: true }
+    );
+    var uploaded = JSON.parse(up.getContentText());
+    if (!uploaded.id) { Logger.log('Attempt4 upload failed: '+up.getContentText()); return []; }
+    fileId = uploaded.id;
+
+    var ss = null;
+    for (var attempt = 1; attempt <= 8; attempt++) {
+      Utilities.sleep(attempt * 1500);
+      try { ss = SpreadsheetApp.openById(fileId); if (ss) break; } catch(e) {}
+    }
+    if (!ss) { Logger.log('Attempt4: could not open converted sheet'); return []; }
+
+    // Read all sheets and flatten — call report may be on any tab
+    var allRows = [];
+    var sheets  = ss.getSheets();
+    for (var s = 0; s < sheets.length; s++) {
+      var data = sheets[s].getDataRange().getValues();
+      if (data.length > allRows.length) allRows = data; // keep the largest sheet
+    }
+    Logger.log('Attempt4 rows from Drive→Sheets: ' + allRows.length);
+    return allRows;
+
+  } catch(e) {
+    Logger.log('readXlsxBlobViaSheets error: ' + e.message);
+    return [];
+  } finally {
+    if (fileId) { try { DriveApp.getFileById(fileId).setTrashed(true); } catch(e) {} }
   }
 }
 
