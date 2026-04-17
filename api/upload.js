@@ -21,26 +21,21 @@ export default async function handler(req, res) {
     for await (const chunk of req) chunks.push(chunk);
     const rawBody = Buffer.concat(chunks);
 
-    // Send to GAS with manual redirect handling — 'follow' converts POST→GET on 302
-    let response = await fetch(GAS_URL, {
+    // POST to GAS — GAS processes the request then 302s to a result URL (fetched as GET)
+    const response = await fetch(GAS_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: rawBody,
-      redirect: 'manual',
+      redirect: 'follow',
     });
 
-    if (response.status >= 300 && response.status < 400) {
-      const redirectUrl = response.headers.get('location');
-      if (redirectUrl) {
-        response = await fetch(redirectUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: rawBody,
-        });
-      }
+    const text = await response.text();
+
+    // Guard against HTML error pages (GAS auth errors, etc.)
+    if (text.trimStart().startsWith('<')) {
+      return res.status(502).json({ error: 'GAS returned an HTML response — check that the web app is deployed as "Anyone" and the URL is correct.' });
     }
 
-    const text = await response.text();
     res.status(200).send(text);
   } catch (err) {
     res.status(500).json({ error: err.message });
