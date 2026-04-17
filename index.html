@@ -219,8 +219,8 @@
       <div id="chartTopAll"></div>
     </div>
     <div class="panel">
-      <div class="panel-title">&#128308; Deductions Leaderboard</div>
-      <div id="chartDeductions"></div>
+      <div class="panel-title">&#9875; Sales vs Service Split</div>
+      <div style="height:220px;position:relative;"><canvas id="chartTeams" role="img" aria-label="Sales vs service total points donut chart"></canvas></div>
     </div>
   </div>
   <div class="grid-2">
@@ -235,8 +235,8 @@
   </div>
   <div class="grid-2">
     <div class="panel">
-      <div class="panel-title">&#9875; Sales vs Service Split</div>
-      <div style="height:220px;position:relative;"><canvas id="chartTeams" role="img" aria-label="Sales vs service total points donut chart"></canvas></div>
+      <div class="panel-title">&#128308; Deductions — Race Wide</div>
+      <div id="chartDeductions"></div>
     </div>
     <div class="panel">
       <div class="panel-title">&#127381; Points Source Stack</div>
@@ -508,16 +508,25 @@ function renderCharts(sc){
     <div class="hbar-val">${a.total}</div></div>`).join('');
   setTimeout(()=>ct.querySelectorAll('.hbar-fill').forEach(el=>{el.style.transition='width 1.2s cubic-bezier(.34,1.2,.64,1)';el.style.width=el.dataset.pct+'%';}),80);
 
-  // Deductions
+  // Deductions — Race Wide
   const cd=document.getElementById('chartDeductions');
-  const withD=sc.filter(a=>a.deduct<0).sort((a,b)=>a.deduct-b.deduct);
-  const mxD=Math.max(...withD.map(a=>Math.abs(a.deduct)),1);
-  cd.innerHTML=withD.length?withD.map(a=>`<div class="hbar-row">
-    <div class="hbar-label" title="${a.name}">${a.name.split(' ')[0]}</div>
-    <div class="hbar-track"><div class="hbar-fill" style="background:var(--danger);opacity:.7;width:0%;" data-pct="${Math.round((Math.abs(a.deduct)/mxD)*100)}"></div></div>
-    <div class="hbar-val" style="color:var(--danger)">${a.deduct}</div></div>`).join('')
-    :'<div style="color:var(--muted);font-size:13px;padding:20px 0">No deductions recorded</div>';
-  setTimeout(()=>cd.querySelectorAll('.hbar-fill').forEach(el=>{el.style.transition='width 1.2s cubic-bezier(.34,1.2,.64,1)';el.style.width=el.dataset.pct+'%';}),80);
+  const rwM=DATA.raceWideMissed||0, rwV=DATA.raceWideVoicemail||0;
+  const rwMpts=rwM*3, rwVpts=rwV*2, rwTotal=rwMpts+rwVpts;
+  cd.innerHTML=(rwM===0&&rwV===0)
+    ?'<div style="color:var(--muted);font-size:13px;padding:20px 0">No deductions recorded</div>'
+    :`<div class="deduct-row" style="padding:10px 0;border-bottom:1px solid var(--border)">
+        <span style="color:var(--muted)">Missed Calls</span>
+        <span style="font-family:'DM Mono',monospace;color:var(--danger)">${rwM} &nbsp;(−${rwMpts} pts)</span>
+      </div>
+      <div class="deduct-row" style="padding:10px 0;border-bottom:1px solid var(--border)">
+        <span style="color:var(--muted)">Voicemails Received</span>
+        <span style="font-family:'DM Mono',monospace;color:var(--danger)">${rwV} &nbsp;(−${rwVpts} pts)</span>
+      </div>
+      <div class="deduct-row" style="padding:12px 0">
+        <span style="font-weight:600">Total Deduction</span>
+        <span style="font-family:'DM Mono',monospace;color:var(--danger);font-size:1.15em">−${rwTotal} pts</span>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">Applied equally to all agents</div>`;
 
   // Policy stacked
   dc('cp');charts['cp']=new Chart(document.getElementById('chartPolicies').getContext('2d'),{
