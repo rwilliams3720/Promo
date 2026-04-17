@@ -248,6 +248,38 @@
 <!-- ══ ADMIN ══ -->
 <div id="tab-admin" style="display:none;">
 
+  <div class="sheets-box" style="margin-bottom:16px;">
+    <h3>&#128193; Upload Report</h3>
+    <p>Upload a call report (.xlsx) or sales report (.xls/.xlsx) to update race data instantly. Deduplication is handled automatically — re-uploading the same file is safe.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">Call Report (.xlsx)</div>
+        <input type="file" id="callReportFile" accept=".xlsx" style="display:none">
+        <div id="callDropZone" onclick="document.getElementById('callReportFile').click()"
+          ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
+          ondragleave="this.style.borderColor='rgba(0,212,255,0.25)'"
+          ondrop="handleFileDrop(event,'calls')"
+          style="border:2px dashed rgba(0,212,255,0.25);border-radius:10px;padding:24px 12px;text-align:center;cursor:pointer;background:rgba(0,212,255,0.04);transition:border-color .2s;">
+          <div style="font-size:22px;margin-bottom:6px;">&#128222;</div>
+          <div style="font-size:12px;color:var(--muted);">Click or drag .xlsx here</div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">Sales Report (.xls / .xlsx)</div>
+        <input type="file" id="salesReportFile" accept=".xls,.xlsx" style="display:none">
+        <div id="salesDropZone" onclick="document.getElementById('salesReportFile').click()"
+          ondragover="event.preventDefault();this.style.borderColor='var(--accent2)'"
+          ondragleave="this.style.borderColor='rgba(0,255,148,0.25)'"
+          ondrop="handleFileDrop(event,'sales')"
+          style="border:2px dashed rgba(0,255,148,0.25);border-radius:10px;padding:24px 12px;text-align:center;cursor:pointer;background:rgba(0,255,148,0.04);transition:border-color .2s;">
+          <div style="font-size:22px;margin-bottom:6px;">&#128202;</div>
+          <div style="font-size:12px;color:var(--muted);">Click or drag .xls/.xlsx here</div>
+        </div>
+      </div>
+    </div>
+    <div id="uploadStatus" style="font-size:13px;min-height:20px;"></div>
+  </div>
+
   <div class="sheets-box">
     <h3>&#128279; Google Sheets Live Sync</h3>
     <p>Paste your published Google Sheet JSON URL here. Your Apps Script (included in this package as <code style="font-size:12px;color:var(--accent)">gas/EmailParser.gs</code>) monitors your daily email reports and writes data to the sheet automatically. The race refreshes on the interval you set.</p>
@@ -615,6 +647,52 @@ function switchTab(t){
 }
 if(DATA.sheetUrl){fetchSheet(DATA.sheetUrl);timer=setInterval(()=>fetchSheet(DATA.sheetUrl),(DATA.refreshSecs||300)*1000);}
 render();
+
+// ═════ FILE UPLOAD ═════
+document.getElementById('callReportFile').addEventListener('change',function(e){
+  if(e.target.files[0])uploadFile(e.target.files[0],'calls');
+  e.target.value='';
+});
+document.getElementById('salesReportFile').addEventListener('change',function(e){
+  if(e.target.files[0])uploadFile(e.target.files[0],'sales');
+  e.target.value='';
+});
+function handleFileDrop(e,type){
+  e.preventDefault();
+  var f=e.dataTransfer.files[0];
+  if(f)uploadFile(f,type);
+}
+function uploadFile(file,type){
+  var status=document.getElementById('uploadStatus');
+  status.innerHTML='<span style="color:var(--warn)">&#9203; Reading file...</span>';
+  var reader=new FileReader();
+  reader.onload=function(e){
+    var base64=e.target.result.split(',')[1];
+    status.innerHTML='<span style="color:var(--warn)">&#9203; Uploading and processing — this may take 20–30 seconds...</span>';
+    var mime=file.type||(file.name.endsWith('.xlsx')
+      ?'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      :'application/vnd.ms-excel');
+    fetch('/api/upload',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({fileType:type,fileName:file.name,fileBase64:base64,mimeType:mime})
+    })
+    .then(r=>r.json())
+    .then(result=>{
+      if(result.success){
+        var extra=result.new!==undefined?' ('+result.new+' new, '+result.skipped+' skipped)':'';
+        status.innerHTML='<span style="color:var(--accent2)">&#10003; '+result.message+extra+'</span>';
+        if(DATA.sheetUrl)setTimeout(()=>fetchSheet(DATA.sheetUrl),2000);
+      }else{
+        status.innerHTML='<span style="color:var(--danger)">&#10007; '+(result.error||'Upload failed')+'</span>';
+      }
+    })
+    .catch(err=>{
+      status.innerHTML='<span style="color:var(--danger)">&#10007; '+err.message+'</span>';
+    });
+  };
+  reader.readAsDataURL(file);
+}
 </script>
 </body>
 </html>
