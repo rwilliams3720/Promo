@@ -52,13 +52,24 @@ function doPost(e) {
 // ─────────────────────────────────────────────────────────────
 function processCallUpload(blob) {
   var bytes = blob.getBytes();
+  var rows  = [];
 
-  // Try Script 1 parser first, fall back to Script 3 parser
-  var rows = parseXlsxBytes(bytes);
+  // Attempt 1 — direct bytes (fastest)
+  rows = parseXlsxBytes(bytes);
+
+  // Attempt 2 — Drive round-trip (mirrors email path, normalizes bytes)
   if (!rows || rows.length === 0) {
-    Logger.log('parseXlsxBytes returned empty — trying parseXlsxBytesToRows fallback');
+    Logger.log('Direct parse empty — trying Drive round-trip (mirrors email path)');
+    var driveBytes = getXlsxBytesViaDrive(blob);
+    if (driveBytes) rows = parseXlsxBytes(driveBytes);
+  }
+
+  // Attempt 3 — Script 3 parser on original bytes
+  if (!rows || rows.length === 0) {
+    Logger.log('Drive round-trip empty — trying parseXlsxBytesToRows fallback');
     rows = parseXlsxBytesToRows(bytes);
   }
+
   if (!rows || rows.length === 0)
     return { success: false, error: 'Could not parse call report. Ensure it is a valid .xlsx file containing a "Call Direction" column.' };
 
@@ -144,6 +155,47 @@ function processSalesUpload(blob) {
     new:     result.newLogRows.length,
     skipped: result.duplicatesSkipped,
   };
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// Upload xlsx to Drive, download back — mirrors email attachment path
+// exactly so parseXlsxBytes receives bytes in the same form it expects.
+// ─────────────────────────────────────────────────────────────
+function getXlsxBytesViaDrive(blob) {
+  var fileId = null;
+  try {
+    var token    = ScriptApp.getOAuthToken();
+    var boundary = 'xlsxboundary';
+    var meta     = '{"name":"__call_upload_tmp__","mimeType":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}';
+    var head     = Utilities.newBlob('--'+boundary+'\r\nContent-Type: application/json\r\n\r\n'+meta+'\r\n--'+boundary+'\r\nContent-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n').getBytes();
+    var tail     = Utilities.newBlob('\r\n--'+boundary+'--').getBytes();
+    var payload  = head.concat(blob.getBytes()).concat(tail);
+
+    var up = UrlFetchApp.fetch(
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+      { method:'POST', contentType:'multipart/related; boundary="'+boundary+'"',
+        payload:payload, headers:{Authorization:'Bearer '+token}, muteHttpExceptions:true }
+    );
+    var uploaded = JSON.parse(up.getContentText());
+    if (!uploaded.id) { Logger.log('Drive upload failed: '+up.getContentText()); return null; }
+    fileId = uploaded.id;
+
+    var dl = UrlFetchApp.fetch(
+      'https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media',
+      { headers:{Authorization:'Bearer '+token}, muteHttpExceptions:true }
+    );
+    return dl.getContent();
+  } catch(e) {
+    Logger.log('getXlsxBytesViaDrive error: ' + e.message);
+    return null;
+  } finally {
+    if (fileId) {
+      try { UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/'+fileId,
+        { method:'DELETE', headers:{Authorization:'Bearer '+ScriptApp.getOAuthToken()},
+          muteHttpExceptions:true }); } catch(e) {}
+    }
+  }
 }
 
 
