@@ -617,7 +617,7 @@ function parseSheet(json){
     const existing=DATA.agents.find(a=>a.id===id);
     const team=String(v(2)).toLowerCase().includes('service')?'service':'sales';
     if(!existing)DATA.agents.push({id,name:String(v(1)),team});
-    else existing.name=String(v(1)); // preserve manually set team assignment
+    else{existing.name=String(v(1));existing.team=team;} // team is source of truth from sheet
     DATA.policies[id]={wl:+v(3)||0,ul:+v(4)||0,term:+v(5)||0,health:+v(6)||0,auto:+v(7)||0,fire:+v(8)||0};
     DATA.phone[id]={placed:+v(9)||0,answered:+v(10)||0,missed:+v(11)||0,voicemail:+v(12)||0,talkMin:+v(13)||0,avgMin:+v(14)||0};
     // Race-wide deductions (same value on every row — grab from any row)
@@ -631,7 +631,19 @@ function parseSheet(json){
   });
 }
 
-function setTeam(id,team){const a=DATA.agents.find(x=>x.id===id);if(a)a.team=team;saveLocal();renderAdmin();}
+function setTeam(id,team){
+  const a=DATA.agents.find(x=>x.id===id);
+  if(a)a.team=team;
+  renderAdmin();
+  // Write team change back to the sheet so all users see it
+  fetch('/api/upload',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({fileType:'setteam',agentId:id,team})
+  }).then(r=>r.json()).then(result=>{
+    if(!result.success)console.warn('Team update failed:',result.error);
+  }).catch(err=>console.warn('Team update error:',err.message));
+}
 function saveData(){
   document.querySelectorAll('.pol-input').forEach(el=>{const{agent,key}=el.dataset;if(!DATA.policies[agent])DATA.policies[agent]={};DATA.policies[agent][key]=parseFloat(el.value)||0;});
   document.querySelectorAll('.ph-input').forEach(el=>{const{agent,key}=el.dataset;if(!DATA.phone[agent])DATA.phone[agent]={};DATA.phone[agent][key]=parseFloat(el.value)||0;});

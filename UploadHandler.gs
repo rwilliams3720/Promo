@@ -24,6 +24,12 @@ function doPost(e) {
     var mime     = payload.mimeType  || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
     var blob     = Utilities.newBlob(bytes, mime, fname);
 
+    if (type === 'setteam') {
+      return ContentService
+        .createTextOutput(JSON.stringify(updateAgentTeam(payload.agentId, payload.team)))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
     var result = (type === 'sales') ? processSalesUpload(blob) : processCallUpload(blob);
 
     return ContentService
@@ -160,6 +166,32 @@ function readXlsBlobAsSheet(blob) {
     return [];
   } finally {
     if (fileId) { try { DriveApp.getFileById(fileId).setTrashed(true); } catch(e) {} }
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// SET TEAM — updates col C (Team) in RaceData for a given AgentID
+// ─────────────────────────────────────────────────────────────
+function updateAgentTeam(agentId, team) {
+  try {
+    var ss        = SpreadsheetApp.openById('1gfqzLbjNgt7KVvhGNETtBB6TN7qMZAK13R_yKh6RMHA');
+    var raceSheet = ss.getSheetByName('RaceData');
+    if (!raceSheet) return { success: false, error: 'RaceData sheet not found.' };
+
+    if (raceSheet.getLastRow() < 2) return { success: false, error: 'No agent rows found.' };
+
+    var ids = raceSheet.getRange(2, 1, raceSheet.getLastRow()-1, 1).getValues();
+    for (var i = 0; i < ids.length; i++) {
+      if (String(ids[i][0]) === agentId) {
+        raceSheet.getRange(i+2, 3).setValue(team);
+        SpreadsheetApp.flush();
+        return { success: true };
+      }
+    }
+    return { success: false, error: 'Agent ID not found: ' + agentId };
+  } catch(err) {
+    return { success: false, error: err.message };
   }
 }
 
