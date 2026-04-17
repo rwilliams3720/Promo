@@ -1,5 +1,5 @@
 export const config = {
-  api: { bodyParser: { sizeLimit: '15mb' } },
+  api: { bodyParser: false },
 };
 
 const GAS_URL = process.env.GAS_UPLOAD_URL;
@@ -16,12 +16,30 @@ export default async function handler(req, res) {
   }
 
   try {
-    const response = await fetch(GAS_URL, {
+    // Stream raw body — avoid re-serializing the already-encoded JSON
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const rawBody = Buffer.concat(chunks);
+
+    // Send to GAS with manual redirect handling — 'follow' converts POST→GET on 302
+    let response = await fetch(GAS_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req.body),
-      redirect: 'follow',
+      body: rawBody,
+      redirect: 'manual',
     });
+
+    if (response.status >= 300 && response.status < 400) {
+      const redirectUrl = response.headers.get('location');
+      if (redirectUrl) {
+        response = await fetch(redirectUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: rawBody,
+        });
+      }
+    }
+
     const text = await response.text();
     res.status(200).send(text);
   } catch (err) {
