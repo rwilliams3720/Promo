@@ -407,19 +407,17 @@ function calcScore(id){
   const ans=(ph.answered||0)*(svc?5:1);
   const talk=(ph.talkMin||0)*.1;
   const avg=(ph.avgMin||0)*2;
-  const missD=(ph.missed||0)*DEDUCTIONS.missed;
-  const vmD=(ph.voicemail||0)*DEDUCTIONS.voicemail;
   const rwMissD=(DATA.raceWideMissed||0)*DEDUCTIONS.missed;
   const rwVmD=(DATA.raceWideVoicemail||0)*DEDUCTIONS.voicemail;
   const gross=Math.round(polPts+placed+ans+talk+avg);
-  const deduct=Math.round(missD+vmD+rwMissD+rwVmD);
+  const deduct=Math.round(rwMissD+rwVmD);
   return{
     total:Math.max(0,gross+deduct),gross,deduct,
     polPts:Math.round(polPts),
     ansPts:Math.round(ans),
     placedPts:Math.round(placed),
     talkPts:Math.round(talk+avg),
-    missD:Math.round(missD+rwMissD),vmD:Math.round(vmD+rwVmD)
+    missD:Math.round(rwMissD),vmD:Math.round(rwVmD)
   };
 }
 
