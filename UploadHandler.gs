@@ -408,17 +408,23 @@ function processSalesUpload(blob) {
   var knownHashes = loadSalesHashes(logSheet);
   var result      = classifySales(rows, knownHashes);
 
-  if (result.newLogRows.length === 0)
-    return { success: true, message: 'No new sales found — all already logged.', new: 0, skipped: result.duplicatesSkipped };
+  if (result.newLogRows.length > 0) {
+    appendSalesToLog(logSheet, result.newLogRows);
+  }
 
-  appendSalesToLog(logSheet, result.newLogRows);
+  // Always re-aggregate and write totals — sheet may be stale if previous
+  // uploads returned early before writing (e.g. all-already-logged case).
   var allSales = getAllSalesRows(logSheet);
   var totals   = aggregateSalesFromLog(allSales);
   writePolicyTotals(raceSheet, totals);
 
+  var msg = result.newLogRows.length === 0
+    ? 'No new sales found — all already logged. Totals refreshed.'
+    : 'Sales report processed successfully.';
+
   return {
     success: true,
-    message: 'Sales report processed successfully.',
+    message: msg,
     new:     result.newLogRows.length,
     skipped: result.duplicatesSkipped,
   };
