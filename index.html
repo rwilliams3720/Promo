@@ -173,6 +173,7 @@
   <button class="tab active" onclick="switchTab('race')">&#127960; Race</button>
   <button class="tab" onclick="switchTab('stats')">&#128202; Stats</button>
   <button class="tab" onclick="switchTab('admin')">&#9881; Manage</button>
+  <button class="tab" onclick="switchTab('history')">&#127942; History</button>
 </div>
 
 <!-- ══ RACE ══ -->
@@ -324,6 +325,13 @@
         </table>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- ══ HISTORY ══ -->
+<div id="tab-history" style="display:none;">
+  <div id="historyContent">
+    <div style="color:var(--muted);text-align:center;padding:40px 0;font-size:14px;">Loading historical data...</div>
   </div>
 </div>
 
@@ -672,9 +680,90 @@ function saveData(){
 }
 function saveLocal(){try{localStorage.setItem('brd3',JSON.stringify(DATA));}catch(e){}}
 function switchTab(t){
-  ['race','stats','admin'].forEach(x=>document.getElementById('tab-'+x).style.display=x===t?'':'none');
-  document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',['race','stats','admin'][i]===t));
+  ['race','stats','admin','history'].forEach(x=>document.getElementById('tab-'+x).style.display=x===t?'':'none');
+  document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',['race','stats','admin','history'][i]===t));
   if(t==='stats')setTimeout(()=>renderCharts(scored()),100);
+  if(t==='history')fetchHistory();
+}
+
+// ═════ HISTORY ═════
+function fetchHistory(){
+  fetch('/api/history').then(r=>r.json()).then(data=>{
+    renderHistory(data);
+  }).catch(err=>{
+    document.getElementById('historyContent').innerHTML='<div style="color:var(--danger);text-align:center;padding:40px 0">Error loading history: '+err.message+'</div>';
+  });
+}
+function renderHistory(rows){
+  var el=document.getElementById('historyContent');
+  if(!rows||rows.length<2){
+    el.innerHTML='<div style="color:var(--muted);text-align:center;padding:60px 0;font-size:14px">No historical data yet. After the first month ends and a new month\'s data is uploaded, results will be archived here automatically.</div>';
+    return;
+  }
+  // rows[0] = header, rows[1..] = data
+  // Cols: 0=Month 1=Rank 2=AgentID 3=Name 4=Team 5=TotalScore 6=Gross 7=Deductions
+  var byMonth={};
+  for(var i=1;i<rows.length;i++){
+    var r=rows[i];
+    var month=String(r[0]);
+    if(!byMonth[month])byMonth[month]=[];
+    byMonth[month].push(r);
+  }
+  // Sort months newest first
+  var months=Object.keys(byMonth).sort(function(a,b){
+    var yr=function(s){var m=s.match(/\d{4}/);return m?+m[0]:0;};
+    var mi=function(s){var ns=['January','February','March','April','May','June','July','August','September','October','November','December'];for(var i=0;i<ns.length;i++)if(s.indexOf(ns[i])!==-1)return i;return -1;};
+    var dy=yr(b)-yr(a);return dy!==0?dy:mi(b)-mi(a);
+  });
+
+  var html=months.map(function(month){
+    var agents=byMonth[month].slice().sort(function(a,b){return +a[1]-+b[1];});
+    var winner=agents[0];
+    var salesTotal=agents.filter(function(a){return String(a[4]).indexOf('service')===-1;}).reduce(function(s,a){return s+(+a[5]||0);},0);
+    var serviceTotal=agents.filter(function(a){return String(a[4]).indexOf('service')!==-1;}).reduce(function(s,a){return s+(+a[5]||0);},0);
+    var winTeam=salesTotal>=serviceTotal?'Sales':'Service';
+    var podium=agents.slice(0,3).map(function(a,idx){
+      var medals=['&#127947;','&#129352;','&#129353;'];
+      var isService=String(a[4]).indexOf('service')!==-1;
+      return '<div style="text-align:center;padding:8px 16px;background:var(--card);border:1px solid var(--border);border-radius:10px;min-width:90px;">'+
+        '<div style="font-size:18px">'+medals[idx]+'</div>'+
+        '<div style="font-size:12px;font-weight:600;margin:4px 0">'+String(a[3]).split(' ')[0]+'</div>'+
+        '<div style="font-size:11px;color:'+(isService?'var(--accent2)':'var(--accent)')+'">'+String(a[5])+' pts</div>'+
+        '</div>';
+    }).join('');
+    var rows=agents.map(function(a){
+      var isService=String(a[4]).indexOf('service')!==-1;
+      return '<tr><td style="color:var(--muted);width:32px">#'+a[1]+'</td>'+
+        '<td style="font-weight:500">'+a[3]+'</td>'+
+        '<td><span style="font-size:9px;font-weight:600;padding:2px 6px;border-radius:4px;background:'+(isService?'rgba(0,255,148,.12)':'rgba(0,212,255,.15)')+';color:'+(isService?'var(--accent2)':'var(--accent)')+'">'+
+        (isService?'Service':'Sales')+'</span></td>'+
+        '<td style="font-family:\'DM Mono\',monospace;text-align:right;color:var(--gold)">'+a[5]+'</td>'+
+        '<td style="font-family:\'DM Mono\',monospace;text-align:right;color:var(--muted);font-size:11px">'+a[7]+'</td></tr>';
+    }).join('');
+    return '<div class="panel" style="margin-bottom:20px;">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">'+
+        '<div class="panel-title" style="margin:0">&#128197; '+month+'</div>'+
+        '<div style="display:flex;gap:10px;align-items:center;">'+
+          '<span style="font-size:11px;color:var(--muted)">Team winner:</span>'+
+          '<span style="font-size:12px;font-weight:600;padding:3px 10px;border-radius:6px;background:'+(winTeam==='Sales'?'rgba(0,212,255,.15)':'rgba(0,255,148,.12)')+';color:'+(winTeam==='Sales'?'var(--accent)':'var(--accent2)')+'">'+winTeam+'</span>'+
+          '<span style="font-size:11px;color:var(--muted)">Sales '+salesTotal+' pts · Service '+serviceTotal+' pts</span>'+
+        '</div>'+
+      '</div>'+
+      '<div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">'+podium+'</div>'+
+      '<table style="width:100%;border-collapse:collapse;font-size:13px;">'+
+        '<thead><tr style="color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em;">'+
+          '<th style="text-align:left;padding:0 0 8px;font-weight:500">Rank</th>'+
+          '<th style="text-align:left;padding:0 0 8px;font-weight:500">Agent</th>'+
+          '<th style="text-align:left;padding:0 0 8px;font-weight:500">Team</th>'+
+          '<th style="text-align:right;padding:0 0 8px;font-weight:500">Score</th>'+
+          '<th style="text-align:right;padding:0 0 8px;font-weight:500">Deductions</th>'+
+        '</tr></thead>'+
+        '<tbody>'+rows+'</tbody>'+
+      '</table>'+
+    '</div>';
+  }).join('');
+
+  el.innerHTML=html||'<div style="color:var(--muted);text-align:center;padding:40px 0">No records found.</div>';
 }
 if(DATA.sheetUrl){fetchSheet(DATA.sheetUrl);timer=setInterval(()=>fetchSheet(DATA.sheetUrl),(DATA.refreshSecs||300)*1000);}
 render();
