@@ -627,6 +627,8 @@ function fetchSheet(url){
 */
 function parseSheet(json){
   const rows=json.table.rows||[];
+  // Reset before repopulating — ensures a cleared sheet wipes stale localStorage cache
+  DATA.policies={};DATA.phone={};DATA.raceWideMissed=0;DATA.raceWideVoicemail=0;
   rows.forEach(row=>{
     const c=row.c;const v=i=>c[i]?.v??0;
     const id=String(v(0));
