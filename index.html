@@ -349,6 +349,13 @@
     </div>
   </div>
 
+  <div class="panel" style="margin-top:16px;" id="scoringPanel">
+    <div class="panel-title">&#9881;&#65039; SCORING CONFIGURATION</div>
+    <div id="scoringEditorWrap">
+      <div style="color:var(--muted);font-size:13px;padding:12px 0;">Loading scoring config...</div>
+    </div>
+  </div>
+
   <div class="panel" style="margin-top:16px;">
     <div class="panel-title">&#128222; CALL PERFORMANCE</div>
     <div class="perf-tabs" id="perfTabs">
@@ -378,14 +385,20 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const POLICY_KEY=[
-  {id:'wl',   label:'Whole Life',    pts:100,color:'#a78bfa'},
-  {id:'ul',   label:'Universal Life',pts:75, color:'#60a5fa'},
-  {id:'term', label:'Term Life',     pts:50, color:'#34d399'},
-  {id:'health',label:'Health',       pts:30, color:'#86efac'},
-  {id:'auto', label:'Auto',          pts:15, color:'#fbbf24'},
-  {id:'fire', label:'Fire',          pts:10, color:'#fb923c'},
+  {id:'wl',   label:'Whole Life',    color:'#a78bfa'},
+  {id:'ul',   label:'Universal Life',color:'#60a5fa'},
+  {id:'term', label:'Term Life',     color:'#34d399'},
+  {id:'health',label:'Health',       color:'#86efac'},
+  {id:'auto', label:'Auto',          color:'#fbbf24'},
+  {id:'fire', label:'Fire',          color:'#fb923c'},
 ];
-const DEDUCTIONS={missed:-3,voicemail:-2};
+let SCORING={
+  wl:100,ul:75,term:50,health:30,auto:15,fire:10,
+  placed_sales:1,placed_service:0.25,
+  answered_sales:1,answered_service:5,
+  talk_per_min:0.1,avg_min:2,
+  missed_deduct:-3,voicemail_deduct:-2,
+};
 const COLORS=['#00d4ff','#00ff94','#ffd166','#ff4d6d','#a78bfa','#fb923c','#60a5fa','#f472b6','#34d399','#facc15','#38bdf8'];
 
 let DATA={
@@ -441,13 +454,14 @@ function calcScore(id){
   const ph=DATA.phone[id]||{};
   const svc=ag.team==='service';
   const n=DATA.agents.length||1;
-  const polPts=(p.wl||0)*100+(p.ul||0)*75+(p.term||0)*50+(p.health||0)*30+(p.auto||0)*15+(p.fire||0)*10;
-  const placed=(ph.placed||0)*(svc?.25:1);
-  const ans=(ph.answered||0)*(svc?5:1);
-  const talk=(ph.talkMin||0)*.1;
-  const avg=(ph.avgMin||0)*2;
-  const rwMissD=(DATA.raceWideMissed||0)*DEDUCTIONS.missed;
-  const rwVmD=(DATA.raceWideVoicemail||0)*DEDUCTIONS.voicemail;
+  const polPts=(p.wl||0)*SCORING.wl+(p.ul||0)*SCORING.ul+(p.term||0)*SCORING.term
+              +(p.health||0)*SCORING.health+(p.auto||0)*SCORING.auto+(p.fire||0)*SCORING.fire;
+  const placed=(ph.placed||0)*(svc?SCORING.placed_service:SCORING.placed_sales);
+  const ans=(ph.answered||0)*(svc?SCORING.answered_service:SCORING.answered_sales);
+  const talk=(ph.talkMin||0)*SCORING.talk_per_min;
+  const avg=(ph.avgMin||0)*SCORING.avg_min;
+  const rwMissD=(DATA.raceWideMissed||0)*SCORING.missed_deduct;
+  const rwVmD=(DATA.raceWideVoicemail||0)*SCORING.voicemail_deduct;
   const gross=Math.round(polPts+placed+ans+talk+avg);
   const deduct=Math.round(rwMissD+rwVmD);
   return{
@@ -539,7 +553,7 @@ function render(){
 
   // KEY
   document.getElementById('keyGrid').innerHTML=POLICY_KEY.map(k=>`
-    <div class="key-item"><div class="key-dot" style="background:${k.color}"></div><div><div class="key-type">${k.label}</div><div class="key-pts">${k.pts} pts</div></div></div>`).join('');
+    <div class="key-item"><div class="key-dot" style="background:${k.color}"></div><div><div class="key-type">${k.label}</div><div class="key-pts">${SCORING[k.id]} pts</div></div></div>`).join('');
 
   renderCharts(sc);
   renderAdmin();
@@ -698,7 +712,7 @@ function switchTab(t){
   document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',['race','stats','admin','history'][i]===t));
   if(t==='stats')setTimeout(()=>renderCharts(scored()),100);
   if(t==='history')fetchHistory();
-  if(t==='admin')renderPerfSection();
+  if(t==='admin'){renderScoringEditor();renderPerfSection();}
 }
 
 // ═════ HISTORY ═════
@@ -806,7 +820,7 @@ async function initSupabase(){
 function showDashboard(){
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('appMain').style.display='';
-  render();
+  loadScoring();
   fetchRaceData();
   if(!timer)timer=setInterval(fetchRaceData,(DATA.refreshSecs||300)*1000);
 }
@@ -837,6 +851,76 @@ async function handleLogin(e){
 
 async function signOut(){
   if(_supabase)await _supabase.auth.signOut();
+}
+
+// ═════ SCORING CONFIG ═════
+async function loadScoring(){
+  if(!_supabase)return;
+  const{data,error}=await _supabase.from('scoring_config').select('key,value');
+  if(!error&&data&&data.length){
+    data.forEach(function(r){if(SCORING.hasOwnProperty(r.key))SCORING[r.key]=+r.value;});
+  }
+  renderScoringEditor();
+  render();
+}
+
+function renderScoringEditor(){
+  var wrap=document.getElementById('scoringEditorWrap');
+  if(!wrap)return;
+  function row(key,label,step){
+    return'<div class="cfg-row" style="margin-bottom:6px;">'
+      +'<span class="cfg-label" style="min-width:180px;">'+label+'</span>'
+      +'<input type="number" step="'+(step||'1')+'" id="sc_'+key+'" value="'+(SCORING[key]||0)+'" class="cfg-input" style="flex:unset;width:90px;text-align:right;">'
+      +'</div>';
+  }
+  wrap.innerHTML=
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px;">'
+    +'<div>'
+    +'<div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px;margin-top:4px;">Policy Points</div>'
+    +row('wl',   'Whole Life (WL)')
+    +row('ul',   'Universal Life (UL)')
+    +row('term', 'Term Life')
+    +row('health','Health')
+    +row('auto', 'Auto')
+    +row('fire', 'Fire / Home')
+    +'</div>'
+    +'<div>'
+    +'<div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px;margin-top:4px;">Call Points</div>'
+    +row('placed_sales',     'Placed — Sales team',    '0.01')
+    +row('placed_service',   'Placed — Service team',  '0.01')
+    +row('answered_sales',   'Answered — Sales team',  '0.01')
+    +row('answered_service', 'Answered — Service team','0.01')
+    +row('talk_per_min',     'Talk time (per min)',     '0.01')
+    +row('avg_min',          'Avg call length (per min)','0.01')
+    +'<div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px;margin-top:12px;">Deductions (race-wide)</div>'
+    +row('missed_deduct',    'Missed call (per call)')
+    +row('voicemail_deduct', 'Voicemail received (per VM)')
+    +'</div>'
+    +'</div>'
+    +'<div style="margin-top:14px;display:flex;gap:10px;align-items:center;">'
+    +'<button class="cfg-btn" onclick="saveScoring()">Save Scoring</button>'
+    +'<span id="scoringSaveStatus" style="font-size:12px;"></span>'
+    +'</div>';
+}
+
+async function saveScoring(){
+  var statusEl=document.getElementById('scoringSaveStatus');
+  if(!_supabase){if(statusEl)statusEl.textContent='Not connected.';return;}
+  var upserts=Object.keys(SCORING).map(function(k){
+    var el=document.getElementById('sc_'+k);
+    var val=el?parseFloat(el.value):SCORING[k];
+    if(!isNaN(val))SCORING[k]=val;
+    return{key:k,value:SCORING[k]};
+  });
+  if(statusEl)statusEl.textContent='Saving...';
+  var{error}=await _supabase.from('scoring_config').upsert(upserts,{onConflict:'key'});
+  if(error){
+    if(statusEl)statusEl.textContent='Error: '+error.message;
+  }else{
+    if(statusEl)statusEl.textContent='Saved!';
+    setTimeout(function(){if(statusEl)statusEl.textContent='';},2500);
+    render();
+  }
 }
 
 initSupabase();
