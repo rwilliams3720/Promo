@@ -8,7 +8,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    const response = await fetch(GAS_URL + '?action=history', { redirect: 'follow' });
+    const action = (req.query && req.query.action) || 'history';
+    const response = await fetch(GAS_URL + '?action=' + action, { redirect: 'follow' });
     const text = await response.text();
 
     if (text.trimStart().startsWith('<')) {

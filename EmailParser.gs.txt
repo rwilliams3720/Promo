@@ -1,0 +1,412 @@
+/**
+ * ═══════════════════════════════════════════════════════════════
+ *  BOAT RACE — Call Report Parser
+ *
+ *  Parses "Search Call Details" .xlsx uploads.
+ *  Called by UploadHandler.processCallUpload — not triggered by email.
+ *
+ *  PRIVACY:  Phone numbers are never stored. Only agent IDs,
+ *            call categories, talk time, and date are written.
+ *
+ *  DEDUP:    Voicemail/missed hashes omit extension so hunt-group
+ *            duplicates (same event, multiple extensions) collapse
+ *            to one log entry. Answered/placed keep ext so each
+ *            agent's individual call is tracked separately.
+ * ═══════════════════════════════════════════════════════════════
+ */
+
+var RACE_CONFIG = {
+  RACE_SHEET: 'RaceData',
+  LOG_SHEET:  'CallLog',
+
+  AGENT_MAP: {
+    'Ashley Foreman':    { id: 'ashley',  name: 'Ashley McEniry',    team: 'service' },
+    'Fiona Rodriguez':   { id: 'fiona',   name: 'Fiona Rodriguez',   team: 'service' },
+    'Jocelyn Hernandez': { id: 'jocelyn', name: 'Jocelyn Hernandez', team: 'service' },
+    'Joseph Underwood':  { id: 'joseph',  name: 'Joseph Underwood',  team: 'sales'   },
+    'Peyton Tooze':      { id: 'peyton',  name: 'Peyton Tooze',      team: 'sales'   },
+    'Susan Navarro':     { id: 'susan',   name: 'Susan Navarro',     team: 'sales'   },
+    'Tiffany Dabe':      { id: 'tiffany', name: 'Tiffany Dabe',      team: 'sales'   },
+    'Tracy Ankrah':      { id: 'tracy',   name: 'Tracy Ankrah',      team: 'service' },
+    'Amin Kalas':        { id: 'amin',    name: 'Amin Kalas',        team: 'sales'   },
+    'Andy Rose':         { id: 'andy',    name: 'Andy Rose',         team: 'service' },
+    'Russel Williams':   { id: 'russel',  name: 'Russel Williams',   team: 'service' },
+  },
+
+  MIN_TALK_SECS_FOR_AVG: 10,
+};
+
+
+// ─────────────────────────────────────────────────────────────
+// XLSX PARSING
+// Call reports use inlineStr for all string cells and have no
+// sharedStrings.xml — treat sharedStrings as optional.
+// ─────────────────────────────────────────────────────────────
+function parseXlsxBytes(xlsxBytes) {
+  try {
+    var zipEntries = Utilities.unzip(
+      Utilities.newBlob(xlsxBytes, 'application/zip', 'r.zip')
+    );
+
+    Logger.log('Zip entries: ' + zipEntries.map(function(f){ return f.getName(); }).join(', '));
+
+    var ssBlob = null;
+    for (var i = 0; i < zipEntries.length; i++) {
+      if (zipEntries[i].getName() === 'xl/sharedStrings.xml') { ssBlob = zipEntries[i]; break; }
+    }
+    // sharedStrings.xml is optional — call reports use inlineStr
+    var shared = ssBlob ? parseSharedStrings(ssBlob.getDataAsString()) : [];
+    Logger.log('Shared strings: ' + shared.length + (ssBlob ? '' : ' (none — using inlineStr path)'));
+
+    var worksheets = [];
+    for (var i = 0; i < zipEntries.length; i++) {
+      var name = zipEntries[i].getName();
+      if (name.match(/^xl\/worksheets\/sheet\d+\.xml$/)) worksheets.push(zipEntries[i]);
+    }
+    Logger.log('Worksheets found: ' + worksheets.map(function(f){ return f.getName(); }).join(', '));
+
+    for (var w = 0; w < worksheets.length; w++) {
+      var xml  = worksheets[w].getDataAsString();
+      var rows = parseSheet(xml, shared);
+      Logger.log(worksheets[w].getName() + ' — ' + rows.length + ' rows');
+
+      for (var r = 0; r < Math.min(rows.length, 15); r++) {
+        if (rows[r].join('|').indexOf('Call Direction') !== -1) {
+          Logger.log('Found "Call Direction" header on ' + worksheets[w].getName() + ' at row ' + r);
+          return rows;
+        }
+      }
+    }
+
+    Logger.log('No worksheet contained "Call Direction" header.');
+    return [];
+
+  } catch(e) {
+    Logger.log('parseXlsxBytes error: ' + e.message);
+    Logger.log(e.stack);
+    return [];
+  }
+}
+
+function parseSharedStrings(xml) {
+  var strings = [];
+  var blocks = xml.match(/<si>[\s\S]*?<\/si>/g) || [];
+  for (var i = 0; i < blocks.length; i++) {
+    var parts = blocks[i].match(/<t[^>]*>([^<]*)<\/t>/g) || [];
+    var text  = parts.map(function(t){ return t.replace(/<t[^>]*>/,'').replace(/<\/t>/,''); }).join('');
+    strings.push(text.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"'));
+  }
+  return strings;
+}
+
+function parseSheet(xml, shared) {
+  var rows = [];
+  var rowBlocks = xml.match(/<row[^>]*>[\s\S]*?<\/row>/g) || [];
+  for (var r = 0; r < rowBlocks.length; r++) {
+    var cells = rowBlocks[r].match(/<c [^>]*>[\s\S]*?<\/c>/g) || [];
+    var row   = [];
+    for (var c = 0; c < cells.length; c++) {
+      var ref  = cells[c].match(/r="([A-Z]+)\d+"/);
+      var col  = ref ? colIdx(ref[1]) : c;
+      while (row.length < col) row.push('');
+      var type = (cells[c].match(/t="([^"]+)"/) || [])[1] || '';
+      var val  = '';
+
+      if (type === 'inlineStr') {
+        var isMatch = cells[c].match(/<is>[\s\S]*?<t[^>]*>([^<]*)<\/t>[\s\S]*?<\/is>/);
+        val = isMatch ? isMatch[1] : '';
+      } else {
+        var vMatch = cells[c].match(/<v>([^<]*)<\/v>/);
+        var raw    = vMatch ? vMatch[1] : '';
+        if (raw !== '') val = (type === 's') ? (shared[parseInt(raw)] || '') : raw;
+      }
+
+      val = val.replace(/&amp;/g,'&').replace(/&lt;/g,'<')
+               .replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'");
+      row.push(val);
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
+function colIdx(letters) {
+  var n = 0;
+  for (var i = 0; i < letters.length; i++) n = n * 26 + letters.charCodeAt(i) - 64;
+  return n - 1;
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// CALL CLASSIFICATION
+//
+// Voicemail disposition rules:
+//   INBOUND, external (not Internal, not Voice Mail Access) → 'voicemail' (race-wide)
+//   OUTBOUND, external VM → 'placed' (agent placed a call that went to voicemail)
+//   Any VM with Internal or Voice Mail Access → 'internal' (skipped)
+//
+// Hash uses ext for placed/answered so each agent's call is distinct.
+// Hash omits ext for voicemail/missed so hunt-group duplicates collapse.
+// ─────────────────────────────────────────────────────────────
+function classifyCalls(data, knownHashes) {
+  var newLogRows        = [];
+  var duplicatesSkipped = 0;
+
+  var headerIdx = -1;
+  for (var i = 0; i < data.length; i++) {
+    if (data[i].join('|').indexOf('Call Direction') !== -1) { headerIdx = i; break; }
+  }
+  if (headerIdx === -1) {
+    Logger.log('ERROR: Header row not found.');
+    return { newLogRows:[], duplicatesSkipped:0 };
+  }
+
+  var headers = data[headerIdx].map(function(h){ return String(h).trim(); });
+  var dtCol   = findCol(headers, ['Origination Date']);
+  var extCol  = findCol(headers, ['Extension Description']);
+  var dirCol  = findCol(headers, ['Call Direction']);
+  var talkCol = findCol(headers, ['Talk Time']);
+  var durCol  = findCol(headers, ['Duration']);
+  var dispCol = findCol(headers, ['Call Disposition']);
+
+  Logger.log('Columns — dt:'+dtCol+' ext:'+extCol+' dir:'+dirCol+
+             ' talk:'+talkCol+' dur:'+durCol+' disp:'+dispCol);
+
+  var unrecognized = {};
+
+  for (var i = headerIdx + 1; i < data.length; i++) {
+    var row  = data[i];
+    var dir  = String(row[dirCol]  || '').trim().toUpperCase();
+    var disp = String(row[dispCol] || '').trim();
+    var ext  = String(row[extCol]  || '').trim();
+    var dt   = String(row[dtCol]   || '').trim();
+    var dur  = String(row[durCol]  || '0').trim();
+
+    if (dir !== 'INBOUND' && dir !== 'OUTBOUND') continue;
+
+    // ── 1. Classify ────────────────────────────────────────────
+    var category = null;
+    var talkSecs = parseFloat(row[talkCol] || '0') || 0;
+    var isVm     = disp.indexOf('Voice Mail') !== -1 || disp.indexOf('VM') !== -1;
+
+    if (isVm) {
+      var isInternal = disp.indexOf('Internal') !== -1 || disp.indexOf('Voice Mail Access') !== -1;
+      if (isInternal) {
+        category = 'internal';
+      } else if (dir === 'INBOUND') {
+        category = 'voicemail';   // race-wide deduction
+      } else {
+        category = 'placed';      // OUTBOUND external VM → agent placed a call that went to VM
+      }
+    } else if (disp.indexOf('Abandon') !== -1) {
+      category = 'missed';
+    } else if (disp.indexOf('Internal') !== -1) {
+      category = 'internal';
+    } else if (dir === 'OUTBOUND') {
+      category = 'placed';
+    } else if (dir === 'INBOUND' && disp.indexOf('Handled') !== -1) {
+      category = 'answered';
+    } else {
+      category = 'other';
+    }
+
+    // ── 2. Hash (after category) ───────────────────────────────
+    var hashInput = (category === 'voicemail' || category === 'missed')
+      ? [dt, dir, dur, disp].join('|')
+      : [dt, ext, dir, dur, disp].join('|');
+    var hash = sha256Short(hashInput);
+
+    if (knownHashes[hash]) { duplicatesSkipped++; continue; }
+
+    // ── 3. Skip unscored ───────────────────────────────────────
+    if (category === 'internal' || category === 'other') {
+      newLogRows.push([hash, 'skip', category, 0, dateOnly(dt), '']);
+      continue;
+    }
+
+    // ── 4. Identify agent (scored calls only) ─────────────────
+    var agentId = '';
+    if (category === 'placed' || category === 'answered') {
+      var cleanName = cleanExtName(ext);
+      if (!cleanName) continue;
+      var agentInfo = RACE_CONFIG.AGENT_MAP[cleanName];
+      if (!agentInfo) { unrecognized[cleanName] = true; continue; }
+      agentId = agentInfo.id;
+    }
+    // voicemail and missed are race-wide — agentId stays ''
+
+    var talkMin = Math.round((talkSecs / 60) * 10) / 10;
+    newLogRows.push([hash, agentId, category, talkMin, dateOnly(dt), '']);
+  }
+
+  if (Object.keys(unrecognized).length) {
+    Logger.log('Unrecognized agents: ' + Object.keys(unrecognized).join(', '));
+  }
+
+  return { newLogRows:newLogRows, duplicatesSkipped:duplicatesSkipped };
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// AGGREGATION
+// ─────────────────────────────────────────────────────────────
+function aggregateFromLog(logRows) {
+  var agents   = {};
+  var raceWide = { missed:0, voicemails:0 };
+
+  for (var name in RACE_CONFIG.AGENT_MAP) {
+    var info = RACE_CONFIG.AGENT_MAP[name];
+    if (!agents[info.id]) {
+      agents[info.id] = { id:info.id, name:info.name, team:info.team,
+                          placed:0, answered:0, talkMin:0, talkCalls:0 };
+    }
+  }
+
+  for (var i = 0; i < logRows.length; i++) {
+    var row      = logRows[i];
+    var agentId  = row[1];
+    var category = row[2];
+    var talkMin  = parseFloat(row[3]) || 0;
+
+    if (category === 'voicemail') { raceWide.voicemails++; continue; }
+    if (category === 'missed')    { raceWide.missed++;     continue; }
+    if (category === 'skip' || category === 'internal' || category === 'other') continue;
+
+    var s = agents[agentId];
+    if (!s) continue;
+
+    if (category === 'placed' || category === 'answered') {
+      if (category === 'placed') s.placed++;
+      else                       s.answered++;
+      s.talkMin += talkMin;
+      if (talkMin * 60 >= RACE_CONFIG.MIN_TALK_SECS_FOR_AVG) s.talkCalls++;
+    }
+  }
+
+  for (var id in agents) {
+    var s = agents[id];
+    s.talkMin = Math.round(s.talkMin * 10) / 10;
+    s.avgMin  = s.talkCalls > 0 ? Math.round((s.talkMin / s.talkCalls) * 100) / 100 : 0;
+  }
+
+  return { agents:agents, raceWide:raceWide };
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// RACE DATA WRITE
+// ─────────────────────────────────────────────────────────────
+function writeRaceData(sheet, totals) {
+  var HEADERS = ['AgentID','Name','Team','WL','UL','Term','Health','Auto','Fire',
+                 'Placed','Answered','Missed','Voicemail','TalkMin','AvgMin',
+                 'RaceWideMissed','RaceWideVoicemail','LastUpdated'];
+
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(HEADERS);
+    sheet.getRange(1,1,1,HEADERS.length).setFontWeight('bold')
+      .setBackground('#0a1628').setFontColor('#00d4ff');
+  }
+
+  var existing = {};
+  if (sheet.getLastRow() > 1) {
+    var ids = sheet.getRange(2,1,sheet.getLastRow()-1,1).getValues();
+    for (var i = 0; i < ids.length; i++) { if (ids[i][0]) existing[ids[i][0]] = i+2; }
+  }
+
+  var policyCache = {};
+  if (sheet.getLastRow() > 1) {
+    var pd = sheet.getRange(2,1,sheet.getLastRow()-1,9).getValues();
+    for (var i = 0; i < pd.length; i++) {
+      if (!pd[i][0]) continue;
+      policyCache[pd[i][0]] = { wl:pd[i][3]||0, ul:pd[i][4]||0, term:pd[i][5]||0,
+                                health:pd[i][6]||0, auto:pd[i][7]||0, fire:pd[i][8]||0 };
+    }
+  }
+
+  var now = Utilities.formatDate(new Date(), 'America/New_York', 'M/d/yyyy h:mm a');
+
+  for (var id in totals.agents) {
+    var s   = totals.agents[id];
+    var pol = policyCache[id] || {wl:0,ul:0,term:0,health:0,auto:0,fire:0};
+    var row = [s.id, s.name, s.team,
+               pol.wl, pol.ul, pol.term, pol.health, pol.auto, pol.fire,
+               s.placed, s.answered, 0, 0, s.talkMin, s.avgMin,
+               totals.raceWide.missed, totals.raceWide.voicemails, now];
+    if (existing[s.id]) {
+      sheet.getRange(existing[s.id], 1, 1, row.length).setValues([row]);
+    } else {
+      sheet.appendRow(row);
+    }
+  }
+  SpreadsheetApp.flush();
+  Logger.log('RaceData written: ' + Object.keys(totals.agents).length + ' agents.');
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// CALL LOG — dedup store
+// ─────────────────────────────────────────────────────────────
+var LOG_HEADERS = ['CallHash','AgentID','Category','TalkMin','Date','SubCategory'];
+
+function initLogSheet(sheet) {
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(LOG_HEADERS);
+    sheet.getRange(1,1,1,LOG_HEADERS.length).setFontWeight('bold')
+      .setBackground('#1a0a28').setFontColor('#a78bfa');
+    sheet.setFrozenRows(1);
+    sheet.hideSheet();
+  }
+}
+
+function loadKnownHashes(logSheet) {
+  initLogSheet(logSheet);
+  var hashes = {};
+  if (logSheet.getLastRow() < 2) return hashes;
+  var data = logSheet.getRange(2, 1, logSheet.getLastRow()-1, 1).getValues();
+  for (var i = 0; i < data.length; i++) { if (data[i][0]) hashes[data[i][0]] = true; }
+  return hashes;
+}
+
+function appendToLog(logSheet, newRows) {
+  if (!newRows.length) return;
+  logSheet.getRange(logSheet.getLastRow()+1, 1, newRows.length, newRows[0].length).setValues(newRows);
+  SpreadsheetApp.flush();
+}
+
+function getAllLogRows(logSheet) {
+  if (logSheet.getLastRow() < 2) return [];
+  return logSheet.getRange(2, 1, logSheet.getLastRow()-1, LOG_HEADERS.length).getValues();
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────
+function sha256Short(input) {
+  var raw = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, input, Utilities.Charset.UTF_8);
+  return raw.map(function(b){ return ('0'+(b & 0xFF).toString(16)).slice(-2); }).join('').slice(0, 16);
+}
+
+function dateOnly(dtStr) {
+  try {
+    var d = new Date(dtStr);
+    return Utilities.formatDate(d, 'America/New_York', 'yyyy-MM-dd');
+  } catch(e) { return dtStr.split(' ')[0] || dtStr; }
+}
+
+function cleanExtName(ext) {
+  if (!ext || ext === 'Not Applicable' || ext === 'Extension Description' ||
+      ext === 'Office Voicemail') return null;
+  return ext.replace(/_[A-Za-z0-9]{3,}$/i, '').replace(/_/g, ' ').trim();
+}
+
+function findCol(headers, keywords) {
+  for (var i = 0; i < headers.length; i++)
+    for (var k = 0; k < keywords.length; k++)
+      if (headers[i].indexOf(keywords[k]) !== -1) return i;
+  return -1;
+}
+
+function getOrCreateSheet(ss, name) {
+  return ss.getSheetByName(name) || ss.insertSheet(name);
+}

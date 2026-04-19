@@ -1,0 +1,721 @@
+/**
+ * ═══════════════════════════════════════════════════════════════
+ *  CALL REPORT PROCESSOR
+ *
+ *  Aggregates call stats from parsed rows and writes to the
+ *  Performance Tracking sheet and Voicemail Heatmap tab.
+ *  Called by UploadHandler.processCallUpload — not triggered by email.
+ *
+ *  Sheet IDs are read from Script Properties (set via the
+ *  dashboard Manage tab or directly in Apps Script Settings).
+ * ═══════════════════════════════════════════════════════════════
+ */
+
+var PROCESSOR_CONFIG = {
+  LOCAL_AREA_CODES:      ['503', '541', '458', '971'],
+  EXCLUDE_NUMBER:        '8552752572',
+  MIN_TALK_SECS_FOR_AVG: 10,
+  AGENT_MAP: {
+    'Ashley Foreman':    { id: 'ashley',  name: 'Ashley McEniry',    team: 'service' },
+    'Fiona Rodriguez':   { id: 'fiona',   name: 'Fiona Rodriguez',   team: 'service' },
+    'Jocelyn Hernandez': { id: 'jocelyn', name: 'Jocelyn Hernandez', team: 'service' },
+    'Joseph Underwood':  { id: 'joseph',  name: 'Joseph Underwood',  team: 'sales'   },
+    'Peyton Tooze':      { id: 'peyton',  name: 'Peyton Tooze',      team: 'sales'   },
+    'Susan Navarro':     { id: 'susan',   name: 'Susan Navarro',     team: 'sales'   },
+    'Tiffany Dabe':      { id: 'tiffany', name: 'Tiffany Dabe',      team: 'sales'   },
+    'Tracy Ankrah':      { id: 'tracy',   name: 'Tracy Ankrah',      team: 'service' },
+    'Amin Kalas':        { id: 'amin',    name: 'Amin Kalas',        team: 'sales'   },
+    'Andy Rose':         { id: 'andy',    name: 'Andy Rose',         team: 'service' },
+    'Russel Williams':   { id: 'russel',  name: 'Russel Williams',   team: 'service' },
+  },
+};
+
+var PERF_TABS = {
+  DAILY:   'Daily',
+  WEEKLY:  'Weekly',
+  MONTHLY: 'Monthly',
+  YEARLY:  'Yearly',
+  LOG:     'DailyLog',
+};
+
+var PERF_LOG_COLS = [
+  'LogKey','AgentID','AgentName','Team','Date',
+  'Year','Month','Week',
+  'Placed','Answered','Voicemails','Missed',
+  'TalkMin','AvgTalkMin','MaxCallMin','PeakVmSlot','LastUpdated'
+];
+
+function getRaceSheetId_P() {
+  return PropertiesService.getScriptProperties().getProperty('RACE_SHEET_ID')
+    || '1gfqzLbjNgt7KVvhGNETtBB6TN7qMZAK13R_yKh6RMHA';
+}
+function getPerfSheetId_P() {
+  return PropertiesService.getScriptProperties().getProperty('PERF_SHEET_ID')
+    || '1-3t8XAu-59NLOaLiWPxwYtkJfa7rs7JpGLMl52FPHiE';
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// AGGREGATE — parse rows into per-agent stats + race-wide counts
+// ─────────────────────────────────────────────────────────────
+function aggregateCallData(data) {
+  var headerIdx = -1;
+  for (var i = 0; i < data.length; i++) {
+    if (data[i].join('|').indexOf('Call Direction') !== -1) { headerIdx = i; break; }
+  }
+  if (headerIdx === -1) { Logger.log('aggregateCallData: header not found.'); return null; }
+
+  var headers  = data[headerIdx].map(function(h){ return String(h).trim(); });
+  var dtCol    = findCol_P(headers, ['Origination Date']);
+  var extCol   = findCol_P(headers, ['Extension Description']);
+  var dirCol   = findCol_P(headers, ['Call Direction']);
+  var partyCol = findCol_P(headers, ['Called/Calling']);
+  var talkCol  = findCol_P(headers, ['Talk Time']);
+  var durCol   = findCol_P(headers, ['Duration']);
+  var dispCol  = findCol_P(headers, ['Call Disposition']);
+
+  var people     = {};
+  var voicemails = [];
+  var abandoned  = [];
+  var reportDate = '';
+  var totalCalls = 0;
+  var raceWide   = { voicemails: 0, missed: 0, vmTimes: [], vmTimesByDate: {} };
+
+  for (var i = headerIdx + 1; i < data.length; i++) {
+    var row  = data[i];
+    if (!row || row.length < 5) continue;
+
+    var ext      = String(row[extCol]   || '').trim();
+    var dir      = String(row[dirCol]   || '').trim().toUpperCase();
+    var disp     = String(row[dispCol]  || '').trim();
+    var party    = String(row[partyCol] || '').trim();
+    var dt       = String(row[dtCol]    || '').trim();
+    var talkSecs = secsFromRaw_P(row[talkCol]);
+    var durSecs  = secsFromRaw_P(row[durCol]);
+
+    if (dir !== 'INBOUND' && dir !== 'OUTBOUND') continue;
+
+    if (!reportDate && dt) {
+      try {
+        var d = new Date(dt);
+        if (!isNaN(d.getTime())) {
+          reportDate = (d.getMonth()+1) + '/' + d.getDate() + '/' + d.getFullYear();
+        }
+      } catch(e) {}
+    }
+
+    var isVm = disp.indexOf('Voice Mail') !== -1 || disp.indexOf('VM') !== -1;
+    if (isVm) {
+      var isExternalVm = disp.indexOf('Internal') === -1 && disp.indexOf('Voice Mail Access') === -1;
+      if (isExternalVm && dir === 'INBOUND') {
+        // Inbound external VM → race-wide voicemail count + heatmap
+        voicemails.push(formatPhone_P(party));
+        raceWide.voicemails++;
+        if (dt) {
+          raceWide.vmTimes.push(dt);
+          var vmDate = extractDateOnly_P(dt);
+          if (vmDate) {
+            if (!raceWide.vmTimesByDate[vmDate]) raceWide.vmTimesByDate[vmDate] = [];
+            raceWide.vmTimesByDate[vmDate].push(dt);
+          }
+        }
+        continue;
+      }
+      if (!isExternalVm) continue;
+      // OUTBOUND external VM → fall through to count as placed for agent
+    }
+
+    if (disp.indexOf('Abandon') !== -1) {
+      abandoned.push(formatPhone_P(party));
+      raceWide.missed++;
+      continue;
+    }
+
+    if (disp.indexOf('Internal') !== -1) continue;
+    if (!ext || ext === 'Not Applicable' || ext === 'Office Voicemail') continue;
+
+    var cleanName = cleanExtName_P(ext);
+    if (!cleanName) continue;
+
+    if (!people[cleanName]) {
+      people[cleanName] = {
+        calls:0, inbound:0, outbound:0,
+        talkSecs:0, durSecs:0, maxDurSecs:0, talkCalls:0,
+        numbers:[], outOfArea:{}, placed:0, answered:0,
+      };
+    }
+    var p = people[cleanName];
+    p.calls++;
+    totalCalls++;
+    p.talkSecs += talkSecs;
+    p.durSecs  += durSecs;
+    if (durSecs > p.maxDurSecs) p.maxDurSecs = durSecs;
+    if (talkSecs >= PROCESSOR_CONFIG.MIN_TALK_SECS_FOR_AVG) p.talkCalls++;
+
+    if (dir === 'INBOUND') {
+      p.inbound++;
+      if (disp.indexOf('Handled') !== -1) p.answered++;
+    } else {
+      p.outbound++;
+      p.placed++;
+    }
+
+    p.numbers.push(normalizePhone_P(party));
+    var ac = areaCode_P(party);
+    if (ac && PROCESSOR_CONFIG.LOCAL_AREA_CODES.indexOf(ac) === -1) {
+      if (normalizePhone_P(party).indexOf(PROCESSOR_CONFIG.EXCLUDE_NUMBER) === -1) {
+        p.outOfArea[ac] = true;
+      }
+    }
+  }
+
+  return {
+    people:     people,
+    totalCalls: totalCalls,
+    reportDate: reportDate,
+    voicemails: voicemails,
+    abandoned:  abandoned,
+    raceWide:   raceWide,
+  };
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// WRITE TO RACE SHEET — update race-wide deduction columns only
+// ─────────────────────────────────────────────────────────────
+function writeToRaceSheet(aggregated) {
+  var ss        = SpreadsheetApp.openById(getRaceSheetId_P());
+  var raceSheet = ss.getSheetByName('RaceData');
+  if (!raceSheet) { Logger.log('RaceData sheet not found.'); return; }
+  var now = Utilities.formatDate(new Date(), 'America/New_York', 'M/d/yyyy h:mm a');
+  if (raceSheet.getLastRow() > 1) {
+    var numRows = raceSheet.getLastRow() - 1;
+    raceSheet.getRange(2, 16, numRows, 1).setValue(aggregated.raceWide.missed);
+    raceSheet.getRange(2, 17, numRows, 1).setValue(aggregated.raceWide.voicemails);
+    raceSheet.getRange(2, 18, numRows, 1).setValue(now);
+  }
+  SpreadsheetApp.flush();
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// WRITE TO PERFORMANCE SHEET
+// ─────────────────────────────────────────────────────────────
+function writeToPerformanceSheet(aggregated) {
+  var ss = SpreadsheetApp.openById(getPerfSheetId_P());
+
+  var logSheet     = getOrCreatePerfSheet(ss, PERF_TABS.LOG);
+  var dailySheet   = getOrCreatePerfSheet(ss, PERF_TABS.DAILY);
+  var weeklySheet  = getOrCreatePerfSheet(ss, PERF_TABS.WEEKLY);
+  var monthlySheet = getOrCreatePerfSheet(ss, PERF_TABS.MONTHLY);
+  var yearlySheet  = getOrCreatePerfSheet(ss, PERF_TABS.YEARLY);
+
+  initPerfLogSheet(logSheet);
+  initPerfDataSheet(dailySheet,   'Daily Call Performance');
+  initPerfDataSheet(weeklySheet,  'Weekly Call Performance');
+  initPerfDataSheet(monthlySheet, 'Monthly Call Performance');
+  initPerfDataSheet(yearlySheet,  'Yearly Call Performance');
+
+  // Write voicemail slot data for heatmap
+  var vmTimesByDate = aggregated.raceWide.vmTimesByDate || {};
+  var vmDates = Object.keys(vmTimesByDate);
+  if (vmDates.length > 0) {
+    for (var d = 0; d < vmDates.length; d++) {
+      writeVmSlotLog(ss, vmDates[d], vmTimesByDate[vmDates[d]]);
+    }
+  } else {
+    writeVmSlotLog(ss, aggregated.reportDate, aggregated.raceWide.vmTimes || []);
+  }
+
+  var reportDate = aggregated.reportDate;
+  var now        = Utilities.formatDate(new Date(), 'America/New_York', 'M/d/yyyy h:mm a');
+  var rDate      = new Date(reportDate);
+  var year       = rDate.getFullYear();
+  var month      = rDate.getMonth() + 1;
+  var weekNum    = getWeekNumber_P(rDate);
+  var peakSlot   = getPeakVmSlotIdx(aggregated.raceWide.vmTimes || []);
+
+  var existingLog    = loadPerfLog(logSheet);
+  var newLogRows     = [];
+  var updatedLogRows = {};
+
+  for (var cleanName in aggregated.people) {
+    var p         = aggregated.people[cleanName];
+    var agentInfo = PROCESSOR_CONFIG.AGENT_MAP[cleanName];
+    if (!agentInfo) continue;
+
+    var agentId   = agentInfo.id;
+    var agentName = agentInfo.name;
+    var team      = agentInfo.team;
+    var talkMin   = Math.round((p.talkSecs / 60) * 10) / 10;
+    var avgMin    = p.talkCalls > 0 ? Math.round((talkMin / p.talkCalls) * 100) / 100 : 0;
+    var maxMin    = Math.round((p.maxDurSecs / 60) * 100) / 100;
+    var logKey    = agentId + '|' + reportDate;
+
+    var logRow = [
+      logKey, agentId, agentName, team, reportDate,
+      year, month, weekNum,
+      p.placed, p.answered,
+      aggregated.raceWide.voicemails,
+      aggregated.raceWide.missed,
+      talkMin, avgMin, maxMin,
+      peakSlot, now,
+    ];
+
+    if (existingLog[logKey]) {
+      updatedLogRows[existingLog[logKey]] = logRow;
+    } else {
+      newLogRows.push(logRow);
+    }
+  }
+
+  if (newLogRows.length > 0) {
+    logSheet.getRange(logSheet.getLastRow()+1, 1, newLogRows.length, newLogRows[0].length)
+      .setValues(newLogRows);
+  }
+  for (var rowNum in updatedLogRows) {
+    var rd = updatedLogRows[rowNum];
+    logSheet.getRange(parseInt(rowNum), 1, 1, rd.length).setValues([rd]);
+  }
+  SpreadsheetApp.flush();
+  Logger.log('DailyLog updated: ' + newLogRows.length + ' new, ' +
+             Object.keys(updatedLogRows).length + ' updated.');
+
+  rebuildPerfViews(ss, logSheet, dailySheet, weeklySheet, monthlySheet, yearlySheet);
+}
+
+function extractDateOnly_P(dtStr) {
+  try {
+    var d = new Date(dtStr);
+    if (isNaN(d.getTime())) return null;
+    return (d.getMonth() + 1) + '/' + d.getDate() + '/' + d.getFullYear();
+  } catch(e) { return null; }
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// REBUILD PERFORMANCE VIEWS FROM DAILYLOG
+// ─────────────────────────────────────────────────────────────
+function rebuildPerfViews(ss, logSheet, dailySheet, weeklySheet, monthlySheet, yearlySheet) {
+  if (logSheet.getLastRow() < 2) return;
+
+  var allLog = logSheet.getRange(2, 1, logSheet.getLastRow()-1, 16).getValues();
+
+  function dateFromLogKey(logKey) {
+    var parts = String(logKey).split('|');
+    return parts.length > 1 ? parts[1] : '';
+  }
+
+  function normDate(d) {
+    var m = d.match(/^(\d+)\/(\d+)\/(\d+)$/);
+    if (!m) return d;
+    return m[3] + '-' + ('0'+m[1]).slice(-2) + '-' + ('0'+m[2]).slice(-2);
+  }
+
+  var mostRecentNorm = '', mostRecentDisplay = '';
+  for (var i = 0; i < allLog.length; i++) {
+    var d = dateFromLogKey(allLog[i][0]);
+    var norm = normDate(d);
+    if (norm > mostRecentNorm) { mostRecentNorm = norm; mostRecentDisplay = d; }
+  }
+
+  var byDay = {}, byWeek = {}, byMonth = {}, byYear = {};
+  var teamByDay = {}, teamByWeek = {}, teamByMonth = {}, teamByYear = {};
+
+  for (var i = 0; i < allLog.length; i++) {
+    var r         = allLog[i];
+    var logKey    = String(r[0]);
+    var agentId   = String(r[1]);
+    var agentName = String(r[2]);
+    var team      = String(r[3]);
+    var dateDisp  = dateFromLogKey(logKey);
+    var dateNorm  = normDate(dateDisp);
+    var yr        = String(r[5]);
+    var mo        = String(r[6]);
+    var wk        = String(r[7]);
+    var placed    = parseFloat(r[8])  || 0;
+    var answered  = parseFloat(r[9])  || 0;
+    var vm        = parseFloat(r[10]) || 0;
+    var missed    = parseFloat(r[11]) || 0;
+    var talkMin   = parseFloat(r[12]) || 0;
+    var avgMin    = parseFloat(r[13]) || 0;
+    var maxMin    = parseFloat(r[14]) || 0;
+    var peakSlot  = String(r[15] || '');
+
+    function accumulate(store, key, extra) {
+      if (!store[key]) store[key] = Object.assign(
+        { agentId:agentId, agentName:agentName, team:team,
+          placed:0, answered:0, vm:0, missed:0,
+          talkMin:0, maxMin:0, days:0,
+          talkMinForAvg:0, answeredForAvg:0,
+          storedAvgMin:0, _vmSet:false },
+        extra || {}
+      );
+      store[key].placed        += placed;
+      store[key].answered      += answered;
+      store[key].talkMin       += talkMin;
+      store[key].talkMinForAvg += talkMin;
+      store[key].answeredForAvg+= answered;
+      store[key].days++;
+      if (maxMin > store[key].maxMin) store[key].maxMin = maxMin;
+      if (!store[key]._vmSet) {
+        store[key].vm     = vm;
+        store[key].missed = missed;
+        store[key]._vmSet = true;
+      }
+    }
+
+    function accumTeam(store, key, extra) {
+      var isNew = !store[key];
+      if (isNew) store[key] = Object.assign(
+        { placed:0, answered:0, vm:0, missed:0,
+          talkMin:0, maxMin:0, days:0, peakVmSlot:'' }, extra || {}
+      );
+      store[key].placed   += placed;
+      store[key].answered += answered;
+      store[key].talkMin  += talkMin;
+      store[key].days++;
+      if (maxMin > store[key].maxMin) store[key].maxMin = maxMin;
+      if (isNew) {
+        store[key].vm         = vm;
+        store[key].missed     = missed;
+        store[key].peakVmSlot = peakSlot !== '' ? slotLabel(parseInt(peakSlot)) : '';
+      }
+    }
+
+    if (dateNorm === mostRecentNorm) {
+      accumulate(byDay, agentId+'|'+dateNorm, { date:dateDisp, storedAvgMin:avgMin });
+      accumTeam(teamByDay, dateNorm, { date:dateDisp });
+    }
+
+    accumulate(byWeek,  agentId+'|'+yr+'|W'+wk, { yr:yr, wk:wk });
+    accumulate(byMonth, agentId+'|'+yr+'|'+mo,  { yr:yr, mo:mo });
+    accumulate(byYear,  agentId+'|'+yr,          { yr:yr });
+    accumTeam(teamByWeek,  yr+'|W'+wk, { yr:yr, wk:wk });
+    accumTeam(teamByMonth, yr+'|'+mo,  { yr:yr, mo:mo });
+    accumTeam(teamByYear,  yr,          { yr:yr });
+  }
+
+  writePerfView(dailySheet,   'Daily',   byDay,   teamByDay,   'date');
+  writePerfView(weeklySheet,  'Weekly',  byWeek,  teamByWeek,  'week');
+  writePerfView(monthlySheet, 'Monthly', byMonth, teamByMonth, 'month');
+  writePerfView(yearlySheet,  'Yearly',  byYear,  teamByYear,  'year');
+
+  var heatmapSheet = getOrCreatePerfSheet(ss, 'Voicemail Heatmap');
+  buildVmHeatmap(heatmapSheet, allLog);
+
+  Logger.log('Performance views rebuilt. Daily shows: ' + mostRecentDisplay);
+}
+
+function writePerfView(sheet, label, agentData, teamData, periodType) {
+  if (sheet.getLastRow() > 2) sheet.deleteRows(3, sheet.getLastRow() - 2);
+
+  var COLS = ['Period','Agent','Team','Placed','Answered','Voicemails (team)',
+              'Missed (team)','Talk Min','Avg Talk Min','Max Call Min'];
+
+  if (sheet.getLastRow() < 2) {
+    sheet.getRange(2, 1, 1, COLS.length).setValues([COLS])
+      .setBackground('#132744').setFontColor('#00d4ff').setFontWeight('bold');
+  }
+
+  var rows = [];
+  var keys = Object.keys(agentData).sort(function(a,b){ return b.localeCompare(a); });
+
+  for (var i = 0; i < keys.length; i++) {
+    var d      = agentData[keys[i]];
+    var period = getPeriodLabel(d, periodType);
+    var avgTalk = periodType === 'date'
+      ? Math.round((d.storedAvgMin || 0) * 100) / 100
+      : (d.answeredForAvg > 0 ? Math.round((d.talkMinForAvg / d.answeredForAvg) * 100) / 100 : 0);
+    rows.push([period, d.agentName, d.team,
+               d.placed, d.answered, '', '',
+               Math.round(d.talkMin * 10) / 10,
+               avgTalk,
+               Math.round(d.maxMin * 100) / 100]);
+  }
+
+  var teamKeys = Object.keys(teamData).sort(function(a,b){ return b.localeCompare(a); });
+  for (var j = 0; j < teamKeys.length; j++) {
+    var td     = teamData[teamKeys[j]];
+    var period = getPeriodLabel(td, periodType);
+    rows.push([period, '— TEAM TOTAL —', '',
+               td.placed, td.answered,
+               td.vm + (td.peakVmSlot ? ' (peak: ' + td.peakVmSlot + ')' : ''),
+               td.missed,
+               Math.round(td.talkMin * 10) / 10, '', '']);
+  }
+
+  if (!rows.length) return;
+  sheet.getRange(3, 1, rows.length, COLS.length).setValues(rows);
+
+  for (var r = 0; r < rows.length; r++) {
+    var range = sheet.getRange(r + 3, 1, 1, COLS.length);
+    if (rows[r][1] === '— TEAM TOTAL —') {
+      range.setBackground('#132744').setFontColor('#00d4ff').setFontWeight('bold');
+    } else {
+      range.setBackground(r % 2 === 0 ? '#f8f9fa' : '#ffffff')
+           .setFontColor('#333333').setFontWeight('normal');
+    }
+  }
+  sheet.autoResizeColumns(1, COLS.length);
+}
+
+function getPeriodLabel(d, periodType) {
+  if (periodType === 'date') {
+    if (!d.date) return '';
+    var parts = String(d.date).split('-');
+    if (parts.length === 3) return parseInt(parts[1]) + '/' + parseInt(parts[2]) + '/' + parts[0];
+    return d.date;
+  }
+  if (periodType === 'week')  return (d.yr || '') + ' Week ' + (d.wk || '');
+  if (periodType === 'month') {
+    var months = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return months[parseInt(d.mo)] + ' ' + (d.yr || '');
+  }
+  if (periodType === 'year') return d.yr || '';
+  return '';
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// VOICEMAIL HEATMAP
+// ─────────────────────────────────────────────────────────────
+function vmTimeToSlot(dtStr) {
+  var m = String(dtStr).match(/(\d+):(\d+):\d+\s*(AM|PM)/i);
+  if (!m) return -1;
+  var h    = parseInt(m[1]);
+  var mi   = parseInt(m[2]);
+  var ampm = m[3].toUpperCase();
+  if (ampm === 'PM' && h !== 12) h += 12;
+  if (ampm === 'AM' && h === 12) h = 0;
+  return h * 2 + (mi >= 30 ? 1 : 0);
+}
+
+function slotLabel(idx) {
+  var h    = Math.floor(idx / 2);
+  var m    = idx % 2 === 0 ? '00' : '30';
+  var lh   = h % 12 || 12;
+  var ampm = h < 12 ? 'AM' : 'PM';
+  return lh + ':' + m + ' ' + ampm;
+}
+
+function getPeakVmSlotIdx(vmTimes) {
+  if (!vmTimes || vmTimes.length === 0) return '';
+  var counts = {};
+  for (var i = 0; i < vmTimes.length; i++) {
+    var slot = vmTimeToSlot(vmTimes[i]);
+    if (slot >= 0) counts[slot] = (counts[slot] || 0) + 1;
+  }
+  var peakSlot = -1, peakCount = 0;
+  for (var s in counts) {
+    if (counts[s] > peakCount) { peakCount = counts[s]; peakSlot = parseInt(s); }
+  }
+  return peakSlot >= 0 ? peakSlot : '';
+}
+
+function writeVmSlotLog(ss, reportDate, vmTimes) {
+  var slotLog = getOrCreatePerfSheet(ss, 'VmSlotLog');
+
+  if (slotLog.getLastRow() === 0) {
+    var slotHeaders = ['Date'];
+    for (var i = 0; i < 48; i++) slotHeaders.push('slot_' + i);
+    slotLog.getRange(1, 1, 1, 49).setValues([slotHeaders])
+      .setNumberFormat('@')
+      .setBackground('#1a0a28').setFontColor('#a78bfa').setFontWeight('bold');
+    slotLog.setFrozenRows(1);
+    slotLog.hideSheet();
+  }
+
+  var counts = new Array(48).fill(0);
+  for (var i = 0; i < vmTimes.length; i++) {
+    var slot = vmTimeToSlot(vmTimes[i]);
+    if (slot >= 0 && slot < 48) counts[slot]++;
+  }
+
+  var existingRow = -1;
+  if (slotLog.getLastRow() > 1) {
+    var dates = slotLog.getRange(2, 1, slotLog.getLastRow()-1, 1).getValues();
+    for (var i = 0; i < dates.length; i++) {
+      if (String(dates[i][0]) === reportDate) { existingRow = i + 2; break; }
+    }
+  }
+  var row = ["'" + reportDate].concat(counts);
+  if (existingRow > 0) {
+    slotLog.getRange(existingRow, 1, 1, 49).setValues([row]);
+  } else {
+    slotLog.appendRow(row);
+  }
+  SpreadsheetApp.flush();
+  Logger.log('VmSlotLog written for ' + reportDate + ': ' +
+             counts.reduce(function(s,v){ return s+v; }, 0) + ' voicemails.');
+}
+
+function buildVmHeatmap(sheet, allLog) {
+  sheet.clearContents();
+
+  var slotLabels = [];
+  for (var i = 0; i < 48; i++) {
+    var h = Math.floor(i / 2);
+    var m = i % 2 === 0 ? '00' : '30';
+    var lh = h % 12 || 12;
+    var ap = h < 12 ? 'AM' : 'PM';
+    slotLabels.push(lh + ':' + m + ' ' + ap);
+  }
+  var headers = ['Date'].concat(slotLabels).concat(['Total']);
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers])
+    .setBackground('#0a1628').setFontColor('#00d4ff').setFontWeight('bold');
+  sheet.setFrozenRows(1);
+  sheet.getRange(1, 2, 1, 48).setNumberFormat('@');
+
+  var logSs   = sheet.getParent();
+  var slotLog = logSs.getSheetByName('VmSlotLog');
+  if (!slotLog || slotLog.getLastRow() < 2) {
+    sheet.getRange(2, 1).setValue('No voicemail slot data yet.');
+    sheet.autoResizeColumns(1, 1);
+    return;
+  }
+
+  var slotData = slotLog.getRange(2, 1, slotLog.getLastRow()-1, 49).getValues();
+  slotData.sort(function(a,b){ return String(b[0]).localeCompare(String(a[0])); });
+
+  var dataRows = [];
+  for (var i = 0; i < slotData.length; i++) {
+    var counts = [];
+    for (var j = 1; j <= 48; j++) counts.push(parseInt(slotData[i][j]) || 0);
+    var total = counts.reduce(function(s,v){ return s+v; }, 0);
+    var dateDisplay = String(slotData[i][0]).replace(/^'/, '');
+    dataRows.push([dateDisplay].concat(counts).concat([total]));
+  }
+
+  if (!dataRows.length) return;
+
+  sheet.getRange(2, 1, dataRows.length, headers.length).setValues(dataRows);
+
+  var maxCount = 0;
+  for (var i = 0; i < dataRows.length; i++) {
+    for (var j = 1; j <= 48; j++) {
+      var v = parseInt(dataRows[i][j]) || 0;
+      if (v > maxCount) maxCount = v;
+    }
+  }
+
+  for (var i = 0; i < dataRows.length; i++) {
+    sheet.getRange(i+2, 1).setBackground(i%2===0 ? '#f0f0f0' : '#ffffff').setFontWeight('bold');
+    sheet.getRange(i+2, 50).setBackground('#132744').setFontColor('#00d4ff').setFontWeight('bold');
+    for (var j = 1; j <= 48; j++) {
+      var v    = parseInt(dataRows[i][j]) || 0;
+      var cell = sheet.getRange(i+2, j+1);
+      if (v === 0) {
+        cell.setBackground('#f8f9fa').setFontColor('#cccccc');
+      } else {
+        var intensity = maxCount > 0 ? v / maxCount : 0;
+        var g   = Math.round(255 - intensity * 180);
+        var b   = Math.round(255 - intensity * 220);
+        var hex = '#ff' + ('0'+g.toString(16)).slice(-2) + ('0'+b.toString(16)).slice(-2);
+        cell.setBackground(hex).setFontColor('#333333');
+      }
+    }
+  }
+
+  sheet.autoResizeColumn(1);
+  for (var j = 2; j <= 49; j++) sheet.setColumnWidth(j, 42);
+  sheet.setColumnWidth(50, 50);
+  Logger.log('Voicemail Heatmap rebuilt: ' + dataRows.length + ' dates.');
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// PERFORMANCE SHEET HELPERS
+// ─────────────────────────────────────────────────────────────
+function initPerfLogSheet(sheet) {
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(PERF_LOG_COLS);
+    sheet.getRange(1,1,1,PERF_LOG_COLS.length)
+      .setFontWeight('bold').setBackground('#1a0a28').setFontColor('#a78bfa');
+    sheet.setFrozenRows(1);
+    sheet.hideSheet();
+  }
+}
+
+function initPerfDataSheet(sheet, title) {
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1,1,1,10).merge()
+      .setValue(title).setBackground('#0a1628').setFontColor('#00d4ff')
+      .setFontWeight('bold').setFontSize(13);
+    var COLS = ['Period','Agent','Team','Placed','Answered','Voicemails',
+                'Missed','Talk Min','Avg Talk Min','Max Call Min'];
+    sheet.getRange(2,1,1,COLS.length).setValues([COLS])
+      .setBackground('#132744').setFontColor('#00d4ff').setFontWeight('bold');
+    sheet.setFrozenRows(2);
+  }
+}
+
+function loadPerfLog(logSheet) {
+  var map = {};
+  if (logSheet.getLastRow() < 2) return map;
+  var data = logSheet.getRange(2,1,logSheet.getLastRow()-1,1).getValues();
+  for (var i = 0; i < data.length; i++) {
+    if (data[i][0]) map[String(data[i][0])] = i + 2;
+  }
+  return map;
+}
+
+function getOrCreatePerfSheet(ss, name) {
+  return ss.getSheetByName(name) || ss.insertSheet(name);
+}
+
+function getWeekNumber_P(d) {
+  var onejan = new Date(d.getFullYear(), 0, 1);
+  return Math.ceil((((d - onejan) / 86400000) + onejan.getDay() + 1) / 7);
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// GENERAL HELPERS
+// ─────────────────────────────────────────────────────────────
+function secsFromRaw_P(val) {
+  if (!val) return 0;
+  var s = String(val).trim();
+  var parts = s.split(':');
+  if (parts.length === 3) return parseInt(parts[0])*3600 + parseInt(parts[1])*60 + parseInt(parts[2]);
+  var n = parseFloat(s);
+  return isNaN(n) ? 0 : Math.round(n);
+}
+
+function fmtSecs_P(secs) {
+  var h = Math.floor(secs / 3600);
+  var m = Math.floor((secs % 3600) / 60);
+  var s = Math.floor(secs % 60);
+  return pad2(h) + ':' + pad2(m) + ':' + pad2(s);
+}
+
+function pad2(n) { return String(n).padStart(2,'0'); }
+
+function cleanExtName_P(ext) {
+  if (!ext || ext === 'Not Applicable' || ext === 'Extension Description' ||
+      ext === 'Office Voicemail') return null;
+  return ext.replace(/_[A-Za-z0-9]{3,}$/i, '').replace(/_/g, ' ').trim();
+}
+
+function findCol_P(headers, keywords) {
+  for (var i = 0; i < headers.length; i++)
+    for (var k = 0; k < keywords.length; k++)
+      if (headers[i].indexOf(keywords[k]) !== -1) return i;
+  return -1;
+}
+
+function normalizePhone_P(num) {
+  var d = String(num).replace(/\D/g,'');
+  return (d.startsWith('1') && d.length === 11) ? d.slice(1) : d;
+}
+
+function formatPhone_P(num) {
+  var n = normalizePhone_P(num);
+  if (n.length === 10) return n.slice(0,3)+'-'+n.slice(3,6)+'-'+n.slice(6);
+  return num;
+}
+
+function areaCode_P(num) {
+  var n = normalizePhone_P(num);
+  return n.length >= 10 ? n.slice(0,3) : null;
+}

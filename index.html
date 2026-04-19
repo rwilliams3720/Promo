@@ -283,12 +283,7 @@
 
   <div class="sheets-box">
     <h3>&#128279; Google Sheets Live Sync</h3>
-    <p>Paste your published Google Sheet JSON URL here. Your Apps Script (included in this package as <code style="font-size:12px;color:var(--accent)">gas/EmailParser.gs</code>) monitors your daily email reports and writes data to the sheet automatically. The race refreshes on the interval you set.</p>
-    <div class="cfg-row">
-      <span class="cfg-label">Sheet JSON URL</span>
-      <input type="text" class="cfg-input" id="sheetsUrl" placeholder="https://docs.google.com/spreadsheets/d/YOUR_ID/gviz/tq?tqx=out:json">
-      <button class="cfg-btn" onclick="connectSheets()">Connect &#8594;</button>
-    </div>
+    <p>Data is read automatically from the configured Google Sheet. Upload reports on the Manage tab to update race data.</p>
     <div class="cfg-row">
       <span class="cfg-label">Auto-refresh</span>
       <select class="cfg-input" id="refreshInterval" style="flex:unset;min-width:unset;width:160px;">
@@ -297,8 +292,32 @@
         <option value="900">Every 15 min</option>
         <option value="3600">Every hour</option>
       </select>
+      <button class="cfg-btn" onclick="applyRefresh()">Apply</button>
     </div>
     <div style="font-size:12px;margin-top:6px;" id="configStatus"></div>
+    <!-- hidden fields kept for renderAdmin compatibility -->
+    <input type="hidden" id="sheetsUrl" value="/api/sheet">
+  </div>
+
+  <div class="sheets-box" style="margin-top:16px;border-color:rgba(251,191,36,0.3);background:rgba(251,191,36,0.04);">
+    <h3>&#9881; Sheet ID Configuration</h3>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:14px;">Update the Google Sheet IDs used for race data and call performance tracking. Both IDs are stored in your Apps Script project and take effect immediately on the next upload.</p>
+    <div class="cfg-row" style="margin-bottom:10px;">
+      <span class="cfg-label">Race Data Sheet ID</span>
+      <input type="text" class="cfg-input" id="raceSheetIdInput" placeholder="Paste Sheet ID here" style="font-family:'DM Mono',monospace;font-size:12px;">
+    </div>
+    <div class="cfg-row" style="margin-bottom:14px;">
+      <span class="cfg-label">Performance Sheet ID</span>
+      <input type="text" class="cfg-input" id="perfSheetIdInput" placeholder="Paste Sheet ID here" style="font-family:'DM Mono',monospace;font-size:12px;">
+    </div>
+    <div style="background:rgba(255,77,109,0.1);border:1px solid rgba(255,77,109,0.35);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--danger);">
+      &#9888; <strong>Caution:</strong> Changing the Sheet ID will redirect all data reads and writes to the new sheet immediately. Ensure the new sheet has the correct structure (RaceData, CallLog, SalesLog, HistoricalWins, RaceConfig tabs) before updating.
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;">
+      <button class="cfg-btn" style="background:rgba(251,191,36,0.15);border-color:rgba(251,191,36,0.5);color:var(--warn);" onclick="confirmSheetIdUpdate()">Update Sheet IDs &#8594;</button>
+      <button class="cfg-btn" onclick="loadCurrentSheetIds()" style="background:transparent;border-color:var(--border);">Load Current</button>
+      <span id="sheetIdStatus" style="font-size:12px;"></span>
+    </div>
   </div>
 
   <div class="admin-grid">
@@ -394,7 +413,9 @@ let DATA={
   }
 };
 try{const s=localStorage.getItem('brd3');if(s)DATA=JSON.parse(s);}catch(e){}
-DATA.sheetUrl='/api/sheet';
+// Always use the proxy — append custom sheet ID if stored
+var _customSid=localStorage.getItem('brd_race_sheet_id')||'';
+DATA.sheetUrl='/api/sheet'+(_customSid?'?sid='+encodeURIComponent(_customSid):'');
 
 function calcScore(id){
   const ag=DATA.agents.find(a=>a.id===id);
@@ -592,22 +613,19 @@ function renderAdmin(){
     return`<tr><td style="font-size:11px;color:var(--muted);white-space:nowrap;">${a.name.split(' ')[0]}</td>${['placed','answered','missed','voicemail','talkMin','avgMin'].map(k=>`<td style="font-family:'DM Mono',monospace;font-size:12px;text-align:right;padding:6px 5px;">${p[k]||0}</td>`).join('')}</tr>`;
   }).join('');
 
-  document.getElementById('sheetsUrl').value=DATA.sheetUrl||'';
   document.getElementById('refreshInterval').value=DATA.refreshSecs||300;
 }
 
 // ═════ SHEETS LIVE SYNC ═════
 let timer=null;
-function connectSheets(){
-  const url=document.getElementById('sheetsUrl').value.trim();
+function applyRefresh(){
   const secs=parseInt(document.getElementById('refreshInterval').value);
-  if(!url){document.getElementById('configStatus').innerHTML='<span style="color:var(--danger)">Enter a URL first.</span>';return;}
-  DATA.sheetUrl=url;DATA.refreshSecs=secs;saveLocal();
-  document.getElementById('configStatus').innerHTML='<span style="color:var(--warn)">Connecting...</span>';
-  fetchSheet(url);
+  DATA.refreshSecs=secs;saveLocal();
   if(timer)clearInterval(timer);
-  timer=setInterval(()=>fetchSheet(url),secs*1000);
+  timer=setInterval(()=>fetchSheet(DATA.sheetUrl),secs*1000);
+  document.getElementById('configStatus').innerHTML='<span style="color:var(--accent2)">Auto-refresh updated.</span>';
 }
+function connectSheets(){applyRefresh();}
 function fetchSheet(url){
   fetch(url).then(r=>r.text()).then(txt=>{
     const json=JSON.parse(txt.replace(/^[^(]*\(/,'').replace(/\);\s*$/,''));
@@ -662,8 +680,7 @@ function setTeam(id,team){
   }).then(r=>r.json()).then(result=>{
     if(result.success){
       if(st)st.innerHTML='<span style="color:var(--accent2);font-size:12px">&#10003; Saved</span>';
-      // Re-read sheet to confirm value persisted
-      if(DATA.sheetUrl)setTimeout(()=>fetchSheet(DATA.sheetUrl),1500);
+      setTimeout(()=>fetchSheet(DATA.sheetUrl),1500);
     }else{
       if(st)st.innerHTML='<span style="color:var(--danger);font-size:12px">&#10007; '+(result.error||'Save failed')+'</span>';
     }
@@ -765,8 +782,58 @@ function renderHistory(rows){
 
   el.innerHTML=html||'<div style="color:var(--muted);text-align:center;padding:40px 0">No records found.</div>';
 }
-if(DATA.sheetUrl){fetchSheet(DATA.sheetUrl);timer=setInterval(()=>fetchSheet(DATA.sheetUrl),(DATA.refreshSecs||300)*1000);}
+fetchSheet(DATA.sheetUrl);
+timer=setInterval(()=>fetchSheet(DATA.sheetUrl),(DATA.refreshSecs||300)*1000);
 render();
+
+// ═════ SHEET ID MANAGEMENT ═════
+function loadCurrentSheetIds(){
+  var st=document.getElementById('sheetIdStatus');
+  st.innerHTML='<span style="color:var(--muted)">Loading...</span>';
+  fetch('/api/history?action=getconfig')
+    .then(r=>r.json())
+    .then(cfg=>{
+      if(cfg.raceSheetId)document.getElementById('raceSheetIdInput').value=cfg.raceSheetId;
+      if(cfg.perfSheetId)document.getElementById('perfSheetIdInput').value=cfg.perfSheetId;
+      st.innerHTML='<span style="color:var(--accent2)">&#10003; Loaded</span>';
+    })
+    .catch(err=>{ st.innerHTML='<span style="color:var(--danger)">Error: '+err.message+'</span>'; });
+}
+function confirmSheetIdUpdate(){
+  var raceId=document.getElementById('raceSheetIdInput').value.trim();
+  var perfId=document.getElementById('perfSheetIdInput').value.trim();
+  if(!raceId&&!perfId){
+    document.getElementById('sheetIdStatus').innerHTML='<span style="color:var(--danger)">Enter at least one Sheet ID.</span>';
+    return;
+  }
+  var msg='Update Sheet IDs?\n\n';
+  if(raceId)msg+='Race Data Sheet: '+raceId+'\n';
+  if(perfId)msg+='Performance Sheet: '+perfId+'\n';
+  msg+='\nThis takes effect immediately. Make sure the new sheet has the correct structure.';
+  if(!confirm(msg))return;
+  var st=document.getElementById('sheetIdStatus');
+  st.innerHTML='<span style="color:var(--warn)">Saving...</span>';
+  fetch('/api/upload',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({fileType:'setsheetid',raceSheetId:raceId,perfSheetId:perfId})
+  }).then(r=>r.json()).then(result=>{
+    if(result.success){
+      if(raceId){
+        localStorage.setItem('brd_race_sheet_id',raceId);
+        DATA.sheetUrl='/api/sheet?sid='+encodeURIComponent(raceId);
+        if(timer)clearInterval(timer);
+        fetchSheet(DATA.sheetUrl);
+        timer=setInterval(()=>fetchSheet(DATA.sheetUrl),(DATA.refreshSecs||300)*1000);
+      }
+      st.innerHTML='<span style="color:var(--accent2)">&#10003; Updated successfully</span>';
+    }else{
+      st.innerHTML='<span style="color:var(--danger)">&#10007; '+(result.error||'Update failed')+'</span>';
+    }
+  }).catch(err=>{
+    st.innerHTML='<span style="color:var(--danger)">&#10007; '+err.message+'</span>';
+  });
+}
 
 // ═════ FILE UPLOAD ═════
 document.getElementById('callReportFile').addEventListener('change',function(e){

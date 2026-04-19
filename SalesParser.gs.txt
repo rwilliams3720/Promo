@@ -1,0 +1,289 @@
+/**
+ * ═══════════════════════════════════════════════════════════════
+ *  BOAT RACE — Sales Report Parser
+ *  Parses "Admin All Product Sales" xls/xlsx upload.
+ *  Called by UploadHandler.processSalesUpload — not triggered by email.
+ *
+ *  PRIVACY:  Premium amounts are never stored. Only agent ID,
+ *            policy category, and date are written.
+ *
+ *  DEDUP:    SHA-256 of WrittenBy + PolicyName + Product + WrittenDate.
+ *            Re-uploading the same file never double-counts.
+ * ═══════════════════════════════════════════════════════════════
+ */
+
+var SALES_CONFIG = {
+  RACE_SHEET: 'RaceData',
+  LOG_SHEET:  'SalesLog',
+
+  AGENT_MAP: {
+    'joseph Underwood':  { id: 'joseph',  team: 'sales'   },
+    'Joseph Underwood':  { id: 'joseph',  team: 'sales'   },
+    'Susan Navarro':     { id: 'susan',   team: 'sales'   },
+    'Peyton Tooze':      { id: 'peyton',  team: 'sales'   },
+    'Tiffany Dabe':      { id: 'tiffany', team: 'sales'   },
+    'Amin Kalas':        { id: 'amin',    team: 'sales'   },
+    'Ashley McEniry':    { id: 'ashley',  team: 'service' },
+    'Ashley Foreman':    { id: 'ashley',  team: 'service' },
+    'Fiona Rodriguez':   { id: 'fiona',   team: 'service' },
+    'FIONA RODRIGUEZ':   { id: 'fiona',   team: 'service' },
+    'Jocelyn Hernandez': { id: 'jocelyn', team: 'service' },
+    'Tracy Ankrah':      { id: 'tracy',   team: 'service' },
+    'Andy Rose':         { id: 'andy',    team: 'service' },
+    'Russel Williams':   { id: 'russel',  team: 'service' },
+  },
+};
+
+
+// ─────────────────────────────────────────────────────────────
+// CLASSIFY — generate dedup hash and map to race category
+// PRIVACY: Customer names used only for hashing, never stored.
+// ─────────────────────────────────────────────────────────────
+function classifySales(data, knownHashes) {
+  var newLogRows        = [];
+  var duplicatesSkipped = 0;
+
+  var headerIdx = -1;
+  for (var i = 0; i < data.length; i++) {
+    var rowStr = data[i].join('|');
+    if (rowStr.indexOf('Product') !== -1 && rowStr.indexOf('Written By') !== -1) {
+      headerIdx = i; break;
+    }
+  }
+  if (headerIdx === -1) {
+    Logger.log('ERROR: Header row not found in sales report.');
+    for (var r = 0; r < Math.min(3, data.length); r++) Logger.log('  ' + data[r].slice(0,6).join(' | '));
+    return { newLogRows:[], duplicatesSkipped:0 };
+  }
+  Logger.log('Header at row: ' + headerIdx);
+
+  var headers    = data[headerIdx].map(function(h){ return String(h).trim(); });
+  var productCol = findSalesCol(headers, ['Product']);
+  var nameCol    = findSalesCol(headers, ['Policy Name']);
+  var agentCol   = findSalesCol(headers, ['Written By']);
+  var dateCol    = findSalesCol(headers, ['Written Date']);
+  var typeCol    = findSalesCol(headers, ['Policy Type']);
+  Logger.log('Cols — product:'+productCol+' name:'+nameCol+' agent:'+agentCol+' date:'+dateCol+' type:'+typeCol);
+
+  var unrecognized = {};
+
+  for (var i = headerIdx + 1; i < data.length; i++) {
+    var row     = data[i];
+    var product = String(row[productCol] || '').trim();
+    var polName = String(row[nameCol]    || '').trim();
+    var agent   = String(row[agentCol]   || '').trim();
+    var date    = String(row[dateCol]    || '').trim();
+    var polType = String(row[typeCol]    || '').trim();
+
+    if (!product || !agent || !date) continue;
+
+    var hashInput = [agent, polName, product, date].join('|');
+    var hash      = salesSha256Short(hashInput);
+
+    if (knownHashes[hash]) { duplicatesSkipped++; continue; }
+
+    var category = mapPolicyCategory(product, polType);
+    if (category === 'other') {
+      newLogRows.push([hash, 'skip', 'other', salesDateOnly(date), '']);
+      continue;
+    }
+
+    var agentInfo = SALES_CONFIG.AGENT_MAP[agent];
+    if (!agentInfo) {
+      var agentLower = agent.toLowerCase();
+      for (var key in SALES_CONFIG.AGENT_MAP) {
+        if (key.toLowerCase() === agentLower) { agentInfo = SALES_CONFIG.AGENT_MAP[key]; break; }
+      }
+    }
+    if (!agentInfo) { unrecognized[agent] = true; continue; }
+
+    // Only hash, agentId, category, date stored — no customer names or amounts
+    newLogRows.push([hash, agentInfo.id, category, salesDateOnly(date), '']);
+  }
+
+  if (Object.keys(unrecognized).length) {
+    Logger.log('Unrecognized agents: ' + Object.keys(unrecognized).join(', '));
+  }
+
+  return { newLogRows:newLogRows, duplicatesSkipped:duplicatesSkipped };
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// AGGREGATE — sum policy counts per agent from SalesLog
+// ─────────────────────────────────────────────────────────────
+function aggregateSalesFromLog(logRows) {
+  var agents = {};
+
+  for (var name in SALES_CONFIG.AGENT_MAP) {
+    var info = SALES_CONFIG.AGENT_MAP[name];
+    if (!agents[info.id]) {
+      agents[info.id] = { id:info.id, wl:0, ul:0, term:0, health:0, auto:0, fire:0 };
+    }
+  }
+
+  for (var i = 0; i < logRows.length; i++) {
+    var row      = logRows[i];
+    var agentId  = String(row[1]);
+    var category = String(row[2]);
+
+    if (category === 'other' || category === 'skip' || agentId === 'skip') continue;
+
+    var s = agents[agentId];
+    if (!s) continue;
+
+    if (category === 'wl')     s.wl++;
+    else if (category === 'ul')     s.ul++;
+    else if (category === 'term')   s.term++;
+    else if (category === 'health') s.health++;
+    else if (category === 'auto')   s.auto++;
+    else if (category === 'fire')   s.fire++;
+  }
+
+  return agents;
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// WRITE — update policy columns D-I in RaceData
+// Preserves all other columns (phone stats, timestamps, etc.)
+// ─────────────────────────────────────────────────────────────
+function writePolicyTotals(raceSheet, agentTotals) {
+  var RACE_HEADERS = ['AgentID','Name','Team','WL','UL','Term','Health','Auto','Fire',
+                      'Placed','Answered','Missed','Voicemail','TalkMin','AvgMin',
+                      'RaceWideMissed','RaceWideVoicemail','LastUpdated'];
+
+  if (raceSheet.getLastRow() === 0) {
+    raceSheet.appendRow(RACE_HEADERS);
+    raceSheet.getRange(1,1,1,RACE_HEADERS.length).setFontWeight('bold')
+      .setBackground('#0a1628').setFontColor('#00d4ff');
+  }
+
+  var existing = {};
+  if (raceSheet.getLastRow() > 1) {
+    var ids = raceSheet.getRange(2,1,raceSheet.getLastRow()-1,1).getValues();
+    for (var i = 0; i < ids.length; i++) {
+      if (ids[i][0]) existing[ids[i][0]] = i + 2;
+    }
+  }
+
+  var AGENT_DISPLAY = {
+    ashley:  { name:'Ashley McEniry',    team:'service' },
+    fiona:   { name:'Fiona Rodriguez',   team:'service' },
+    jocelyn: { name:'Jocelyn Hernandez', team:'service' },
+    joseph:  { name:'Joseph Underwood',  team:'sales'   },
+    peyton:  { name:'Peyton Tooze',      team:'sales'   },
+    susan:   { name:'Susan Navarro',     team:'sales'   },
+    tiffany: { name:'Tiffany Dabe',      team:'sales'   },
+    tracy:   { name:'Tracy Ankrah',      team:'service' },
+    amin:    { name:'Amin Kalas',         team:'sales'   },
+    andy:    { name:'Andy Rose',          team:'service' },
+    russel:  { name:'Russel Williams',   team:'service' },
+  };
+
+  var now = Utilities.formatDate(new Date(), 'America/New_York', 'M/d/yyyy h:mm a');
+
+  for (var id in agentTotals) {
+    var s    = agentTotals[id];
+    var disp = AGENT_DISPLAY[id] || { name:id, team:'sales' };
+
+    if (existing[id]) {
+      raceSheet.getRange(existing[id], 4, 1, 6).setValues([[
+        s.wl, s.ul, s.term, s.health, s.auto, s.fire
+      ]]);
+      raceSheet.getRange(existing[id], 18, 1, 1).setValue(now);
+    } else {
+      raceSheet.appendRow([id, disp.name, disp.team,
+        s.wl, s.ul, s.term, s.health, s.auto, s.fire,
+        0, 0, 0, 0, 0, 0, 0, 0, now]);
+    }
+  }
+
+  SpreadsheetApp.flush();
+  Logger.log('Policy totals written: ' + Object.keys(agentTotals).length + ' agents.');
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// SALES LOG — dedup store
+// ─────────────────────────────────────────────────────────────
+var SALES_LOG_HEADERS = ['SaleHash','AgentID','Category','Date','Notes'];
+
+function initSalesLog(sheet) {
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(SALES_LOG_HEADERS);
+    sheet.getRange(1,1,1,SALES_LOG_HEADERS.length).setFontWeight('bold')
+      .setBackground('#0a2810').setFontColor('#86efac');
+    sheet.setFrozenRows(1);
+    sheet.hideSheet();
+  }
+}
+
+function loadSalesHashes(logSheet) {
+  initSalesLog(logSheet);
+  var hashes = {};
+  if (logSheet.getLastRow() < 2) return hashes;
+  var data = logSheet.getRange(2,1,logSheet.getLastRow()-1,1).getValues();
+  for (var i = 0; i < data.length; i++) { if (data[i][0]) hashes[data[i][0]] = true; }
+  return hashes;
+}
+
+function appendSalesToLog(logSheet, newRows) {
+  if (!newRows.length) return;
+  logSheet.getRange(logSheet.getLastRow()+1, 1, newRows.length, newRows[0].length).setValues(newRows);
+  SpreadsheetApp.flush();
+}
+
+function getAllSalesRows(logSheet) {
+  if (logSheet.getLastRow() < 2) return [];
+  return logSheet.getRange(2,1,logSheet.getLastRow()-1,SALES_LOG_HEADERS.length).getValues();
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────
+function mapPolicyCategory(productType, policyType) {
+  var p = String(productType || '').toLowerCase().trim();
+  var t = String(policyType  || '').toLowerCase().trim();
+
+  if (p.indexOf('whole') !== -1 || p === 'wl')                                  return 'wl';
+  if (p.indexOf('universal') !== -1 || p === 'ul')                               return 'ul';
+  if (p.indexOf('term') !== -1)                                                   return 'term';
+  if (p.indexOf('health') !== -1 || p.indexOf('med') !== -1)                     return 'health';
+  if (p.indexOf('auto') !== -1 || p.indexOf('vehicle') !== -1 || p.indexOf('car') !== -1) return 'auto';
+  if (p.indexOf('fire') !== -1 || p.indexOf('home') !== -1 || p.indexOf('property') !== -1) return 'fire';
+
+  if (t.indexOf('whole') !== -1 || t === 'wl')                                  return 'wl';
+  if (t.indexOf('universal') !== -1 || t === 'ul')                               return 'ul';
+  if (t.indexOf('term') !== -1)                                                   return 'term';
+  if (t.indexOf('health') !== -1 || t.indexOf('med') !== -1)                     return 'health';
+  if (t.indexOf('auto') !== -1 || t.indexOf('vehicle') !== -1)                   return 'auto';
+  if (t.indexOf('fire') !== -1 || t.indexOf('home') !== -1 || t.indexOf('property') !== -1) return 'fire';
+
+  return 'other';
+}
+
+function salesSha256Short(input) {
+  var raw = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, input, Utilities.Charset.UTF_8);
+  return raw.map(function(b){ return ('0'+(b & 0xFF).toString(16)).slice(-2); }).join('').slice(0, 16);
+}
+
+function salesDateOnly(dtStr) {
+  try {
+    var d = new Date(dtStr);
+    if (isNaN(d.getTime())) return String(dtStr).split(' ')[0] || dtStr;
+    return Utilities.formatDate(d, 'America/New_York', 'yyyy-MM-dd');
+  } catch(e) { return String(dtStr).split(' ')[0] || dtStr; }
+}
+
+function findSalesCol(headers, keywords) {
+  for (var i = 0; i < headers.length; i++)
+    for (var k = 0; k < keywords.length; k++)
+      if (String(headers[i]).indexOf(keywords[k]) !== -1) return i;
+  return -1;
+}
+
+function getOrCreateSalesSheet(ss, name) {
+  return ss.getSheetByName(name) || ss.insertSheet(name);
+}

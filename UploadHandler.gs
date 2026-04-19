@@ -2,70 +2,107 @@
  * ═══════════════════════════════════════════════════════════════
  *  UPLOAD HANDLER — Web App entry point
  *
- *  Accepts file uploads from the Boat Race dashboard and runs
- *  the existing parsing logic (EmailParser + SalesParser scripts
- *  must be in the same Apps Script project).
+ *  Accepts file uploads from the Boat Race dashboard.
+ *  EmailParser, SalesParser, and CallReportProcessor scripts
+ *  must be in the same Apps Script project.
  *
  *  DEPLOY AS:
  *    Execute as: Me
  *    Who has access: Anyone
  *
- *  After deploying, copy the web app URL and add it to Vercel:
- *    Settings → Environment Variables → GAS_UPLOAD_URL = <your URL>
+ *  Sheet IDs are stored in Script Properties (not hardcoded).
+ *  Use the Manage tab on the dashboard to update them, or set
+ *  them directly in Apps Script → Project Settings → Script Properties.
  * ═══════════════════════════════════════════════════════════════
  */
 
-var SS_ID = '1gfqzLbjNgt7KVvhGNETtBB6TN7qMZAK13R_yKh6RMHA';
+var DEFAULT_SS_ID   = '1gfqzLbjNgt7KVvhGNETtBB6TN7qMZAK13R_yKh6RMHA';
+var DEFAULT_PERF_ID = '1-3t8XAu-59NLOaLiWPxwYtkJfa7rs7JpGLMl52FPHiE';
+
 var MONTH_NAMES = ['January','February','March','April','May','June',
                    'July','August','September','October','November','December'];
 
+function getSheetId() {
+  return PropertiesService.getScriptProperties().getProperty('RACE_SHEET_ID') || DEFAULT_SS_ID;
+}
+function getPerfSheetId() {
+  return PropertiesService.getScriptProperties().getProperty('PERF_SHEET_ID') || DEFAULT_PERF_ID;
+}
 
+
+// ─────────────────────────────────────────────────────────────
+// WEB APP ENTRY POINTS
+// ─────────────────────────────────────────────────────────────
 function doPost(e) {
   try {
     var payload = JSON.parse(e.postData.contents);
     var type    = payload.fileType;
 
-    // Handle non-file actions first — before any base64 decode
     if (type === 'setteam') {
-      return ContentService
-        .createTextOutput(JSON.stringify(updateAgentTeam(payload.agentId, payload.team)))
-        .setMimeType(ContentService.MimeType.JSON);
+      return json(updateAgentTeam(payload.agentId, payload.team));
     }
 
-    // File upload actions
+    if (type === 'setsheetid') {
+      return json(updateSheetIds(payload));
+    }
+
     var bytes = Utilities.base64Decode(payload.fileBase64);
     var fname = payload.fileName || 'upload.xlsx';
     var mime  = payload.mimeType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
     var blob  = Utilities.newBlob(bytes, mime, fname);
 
     var result = (type === 'sales') ? processSalesUpload(blob) : processCallUpload(blob);
-
-    return ContentService
-      .createTextOutput(JSON.stringify(result))
-      .setMimeType(ContentService.MimeType.JSON);
+    return json(result);
 
   } catch(err) {
-    return ContentService
-      .createTextOutput(JSON.stringify({ success: false, error: err.message }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return json({ success: false, error: err.message });
   }
 }
 
-
-// GET ?action=history — returns HistoricalWins rows as JSON array
 function doGet(e) {
   try {
     var action = e && e.parameter && e.parameter.action;
+
     if (action === 'history') {
-      return ContentService
-        .createTextOutput(JSON.stringify(getHistoricalData()))
-        .setMimeType(ContentService.MimeType.JSON);
+      return json(getHistoricalData());
+    }
+    if (action === 'getconfig') {
+      return json({
+        raceSheetId: getSheetId(),
+        perfSheetId: getPerfSheetId(),
+      });
     }
     return ContentService.createTextOutput('UploadHandler OK');
   } catch(err) {
-    return ContentService
-      .createTextOutput(JSON.stringify({ error: err.message }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return json({ error: err.message });
+  }
+}
+
+function json(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// SHEET ID MANAGEMENT
+// ─────────────────────────────────────────────────────────────
+function updateSheetIds(payload) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    if (payload.raceSheetId && payload.raceSheetId.trim()) {
+      // Verify the sheet is accessible before saving
+      SpreadsheetApp.openById(payload.raceSheetId.trim());
+      props.setProperty('RACE_SHEET_ID', payload.raceSheetId.trim());
+    }
+    if (payload.perfSheetId && payload.perfSheetId.trim()) {
+      SpreadsheetApp.openById(payload.perfSheetId.trim());
+      props.setProperty('PERF_SHEET_ID', payload.perfSheetId.trim());
+    }
+    return { success: true, raceSheetId: getSheetId(), perfSheetId: getPerfSheetId() };
+  } catch(err) {
+    return { success: false, error: 'Could not access sheet: ' + err.message };
   }
 }
 
@@ -73,12 +110,9 @@ function doGet(e) {
 // ─────────────────────────────────────────────────────────────
 // MONTH MANAGEMENT
 // ─────────────────────────────────────────────────────────────
-
-// Scan rows for a recognisable date; return "Month YYYY" string or null
 function detectMonthFromRows(rows) {
   if (!rows || rows.length < 2) return null;
 
-  // Find a header column that sounds like a date
   var header = rows[0];
   var dateColIdx = -1;
   for (var c = 0; c < header.length; c++) {
@@ -90,8 +124,6 @@ function detectMonthFromRows(rows) {
 
   for (var r = 1; r < Math.min(rows.length, 30); r++) {
     var val = (dateColIdx >= 0) ? rows[r][dateColIdx] : null;
-
-    // Fall back to scanning all cells for a Date object
     if (!val || val === '') {
       for (var c = 0; c < rows[r].length; c++) {
         if (rows[r][c] instanceof Date) { val = rows[r][c]; break; }
@@ -100,8 +132,8 @@ function detectMonthFromRows(rows) {
     if (!val || val === '') continue;
 
     var d = null;
-    if (val instanceof Date)           { d = val; }
-    else if (typeof val === 'string')  { d = new Date(val); }
+    if (val instanceof Date)          { d = val; }
+    else if (typeof val === 'string') { d = new Date(val); }
     else if (typeof val === 'number' && val > 40000) { d = new Date((val - 25569) * 86400000); }
 
     if (d && !isNaN(d.getTime()) && d.getFullYear() > 2020) {
@@ -109,13 +141,10 @@ function detectMonthFromRows(rows) {
     }
   }
 
-  // Fallback: current month
   var now = new Date();
-  Logger.log('detectMonthFromRows: could not detect from data, using current month');
   return MONTH_NAMES[now.getMonth()] + ' ' + now.getFullYear();
 }
 
-// Compare two "Month YYYY" strings. Returns >0 if a is later, <0 if earlier, 0 if equal.
 function compareMonths(a, b) {
   var idx = function(str) {
     var s = String(str).toLowerCase();
@@ -156,41 +185,27 @@ function archiveToHistorical(ss, month) {
     return;
   }
 
-  var histSheet = ss.getSheetByName('HistoricalWins');
-  if (!histSheet) {
-    histSheet = ss.insertSheet('HistoricalWins');
-    histSheet.appendRow(['Month','Rank','AgentID','Name','Team','TotalScore','GrossScore','Deductions',
-      'WL','UL','Term','Health','Auto','Fire',
-      'Placed','Answered','Missed','Voicemail','TalkMin','AvgMin',
-      'RaceWideMissed','RaceWideVoicemail']);
-    histSheet.setFrozenRows(1);
-  }
+  var histSheet = getOrCreateHistSheet(ss);
 
-  // Remove any existing records for this month so re-archiving is safe
+  // Remove any existing records for this month (safe to re-archive)
   var existing = histSheet.getDataRange().getValues();
   for (var i = existing.length - 1; i >= 1; i--) {
     if (String(existing[i][0]) === month) histSheet.deleteRow(i + 1);
   }
 
-  // Read all agent rows from RaceData
-  // Columns: A=AgentID B=Name C=Team D=WL E=UL F=Term G=Health H=Auto I=Fire
-  //          J=Placed K=Answered L=Missed M=Voicemail N=TalkMin O=AvgMin
-  //          P=RaceWideMissed Q=RaceWideVoicemail R=Timestamp
   var numRows = raceSheet.getLastRow() - 1;
   var numCols = Math.max(raceSheet.getLastColumn(), 18);
   var data    = raceSheet.getRange(2, 1, numRows, numCols).getValues();
 
-  // Race-wide deductions (same on every row)
   var rwMissed = 0, rwVoicemail = 0;
   for (var i = 0; i < data.length; i++) {
     if (data[i][15] || data[i][16]) {
-      rwMissed   = +data[i][15] || 0;
+      rwMissed    = +data[i][15] || 0;
       rwVoicemail = +data[i][16] || 0;
       break;
     }
   }
 
-  // Score each agent using the same formula as the frontend
   var scored = data.map(function(row) {
     var agentId = String(row[0]);
     if (!agentId || agentId === '0' || agentId === '') return null;
@@ -202,10 +217,10 @@ function archiveToHistorical(ss, month) {
     var polPts  = wl*100 + ul*75 + term*50 + health*30 + auto*15 + fire*10;
     var callPts = placed*(svc?0.25:1) + answered*(svc?5:1) + talkMin*0.1 + avgMin*2;
     var gross   = Math.round(polPts + callPts);
-    var deduct  = Math.round((missed+rwMissed)*(-3) + (voicemail+rwVoicemail)*(-2));
+    var deduct  = Math.round(rwMissed*(-3) + rwVoicemail*(-2));
     return {
       agentId:agentId, name:String(row[1]), team:team,
-      gross:gross, deduct:deduct, total:gross+deduct,
+      gross:gross, deduct:deduct, total:Math.max(0,gross+deduct),
       wl:wl, ul:ul, term:term, health:health, auto:auto, fire:fire,
       placed:placed, answered:answered, missed:missed, voicemail:voicemail,
       talkMin:talkMin, avgMin:avgMin
@@ -224,10 +239,65 @@ function archiveToHistorical(ss, month) {
     ]);
   }
 
+  SpreadsheetApp.flush();
   Logger.log('archiveToHistorical: archived ' + scored.length + ' agents for ' + month);
 }
 
-// Clear score/phone columns but preserve AgentID, Name, Team; also wipe dedup logs
+// Archive old-month call data (call stats only, zero policies) to HistoricalWins
+function archiveCallStatsToHistorical(ss, month, totals) {
+  var histSheet = getOrCreateHistSheet(ss);
+
+  var existing = histSheet.getDataRange().getValues();
+  for (var i = existing.length - 1; i >= 1; i--) {
+    if (String(existing[i][0]) === month) histSheet.deleteRow(i + 1);
+  }
+
+  var rwMissed = totals.raceWide.missed;
+  var rwVm     = totals.raceWide.voicemails;
+
+  var scored = [];
+  for (var id in totals.agents) {
+    var s   = totals.agents[id];
+    var svc = s.team.indexOf('service') !== -1;
+    var callPts = s.placed*(svc?0.25:1) + s.answered*(svc?5:1) + s.talkMin*0.1 + s.avgMin*2;
+    var gross   = Math.round(callPts);
+    var deduct  = Math.round(rwMissed*(-3) + rwVm*(-2));
+    scored.push({
+      agentId:id, name:s.name, team:s.team,
+      gross:gross, deduct:deduct, total:Math.max(0,gross+deduct),
+      placed:s.placed, answered:s.answered, talkMin:s.talkMin, avgMin:s.avgMin
+    });
+  }
+  scored.sort(function(a,b) { return b.total - a.total; });
+
+  for (var i = 0; i < scored.length; i++) {
+    var s = scored[i];
+    histSheet.appendRow([
+      month, i+1, s.agentId, s.name, s.team, s.total, s.gross, s.deduct,
+      0, 0, 0, 0, 0, 0,
+      s.placed, s.answered, 0, 0, s.talkMin, s.avgMin,
+      rwMissed, rwVm
+    ]);
+  }
+
+  SpreadsheetApp.flush();
+  Logger.log('archiveCallStatsToHistorical: archived ' + scored.length + ' agents for ' + month);
+  return scored.length;
+}
+
+function getOrCreateHistSheet(ss) {
+  var s = ss.getSheetByName('HistoricalWins');
+  if (!s) {
+    s = ss.insertSheet('HistoricalWins');
+    s.appendRow(['Month','Rank','AgentID','Name','Team','TotalScore','GrossScore','Deductions',
+      'WL','UL','Term','Health','Auto','Fire',
+      'Placed','Answered','Missed','Voicemail','TalkMin','AvgMin',
+      'RaceWideMissed','RaceWideVoicemail']);
+    s.setFrozenRows(1);
+  }
+  return s;
+}
+
 function resetRaceScores(ss) {
   var raceSheet = ss.getSheetByName(RACE_CONFIG.RACE_SHEET);
   if (raceSheet && raceSheet.getLastRow() > 1) {
@@ -236,13 +306,11 @@ function resetRaceScores(ss) {
     if (lastCol > 3) raceSheet.getRange(2, 4, n, lastCol - 3).clearContent();
   }
 
-  // Clear call dedup log
   var logSheet = ss.getSheetByName(RACE_CONFIG.LOG_SHEET);
   if (logSheet && logSheet.getLastRow() > 1) {
     logSheet.getRange(2, 1, logSheet.getLastRow()-1, logSheet.getLastColumn()).clearContent();
   }
 
-  // Clear sales dedup log
   var salesLog = ss.getSheetByName(SALES_CONFIG.LOG_SHEET);
   if (salesLog && salesLog.getLastRow() > 1) {
     salesLog.getRange(2, 1, salesLog.getLastRow()-1, salesLog.getLastColumn()).clearContent();
@@ -252,9 +320,8 @@ function resetRaceScores(ss) {
   Logger.log('resetRaceScores: race cleared for new month');
 }
 
-// Return all HistoricalWins rows as a 2D array (row 0 = headers)
 function getHistoricalData() {
-  var ss        = SpreadsheetApp.openById(SS_ID);
+  var ss        = SpreadsheetApp.openById(getSheetId());
   var histSheet = ss.getSheetByName('HistoricalWins');
   if (!histSheet || histSheet.getLastRow() < 2) return [];
   return histSheet.getDataRange().getValues();
@@ -262,25 +329,22 @@ function getHistoricalData() {
 
 
 // ─────────────────────────────────────────────────────────────
-// CALL REPORT — reuses EmailParser functions
+// CALL REPORT UPLOAD
 // ─────────────────────────────────────────────────────────────
 function processCallUpload(blob) {
   var bytes = blob.getBytes();
   var rows  = [];
   var diagErrors = [];
 
-  // Verify magic bytes — XLSX (ZIP) files start with PK (0x50 0x4B)
-  var magic = bytes.length >= 4
+  var magic    = bytes.length >= 4
     ? [bytes[0] & 0xFF, bytes[1] & 0xFF, bytes[2] & 0xFF, bytes[3] & 0xFF]
     : [];
   var magicHex = magic.map(function(b){ return ('0'+b.toString(16)).slice(-2); }).join(' ');
-  Logger.log('File bytes received: ' + bytes.length + ', magic: ' + magicHex);
-  var isXlsx = (magic[0] === 0x50 && magic[1] === 0x4B);
+  var isXlsx   = (magic[0] === 0x50 && magic[1] === 0x4B);
+  Logger.log('File bytes: ' + bytes.length + ', magic: ' + magicHex);
 
-  // Attempt 1 — direct bytes (fastest)
   try { rows = parseXlsxBytes(bytes); } catch(e1) { diagErrors.push('Attempt1: ' + e1.message); }
 
-  // Attempt 2 — Drive round-trip (mirrors email path, normalizes bytes)
   if (!rows || rows.length === 0) {
     try {
       var driveBytes = getXlsxBytesViaDrive(blob);
@@ -289,14 +353,8 @@ function processCallUpload(blob) {
     } catch(e2) { diagErrors.push('Attempt2: ' + e2.message); }
   }
 
-  // Attempt 3 — Script 3 parser on original bytes
   if (!rows || rows.length === 0) {
-    try { rows = parseXlsxBytesToRows(bytes); } catch(e3) { diagErrors.push('Attempt3: ' + e3.message); }
-  }
-
-  // Attempt 4 — Convert to Google Sheet via Drive
-  if (!rows || rows.length === 0) {
-    try { rows = readXlsxBlobViaSheets(blob); } catch(e4) { diagErrors.push('Attempt4: ' + e4.message); }
+    try { rows = readXlsxBlobViaSheets(blob); } catch(e3) { diagErrors.push('Attempt3: ' + e3.message); }
   }
 
   if (!rows || rows.length === 0)
@@ -306,48 +364,67 @@ function processCallUpload(blob) {
       diag: { bytes: bytes.length, magic: magicHex, isXlsx: isXlsx, errors: diagErrors }
     };
 
-  // Verify the call direction header is present
   var hasHeader = false;
   for (var r = 0; r < Math.min(rows.length, 20); r++) {
     if (rows[r].join('|').indexOf('Call Direction') !== -1) { hasHeader = true; break; }
   }
   if (!hasHeader)
-    return { success: false, error: 'File parsed but no "Call Direction" header found. Make sure you are uploading the Search Call Details report, not a different file.' };
+    return { success: false, error: 'File parsed but no "Call Direction" header found. Make sure you are uploading the Search Call Details report.' };
 
-  // ── Month detection ──────────────────────────────────────────
-  var ss         = SpreadsheetApp.openById(SS_ID);
+  // ── Month check ──────────────────────────────────────────────
+  var ss         = SpreadsheetApp.openById(getSheetId());
   var dataMonth  = detectMonthFromRows(rows);
   var storedMonth = getCurrentRaceMonth(ss);
   Logger.log('Data month: ' + dataMonth + ' | Stored month: ' + storedMonth);
 
-  if (dataMonth && storedMonth) {
-    var cmp = compareMonths(dataMonth, storedMonth);
+  if (dataMonth) {
+    var now         = new Date();
+    var calMonth    = MONTH_NAMES[now.getMonth()] + ' ' + now.getFullYear();
+    var isFuture    = compareMonths(dataMonth, calMonth) > 0;
 
-    if (cmp > 0) {
-      // New month — archive the finished race and start fresh
-      Logger.log('New month detected. Archiving ' + storedMonth + ' → starting ' + dataMonth);
-      archiveToHistorical(ss, storedMonth);
-      resetRaceScores(ss);
-      setCurrentRaceMonth(ss, dataMonth);
-
-    } else if (cmp < 0) {
-      // Previous month — do NOT touch current race data
-      Logger.log('Previous month data (' + dataMonth + '). Current race is ' + storedMonth + '. Skipping.');
+    if (isFuture) {
       return {
         success: false,
-        error: 'This file contains data from ' + dataMonth + '. The current race is ' + storedMonth + '. Previous month data cannot be added to the active race. To update ' + dataMonth + ' history, finish the current month first.'
+        error: 'This file contains data for ' + dataMonth + ', which has not started yet. Upload is not allowed until the month begins.'
       };
     }
-    // cmp === 0 → same month, continue normally
-  } else if (dataMonth && !storedMonth) {
-    setCurrentRaceMonth(ss, dataMonth);
+
+    if (storedMonth) {
+      var cmp = compareMonths(dataMonth, storedMonth);
+
+      if (cmp > 0) {
+        Logger.log('New month detected. Archiving ' + storedMonth + ' -> starting ' + dataMonth);
+        archiveToHistorical(ss, storedMonth);
+        resetRaceScores(ss);
+        setCurrentRaceMonth(ss, dataMonth);
+
+      } else if (cmp < 0) {
+        Logger.log('Old month data (' + dataMonth + '). Archiving to historical.');
+        var result = classifyCalls(rows, {});
+        if (result.newLogRows.length === 0) {
+          return { success: true, message: 'No calls found in ' + dataMonth + ' data. Nothing archived.' };
+        }
+        var oldTotals = aggregateFromLog(result.newLogRows);
+        var archivedCount = archiveCallStatsToHistorical(ss, dataMonth, oldTotals);
+        return {
+          success:  true,
+          message:  dataMonth + ' call data archived to Historical Wins (' + archivedCount + ' agents). Current race (' + storedMonth + ') is unchanged.',
+          archived: true,
+          calls:    result.newLogRows.length,
+          raceWide: oldTotals.raceWide,
+        };
+      }
+      // cmp === 0 → same month, continue normally
+
+    } else {
+      setCurrentRaceMonth(ss, dataMonth);
+    }
   }
   // ─────────────────────────────────────────────────────────────
 
   var raceSheet = getOrCreateSheet(ss, RACE_CONFIG.RACE_SHEET);
   var logSheet  = getOrCreateSheet(ss, RACE_CONFIG.LOG_SHEET);
 
-  // Script 1 flow: log-based dedup → per-agent phone stats → RaceData
   var knownHashes = loadKnownHashes(logSheet);
   var result      = classifyCalls(rows, knownHashes);
 
@@ -359,28 +436,25 @@ function processCallUpload(blob) {
   var totals     = aggregateFromLog(allLogRows);
   writeRaceData(raceSheet, totals);
 
-  // Update race-wide deductions + timestamp
-  var now = Utilities.formatDate(new Date(), 'America/New_York', 'M/d/yyyy h:mm a');
+  var ts = Utilities.formatDate(new Date(), 'America/New_York', 'M/d/yyyy h:mm a');
   if (raceSheet.getLastRow() > 1) {
     var n = raceSheet.getLastRow() - 1;
     raceSheet.getRange(2, 16, n, 1).setValue(totals.raceWide.missed);
     raceSheet.getRange(2, 17, n, 1).setValue(totals.raceWide.voicemails);
-    raceSheet.getRange(2, 18, n, 1).setValue(now);
+    raceSheet.getRange(2, 18, n, 1).setValue(ts);
   }
   SpreadsheetApp.flush();
 
-  // Script 3 flow: aggregate raw rows → write to Performance Tracking sheet
   try {
     var aggregated = aggregateCallData(rows);
     if (aggregated) writeToPerformanceSheet(aggregated);
-    Logger.log('Performance Tracking sheet updated.');
   } catch(perfErr) {
     Logger.log('Performance sheet write error (non-fatal): ' + perfErr.message);
   }
 
   var msg = 'Call report processed successfully.';
   if (dataMonth && storedMonth && compareMonths(dataMonth, storedMonth) > 0) {
-    msg = 'New month detected (' + dataMonth + '). Previous race archived to Historical Wins. ' + msg;
+    msg = 'New month detected (' + dataMonth + '). Previous race archived. ' + msg;
   }
 
   return {
@@ -394,14 +468,14 @@ function processCallUpload(blob) {
 
 
 // ─────────────────────────────────────────────────────────────
-// SALES REPORT — reuses SalesParser functions
+// SALES REPORT UPLOAD
 // ─────────────────────────────────────────────────────────────
 function processSalesUpload(blob) {
   var rows = readXlsBlobAsSheet(blob);
   if (!rows || rows.length === 0)
     return { success: false, error: 'Could not parse sales report. Make sure it is a valid .xls or .xlsx file.' };
 
-  var ss        = SpreadsheetApp.openById(SS_ID);
+  var ss        = SpreadsheetApp.openById(getSheetId());
   var raceSheet = getOrCreateSalesSheet(ss, SALES_CONFIG.RACE_SHEET);
   var logSheet  = getOrCreateSalesSheet(ss, SALES_CONFIG.LOG_SHEET);
 
@@ -412,27 +486,37 @@ function processSalesUpload(blob) {
     appendSalesToLog(logSheet, result.newLogRows);
   }
 
-  // Always re-aggregate and write totals — sheet may be stale if previous
-  // uploads returned early before writing (e.g. all-already-logged case).
   var allSales = getAllSalesRows(logSheet);
   var totals   = aggregateSalesFromLog(allSales);
   writePolicyTotals(raceSheet, totals);
 
-  var msg = result.newLogRows.length === 0
-    ? 'No new sales found — all already logged. Totals refreshed.'
-    : 'Sales report processed successfully.';
+  var logTotal  = logSheet.getLastRow() - 1;
+  var hashCount = Object.keys(loadSalesHashes(logSheet)).length;
+  var catCounts = {};
+  for (var i = 0; i < allSales.length; i++) {
+    var cat = String(allSales[i][2] || 'blank');
+    catCounts[cat] = (catCounts[cat] || 0) + 1;
+  }
+  var polTotal = 0;
+  for (var id in totals) {
+    var t = totals[id];
+    polTotal += (t.wl||0)+(t.ul||0)+(t.term||0)+(t.health||0)+(t.auto||0)+(t.fire||0);
+  }
 
   return {
     success: true,
-    message: msg,
+    message: result.newLogRows.length === 0
+      ? 'No new sales found — all already logged. Totals refreshed.'
+      : 'Sales report processed successfully.',
     new:     result.newLogRows.length,
     skipped: result.duplicatesSkipped,
+    diag: { logRows:logTotal, hashCount:hashCount, allSalesRows:allSales.length, categories:catCounts, polTotal:polTotal },
   };
 }
 
 
 // ─────────────────────────────────────────────────────────────
-// Upload xlsx to Drive, download back — mirrors email attachment path
+// XLSX DRIVE ROUND-TRIP (upload attempt 2)
 // ─────────────────────────────────────────────────────────────
 function getXlsxBytesViaDrive(blob) {
   var fileId = null;
@@ -472,7 +556,7 @@ function getXlsxBytesViaDrive(blob) {
 
 
 // ─────────────────────────────────────────────────────────────
-// Attempt 4 — Convert XLSX blob to Google Sheet via Drive, read all rows
+// Drive → Sheets conversion (upload attempt 3)
 // ─────────────────────────────────────────────────────────────
 function readXlsxBlobViaSheets(blob) {
   var fileId = null;
@@ -487,11 +571,11 @@ function readXlsxBlobViaSheets(blob) {
 
     var up = UrlFetchApp.fetch(
       'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&convert=true',
-      { method: 'POST', contentType: 'multipart/related; boundary="'+boundary+'"',
-        payload: payload, headers: { Authorization: 'Bearer '+token }, muteHttpExceptions: true }
+      { method:'POST', contentType:'multipart/related; boundary="'+boundary+'"',
+        payload:payload, headers:{Authorization:'Bearer '+token}, muteHttpExceptions:true }
     );
     var uploaded = JSON.parse(up.getContentText());
-    if (!uploaded.id) { Logger.log('Attempt4 upload failed: '+up.getContentText()); return []; }
+    if (!uploaded.id) { Logger.log('Attempt3 upload failed: '+up.getContentText()); return []; }
     fileId = uploaded.id;
 
     var ss = null;
@@ -499,7 +583,7 @@ function readXlsxBlobViaSheets(blob) {
       Utilities.sleep(attempt * 1500);
       try { ss = SpreadsheetApp.openById(fileId); if (ss) break; } catch(e) {}
     }
-    if (!ss) { Logger.log('Attempt4: could not open converted sheet'); return []; }
+    if (!ss) { Logger.log('Attempt3: could not open converted sheet'); return []; }
 
     var allRows = [];
     var sheets  = ss.getSheets();
@@ -507,7 +591,7 @@ function readXlsxBlobViaSheets(blob) {
       var data = sheets[s].getDataRange().getValues();
       if (data.length > allRows.length) allRows = data;
     }
-    Logger.log('Attempt4 rows from Drive→Sheets: ' + allRows.length);
+    Logger.log('Attempt3 rows from Drive->Sheets: ' + allRows.length);
     return allRows;
 
   } catch(e) {
@@ -520,7 +604,7 @@ function readXlsxBlobViaSheets(blob) {
 
 
 // ─────────────────────────────────────────────────────────────
-// Blob-based sales sheet reader — uploads to Drive for conversion
+// Sales file via Drive → Sheets conversion
 // ─────────────────────────────────────────────────────────────
 function readXlsBlobAsSheet(blob) {
   var fileId = null;
@@ -552,7 +636,7 @@ function readXlsBlobAsSheet(blob) {
     var ss = null;
     for (var attempt = 1; attempt <= 8; attempt++) {
       Utilities.sleep(attempt * 1500);
-      try { ss = SpreadsheetApp.openById(fileId); if (ss) break; } catch(e) { Logger.log('Attempt '+attempt+': '+e.message); }
+      try { ss = SpreadsheetApp.openById(fileId); if (ss) break; } catch(e) {}
     }
     if (!ss) return [];
 
@@ -569,11 +653,11 @@ function readXlsBlobAsSheet(blob) {
 
 
 // ─────────────────────────────────────────────────────────────
-// SET TEAM — updates col C (Team) in RaceData for a given AgentID
+// TEAM UPDATE
 // ─────────────────────────────────────────────────────────────
 function updateAgentTeam(agentId, team) {
   try {
-    var ss        = SpreadsheetApp.openById(SS_ID);
+    var ss        = SpreadsheetApp.openById(getSheetId());
     var raceSheet = ss.getSheetByName('RaceData');
     if (!raceSheet) return { success: false, error: 'RaceData sheet not found.' };
     if (raceSheet.getLastRow() < 2) return { success: false, error: 'No agent rows found.' };
@@ -590,14 +674,4 @@ function updateAgentTeam(agentId, team) {
   } catch(err) {
     return { success: false, error: err.message };
   }
-}
-
-
-// ─────────────────────────────────────────────────────────────
-// TEST — run manually to verify the web app is working
-// ─────────────────────────────────────────────────────────────
-function testWebApp() {
-  Logger.log('UploadHandler is ready.');
-  Logger.log('Deploy as a web app, then add the URL to Vercel as GAS_UPLOAD_URL.');
-  Logger.log('Execute as: Me  |  Who has access: Anyone');
 }
