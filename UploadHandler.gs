@@ -72,6 +72,9 @@ function doGet(e) {
         perfSheetId: getPerfSheetId(),
       });
     }
+    if (action === 'perfdata') {
+      return json(getPerfData());
+    }
     return ContentService.createTextOutput('UploadHandler OK');
   } catch(err) {
     return json({ error: err.message });
@@ -318,6 +321,27 @@ function resetRaceScores(ss) {
 
   SpreadsheetApp.flush();
   Logger.log('resetRaceScores: race cleared for new month');
+}
+
+function getPerfData() {
+  try {
+    var ss = SpreadsheetApp.openById(getPerfSheetId());
+    var result = { daily: [], weekly: [], monthly: [], yearly: [], vmSlots: [] };
+    var tabs = { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', yearly: 'Yearly' };
+    for (var key in tabs) {
+      var sheet = ss.getSheetByName(tabs[key]);
+      if (sheet && sheet.getLastRow() > 2) {
+        result[key] = sheet.getRange(3, 1, sheet.getLastRow() - 2, 10).getValues();
+      }
+    }
+    var vmSheet = ss.getSheetByName('VmSlotLog');
+    if (vmSheet && vmSheet.getLastRow() > 1) {
+      result.vmSlots = vmSheet.getRange(2, 1, vmSheet.getLastRow() - 1, 49).getValues();
+    }
+    return result;
+  } catch(err) {
+    return { error: err.message, daily: [], weekly: [], monthly: [], yearly: [], vmSlots: [] };
+  }
 }
 
 function getHistoricalData() {

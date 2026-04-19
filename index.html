@@ -141,6 +141,12 @@
   .cfg-btn{padding:7px 18px;background:rgba(0,212,255,.15);color:var(--accent);border:1px solid rgba(0,212,255,.3);border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;font-family:'DM Sans',sans-serif;transition:all .15s;white-space:nowrap;}
   .cfg-btn:hover{background:rgba(0,212,255,.25);}
 
+  /* PERF SUB-TABS */
+  .perf-tabs{display:flex;gap:3px;margin-bottom:16px;background:var(--deep);border-radius:10px;padding:3px;width:fit-content;flex-wrap:wrap;}
+  .perf-tab{padding:6px 15px;border-radius:7px;border:none;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;background:transparent;color:var(--muted);transition:all .2s;}
+  .perf-tab.active{background:var(--card2);color:var(--text);box-shadow:0 2px 6px rgba(0,0,0,.3);}
+  .perf-tab:hover:not(.active){color:var(--text);}
+
   .wave-footer{position:fixed;bottom:0;left:0;right:0;height:4px;z-index:10;background:linear-gradient(90deg,var(--accent),var(--accent2),var(--accent));background-size:200% 100%;animation:waveSlide 3s linear infinite;opacity:.7;}
   @keyframes waveSlide{0%{background-position:0%}100%{background-position:200%}}
 
@@ -230,19 +236,13 @@
       <div style="height:240px;position:relative;"><canvas id="chartPolicies" role="img" aria-label="Policy sales stacked bar chart by agent"></canvas></div>
     </div>
     <div class="panel">
-      <div class="panel-title">&#128222; Phone Activity — Calls</div>
-      <div style="height:240px;position:relative;"><canvas id="chartPhone" role="img" aria-label="Phone calls placed answered missed and voicemails by agent"></canvas></div>
-    </div>
-  </div>
-  <div class="grid-2">
-    <div class="panel">
       <div class="panel-title">&#128308; Deductions — Race Wide</div>
       <div id="chartDeductions"></div>
     </div>
-    <div class="panel">
-      <div class="panel-title">&#127381; Points Source Stack</div>
-      <div style="height:220px;position:relative;"><canvas id="chartSource" role="img" aria-label="Stacked points by source including deductions"></canvas></div>
-    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">&#127381; Points Source Stack</div>
+    <div style="height:240px;position:relative;"><canvas id="chartSource" role="img" aria-label="Stacked points by source including deductions"></canvas></div>
   </div>
 </div>
 
@@ -343,6 +343,20 @@
           <tbody id="phoneBody"></tbody>
         </table>
       </div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:16px;">
+    <div class="panel-title">&#128222; CALL PERFORMANCE</div>
+    <div class="perf-tabs" id="perfTabs">
+      <button class="perf-tab active" data-view="daily"   onclick="switchPerfView('daily')">Daily</button>
+      <button class="perf-tab"        data-view="weekly"  onclick="switchPerfView('weekly')">Weekly</button>
+      <button class="perf-tab"        data-view="monthly" onclick="switchPerfView('monthly')">Monthly</button>
+      <button class="perf-tab"        data-view="yearly"  onclick="switchPerfView('yearly')">Yearly</button>
+      <button class="perf-tab"        data-view="heatmap" onclick="switchPerfView('heatmap')">&#128293; Heatmap</button>
+    </div>
+    <div id="perfViewContent">
+      <div style="color:var(--muted);font-size:13px;padding:20px 0;">Switch to the Manage tab to load performance data.</div>
     </div>
   </div>
 </div>
@@ -562,17 +576,6 @@ function renderCharts(sc){
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{stacked:true,ticks:{color:'#6b8db5',font:{size:10}},grid:{color:'rgba(0,212,255,.06)'}},y:{stacked:true,ticks:{color:'#6b8db5'},grid:{color:'rgba(0,212,255,.06)'}}}}
   });
 
-  // Phone (placed/answered/missed/vm)
-  dc('cph');charts['cph']=new Chart(document.getElementById('chartPhone').getContext('2d'),{
-    type:'bar',data:{labels:sc.map(a=>a.name.split(' ')[0]),datasets:[
-      {label:'Placed',  data:sc.map(a=>(DATA.phone[a.id]||{}).placed||0),   backgroundColor:'#fbbf24aa',borderColor:'#fbbf24',borderWidth:1,borderRadius:3},
-      {label:'Answered',data:sc.map(a=>(DATA.phone[a.id]||{}).answered||0), backgroundColor:'#00d4ffaa',borderColor:'#00d4ff',borderWidth:1,borderRadius:3},
-      {label:'Missed',  data:sc.map(a=>(DATA.phone[a.id]||{}).missed||0),   backgroundColor:'#ff4d6daa',borderColor:'#ff4d6d',borderWidth:1,borderRadius:3},
-      {label:'Voicemail',data:sc.map(a=>(DATA.phone[a.id]||{}).voicemail||0),backgroundColor:'#fb923caa',borderColor:'#fb923c',borderWidth:1,borderRadius:3},
-    ]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'top',labels:{color:'#6b8db5',font:{size:10},boxWidth:10,padding:10}}},scales:{x:{ticks:{color:'#6b8db5',font:{size:10}},grid:{color:'rgba(0,212,255,.06)'}},y:{ticks:{color:'#6b8db5'},grid:{color:'rgba(0,212,255,.06)'}}}}
-  });
-
   // Donut
   dc('ct');const sT=sc.filter(a=>a.team==='sales').reduce((s,a)=>s+a.total,0);const svT=sc.filter(a=>a.team==='service').reduce((s,a)=>s+a.total,0);
   charts['ct']=new Chart(document.getElementById('chartTeams').getContext('2d'),{
@@ -701,6 +704,7 @@ function switchTab(t){
   document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',['race','stats','admin','history'][i]===t));
   if(t==='stats')setTimeout(()=>renderCharts(scored()),100);
   if(t==='history')fetchHistory();
+  if(t==='admin')renderPerfSection();
 }
 
 // ═════ HISTORY ═════
@@ -833,6 +837,258 @@ function confirmSheetIdUpdate(){
   }).catch(err=>{
     st.innerHTML='<span style="color:var(--danger)">&#10007; '+err.message+'</span>';
   });
+}
+
+// ═════ CALL PERFORMANCE ═════
+var PERF_DATA=null;
+var _perfView='daily';
+var _perfFetching=false;
+
+function switchPerfView(view){
+  _perfView=view;
+  document.querySelectorAll('.perf-tab').forEach(el=>el.classList.toggle('active',el.dataset.view===view));
+  renderPerfSection();
+}
+
+function fetchPerfData(){
+  if(_perfFetching)return;
+  _perfFetching=true;
+  var wrap=document.getElementById('perfViewContent');
+  if(wrap)wrap.innerHTML='<div style="color:var(--muted);font-size:13px;padding:20px 0;">Loading performance data...</div>';
+  fetch('/api/perf').then(r=>r.json()).then(data=>{
+    PERF_DATA=data;_perfFetching=false;renderPerfSection();
+  }).catch(err=>{
+    _perfFetching=false;
+    var wrap=document.getElementById('perfViewContent');
+    if(wrap)wrap.innerHTML='<div style="color:var(--danger);font-size:13px;padding:20px 0;">Error loading performance data: '+err.message+'</div>';
+  });
+}
+
+function renderPerfSection(){
+  var wrap=document.getElementById('perfViewContent');
+  if(!wrap)return;
+  if(!PERF_DATA){fetchPerfData();return;}
+  if(PERF_DATA.error){
+    wrap.innerHTML='<div style="color:var(--danger);font-size:13px;padding:20px 0;">Performance sheet error: '+PERF_DATA.error+'</div>';
+    return;
+  }
+  if(_perfView==='heatmap'){renderPerfHeatmap(wrap);return;}
+  var rows=PERF_DATA[_perfView]||[];
+  if(!rows.length){
+    wrap.innerHTML='<div style="color:var(--muted);font-size:13px;padding:20px 0;">No '+_perfView+' performance data yet. Upload a call report to populate this view.</div>';
+    return;
+  }
+  // Collect unique periods
+  var seen={},periods=[];
+  rows.forEach(function(r){var p=String(r[0]);if(p&&!seen[p]){seen[p]=true;periods.push(p);}});
+  periods=sortPerfPeriods(periods,_perfView);
+  wrap.innerHTML='<div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">'
+    +'<span style="font-size:12px;color:var(--muted);">Period:</span>'
+    +'<select id="perfPeriodDropdown" class="cfg-input" style="flex:unset;width:auto;min-width:130px;font-size:12px;" onchange="renderPerfChart()">'
+    +periods.map(function(p){return'<option value="'+p+'">'+p+'</option>';}).join('')
+    +'</select>'
+    +'<button class="cfg-btn" onclick="PERF_DATA=null;fetchPerfData();" style="padding:5px 14px;font-size:12px;">&#8635; Refresh</button>'
+    +'</div>'
+    +'<div style="height:260px;position:relative;margin-bottom:16px;"><canvas id="chartCallPerf" role="img" aria-label="Call performance chart"></canvas></div>'
+    +'<div id="perfTableWrap" style="overflow-x:auto;"></div>';
+  renderPerfChart();
+}
+
+function sortPerfPeriods(periods,view){
+  if(view==='daily'){
+    return periods.sort(function(a,b){
+      function pd(s){var p=s.split('/').map(Number);return p[2]*10000+p[0]*100+p[1];}
+      try{return pd(b)-pd(a);}catch(e){return b.localeCompare(a);}
+    });
+  }
+  if(view==='weekly'){
+    return periods.sort(function(a,b){
+      function pw(s){var m=s.match(/(\d{4}) Week (\d+)/);return m?+m[1]*100+ +m[2]:0;}
+      return pw(b)-pw(a);
+    });
+  }
+  if(view==='monthly'){
+    var MO=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return periods.sort(function(a,b){
+      function pm(s){var p=s.split(' ');return(+p[1]||0)*100+MO.indexOf(p[0]);}
+      return pm(b)-pm(a);
+    });
+  }
+  return periods.sort(function(a,b){return b.localeCompare(a);});
+}
+
+function renderPerfChart(){
+  if(!PERF_DATA)return;
+  var dropdown=document.getElementById('perfPeriodDropdown');
+  if(!dropdown)return;
+  var period=dropdown.value;
+  var rows=(PERF_DATA[_perfView]||[]).filter(function(r){return String(r[0])===period;});
+  var agentRows=rows.filter(function(r){return String(r[1])!=='— TEAM TOTAL —';});
+  var teamRow=rows.find(function(r){return String(r[1])==='— TEAM TOTAL —';});
+
+  dc('ccp');
+  var canvas=document.getElementById('chartCallPerf');
+  if(!canvas)return;
+  charts['ccp']=new Chart(canvas.getContext('2d'),{
+    type:'bar',
+    data:{
+      labels:agentRows.map(function(r){return String(r[1]).split(' ')[0];}),
+      datasets:[
+        {label:'Placed',   data:agentRows.map(function(r){return +r[3]||0;}),backgroundColor:'#fbbf24aa',borderColor:'#fbbf24',borderWidth:1,borderRadius:3},
+        {label:'Answered', data:agentRows.map(function(r){return +r[4]||0;}),backgroundColor:'#00d4ffaa',borderColor:'#00d4ff',borderWidth:1,borderRadius:3},
+        {label:'Talk Min', data:agentRows.map(function(r){return +r[7]||0;}),backgroundColor:'#34d399aa',borderColor:'#34d399',borderWidth:1,borderRadius:3},
+      ]
+    },
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:true,position:'top',labels:{color:'#6b8db5',font:{size:10},boxWidth:10,padding:10}}},
+      scales:{
+        x:{ticks:{color:'#6b8db5',font:{size:10}},grid:{color:'rgba(0,212,255,.06)'}},
+        y:{ticks:{color:'#6b8db5'},grid:{color:'rgba(0,212,255,.06)'}}
+      }
+    }
+  });
+
+  // Team totals summary
+  var teamHtml='';
+  if(teamRow){
+    var vm=String(teamRow[5]||'—');
+    var missed=String(teamRow[6]||'—');
+    teamHtml='<div style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap;">'
+      +'<div style="background:rgba(255,77,109,.07);border:1px solid rgba(255,77,109,.2);border-radius:10px;padding:10px 18px;">'
+      +'<div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--danger);margin-bottom:4px;">Missed (Team)</div>'
+      +'<div style="font-family:\'DM Mono\',monospace;font-size:1.2rem;color:var(--danger);">'+missed+'</div></div>'
+      +'<div style="background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.2);border-radius:10px;padding:10px 18px;">'
+      +'<div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--warn);margin-bottom:4px;">Voicemails (Team)</div>'
+      +'<div style="font-family:\'DM Mono\',monospace;font-size:1.2rem;color:var(--warn);">'+vm+'</div></div>'
+      +'</div>';
+  }
+
+  // Agent table
+  var tableHtml=teamHtml
+    +'<table style="width:100%;border-collapse:collapse;font-size:12px;">'
+    +'<thead><tr style="color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border);">'
+    +'<th style="text-align:left;padding:0 8px 8px 0;font-weight:500;">Agent</th>'
+    +'<th style="text-align:left;padding:0 8px 8px;font-weight:500;">Team</th>'
+    +'<th style="text-align:right;padding:0 8px 8px;font-weight:500;">Placed</th>'
+    +'<th style="text-align:right;padding:0 8px 8px;font-weight:500;">Answered</th>'
+    +'<th style="text-align:right;padding:0 8px 8px;font-weight:500;">Talk Min</th>'
+    +'<th style="text-align:right;padding:0 8px 8px;font-weight:500;">Avg Talk</th>'
+    +'<th style="text-align:right;padding:0 0 8px 8px;font-weight:500;">Max Call</th>'
+    +'</tr></thead><tbody>'
+    +agentRows.map(function(r){
+      var isSvc=String(r[2]).indexOf('service')!==-1;
+      var badgeBg=isSvc?'rgba(0,255,148,.12)':'rgba(0,212,255,.15)';
+      var badgeC=isSvc?'var(--accent2)':'var(--accent)';
+      return'<tr style="border-bottom:1px solid var(--border2);">'
+        +'<td style="padding:6px 8px 6px 0;font-weight:500;">'+r[1]+'</td>'
+        +'<td style="padding:6px 8px;"><span style="font-size:9px;font-weight:600;padding:2px 6px;border-radius:4px;background:'+badgeBg+';color:'+badgeC+'">'+(isSvc?'Service':'Sales')+'</span></td>'
+        +'<td style="padding:6px 8px;text-align:right;font-family:\'DM Mono\',monospace;color:var(--warn);">'+(+r[3]||0)+'</td>'
+        +'<td style="padding:6px 8px;text-align:right;font-family:\'DM Mono\',monospace;color:var(--accent);">'+(+r[4]||0)+'</td>'
+        +'<td style="padding:6px 8px;text-align:right;font-family:\'DM Mono\',monospace;color:var(--accent2);">'+(+r[7]||0).toFixed(1)+'</td>'
+        +'<td style="padding:6px 8px;text-align:right;font-family:\'DM Mono\',monospace;color:var(--muted);">'+(+r[8]||0).toFixed(2)+'</td>'
+        +'<td style="padding:6px 0 6px 8px;text-align:right;font-family:\'DM Mono\',monospace;color:var(--muted);">'+(+r[9]||0).toFixed(2)+'</td>'
+        +'</tr>';
+    }).join('')
+    +'</tbody></table>';
+
+  document.getElementById('perfTableWrap').innerHTML=tableHtml;
+}
+
+function renderPerfHeatmap(wrap){
+  var vmSlots=PERF_DATA&&PERF_DATA.vmSlots;
+  if(!vmSlots||!vmSlots.length){
+    wrap.innerHTML='<div style="color:var(--muted);font-size:13px;padding:20px 0;">No voicemail heatmap data available. Upload a call report first.</div>';
+    return;
+  }
+  var rows=vmSlots.map(function(row){
+    return{date:String(row[0]).replace(/^'/,''),counts:Array.from({length:48},function(_,i){return parseInt(row[i+1])||0;})};
+  }).filter(function(r){return r.date&&r.date!=='';});
+  rows.sort(function(a,b){
+    function pd(s){var p=s.split('/').map(Number);return(p[2]||0)*10000+(p[0]||0)*100+(p[1]||0);}
+    try{return pd(b.date)-pd(a.date);}catch(e){return 0;}
+  });
+  if(!rows.length){wrap.innerHTML='<div style="color:var(--muted);font-size:13px;padding:20px 0;">No voicemail data rows found.</div>';return;}
+
+  var maxCount=Math.max.apply(null,rows.map(function(r){return Math.max.apply(null,r.counts);}));
+  if(maxCount<1)maxCount=1;
+
+  var CW=11,CH=20,GAP=1,ML=78,MT=28;
+  var W=ML+48*(CW+GAP);
+  var H=MT+rows.length*(CH+GAP)+10;
+
+  var canvas=document.createElement('canvas');
+  canvas.width=W;canvas.height=H;
+  canvas.style.cssText='display:block;border-radius:8px;cursor:crosshair;';
+
+  var ctx=canvas.getContext('2d');
+  ctx.fillStyle='#060e1c';
+  ctx.fillRect(0,0,W,H);
+
+  // Time labels every 4 slots (every 2 hours)
+  ctx.font='9px monospace';ctx.fillStyle='#6b8db5';ctx.textAlign='center';
+  for(var s=0;s<48;s+=4){
+    var x=ML+s*(CW+GAP)+(CW/2);
+    var h=Math.floor(s/2);
+    var lh=h%12||12;var ap=h<12?'a':'p';
+    ctx.fillText(lh+ap,x,16);
+  }
+
+  // Rows
+  for(var r=0;r<rows.length;r++){
+    var y=MT+r*(CH+GAP);
+    ctx.font='9px monospace';ctx.fillStyle='#6b8db5';ctx.textAlign='right';
+    ctx.fillText(rows[r].date,ML-5,y+CH-5);
+    for(var s=0;s<48;s++){
+      var cx=ML+s*(CW+GAP);
+      var v=rows[r].counts[s];
+      if(v===0){
+        ctx.fillStyle='rgba(255,255,255,0.05)';
+      }else{
+        var intensity=v/maxCount;
+        var g=Math.round(77+(1-intensity)*110);
+        var b2=Math.round(109*(1-intensity)*0.4);
+        ctx.fillStyle='rgb(255,'+g+','+b2+')';
+      }
+      ctx.fillRect(cx,y,CW,CH);
+    }
+  }
+
+  // Tooltip
+  canvas.addEventListener('mousemove',function(e){
+    var rect=canvas.getBoundingClientRect();
+    var mx=(e.clientX-rect.left)*(canvas.width/rect.width);
+    var my=(e.clientY-rect.top)*(canvas.height/rect.height);
+    var si=Math.floor((mx-ML)/(CW+GAP));
+    var ri=Math.floor((my-MT)/(CH+GAP));
+    if(si>=0&&si<48&&ri>=0&&ri<rows.length){
+      var hh=Math.floor(si/2);var mm=si%2===0?'00':'30';
+      var lhh=hh%12||12;var aapp=hh<12?'AM':'PM';
+      canvas.title=rows[ri].date+' · '+lhh+':'+mm+' '+aapp+' → '+rows[ri].counts[si]+' VM'+(rows[ri].counts[si]!==1?'s':'');
+    }else{canvas.title='';}
+  });
+
+  // Legend
+  var legendCells='';
+  for(var li=0;li<=8;li++){
+    var lintensity=li/8;
+    var lc;
+    if(lintensity===0)lc='rgba(255,255,255,0.05)';
+    else{var lg=Math.round(77+(1-lintensity)*110);var lb=Math.round(109*(1-lintensity)*0.4);lc='rgb(255,'+lg+','+lb+')';}
+    legendCells+='<div style="width:14px;height:14px;background:'+lc+';border-radius:2px;"></div>';
+  }
+
+  var outerDiv=document.createElement('div');
+  var info=document.createElement('div');
+  info.style.cssText='font-family:\'DM Mono\',monospace;font-size:11px;color:var(--muted);margin-bottom:8px;';
+  info.textContent='Voicemail distribution by 30-min slot · '+rows.length+' day'+(rows.length!==1?'s':'')+' · hover cell for detail';
+  var scrollDiv=document.createElement('div');
+  scrollDiv.style.overflowX='auto';
+  scrollDiv.appendChild(canvas);
+  var legendDiv=document.createElement('div');
+  legendDiv.style.cssText='display:flex;align-items:center;gap:6px;margin-top:10px;font-size:11px;color:var(--muted);';
+  legendDiv.innerHTML='<span>0</span><div style="display:flex;gap:2px;">'+legendCells+'</div><span>'+maxCount+' VM'+(maxCount!==1?'s':'')+'</span>';
+  outerDiv.appendChild(info);outerDiv.appendChild(scrollDiv);outerDiv.appendChild(legendDiv);
+  wrap.innerHTML='';wrap.appendChild(outerDiv);
 }
 
 // ═════ FILE UPLOAD ═════
