@@ -856,9 +856,9 @@ async function signOut(){
 // ═════ SCORING CONFIG ═════
 async function loadScoring(){
   if(!_supabase)return;
-  const{data,error}=await _supabase.from('scoring_config').select('key,value');
+  const{data,error}=await _supabase.from('scoring_config').select('config_key,config_value');
   if(!error&&data&&data.length){
-    data.forEach(function(r){if(SCORING.hasOwnProperty(r.key))SCORING[r.key]=+r.value;});
+    data.forEach(function(r){if(SCORING.hasOwnProperty(r.config_key))SCORING[r.config_key]=+r.config_value;});
   }
   renderScoringEditor();
   render();
@@ -910,10 +910,10 @@ async function saveScoring(){
     var el=document.getElementById('sc_'+k);
     var val=el?parseFloat(el.value):SCORING[k];
     if(!isNaN(val))SCORING[k]=val;
-    return{key:k,value:SCORING[k]};
+    return{config_key:k,config_value:SCORING[k]};
   });
   if(statusEl)statusEl.textContent='Saving...';
-  var{error}=await _supabase.from('scoring_config').upsert(upserts,{onConflict:'key'});
+  var{error}=await _supabase.from('scoring_config').upsert(upserts,{onConflict:'config_key'});
   if(error){
     if(statusEl)statusEl.textContent='Error: '+error.message;
   }else{
