@@ -18,6 +18,10 @@
       "use": "@vercel/node"
     },
     {
+      "src": "api/config.js",
+      "use": "@vercel/node"
+    },
+    {
       "src": "index.html",
       "use": "@vercel/static"
     }
@@ -38,6 +42,10 @@
     {
       "src": "/api/perf",
       "dest": "/api/perf.js"
+    },
+    {
+      "src": "/api/config",
+      "dest": "/api/config.js"
     },
     {
       "src": "/(.*)",

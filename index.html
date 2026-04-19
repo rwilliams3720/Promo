@@ -157,7 +157,29 @@
 </style>
 </head>
 <body>
-<main>
+<!-- ══ LOGIN ══ -->
+<div id="loginScreen" style="display:none;min-height:100vh;align-items:center;justify-content:center;padding:2rem;">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:20px;padding:40px 36px;width:100%;max-width:400px;position:relative;z-index:1;">
+    <div style="text-align:center;margin-bottom:28px;">
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:3.5rem;letter-spacing:.04em;line-height:.9;">BOAT <span style="color:var(--accent);">RACE</span></div>
+      <div style="font-size:13px;color:var(--muted);margin-top:8px;font-family:'DM Mono',monospace;letter-spacing:.05em;">SIGN IN TO CONTINUE</div>
+    </div>
+    <form onsubmit="handleLogin(event)">
+      <div style="margin-bottom:14px;">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:6px;">Email</div>
+        <input id="loginEmail" type="email" class="cfg-input" style="width:100%;" placeholder="your@email.com" required autocomplete="email">
+      </div>
+      <div style="margin-bottom:20px;">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:6px;">Password</div>
+        <input id="loginPassword" type="password" class="cfg-input" style="width:100%;" placeholder="••••••••" required autocomplete="current-password">
+      </div>
+      <button id="loginBtn" type="submit" class="save-btn" style="width:100%;padding:12px;">Sign In</button>
+      <div id="loginError" style="margin-top:12px;font-size:13px;color:var(--danger);min-height:18px;text-align:center;"></div>
+    </form>
+  </div>
+</div>
+
+<main id="appMain" style="display:none;">
 
 <div class="header">
   <div>
@@ -165,7 +187,10 @@
     <p id="dateLabel">APRIL 2026 · LOADING...</p>
   </div>
   <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
-    <div class="live-badge"><span class="live-dot"></span>LIVE</div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <div class="live-badge"><span class="live-dot"></span>LIVE</div>
+      <button onclick="signOut()" style="padding:5px 12px;background:rgba(255,77,109,.1);border:1px solid rgba(255,77,109,.25);color:var(--danger);border-radius:8px;cursor:pointer;font-size:11px;font-weight:600;font-family:'DM Sans',sans-serif;letter-spacing:.04em;">Sign Out</button>
+    </div>
     <div style="font-size:12px;color:var(--muted);">Updated: <span id="lastUpdate">—</span></div>
   </div>
 </div>
@@ -350,6 +375,7 @@
 <div class="wave-footer"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const POLICY_KEY=[
   {id:'wl',   label:'Whole Life',    pts:100,color:'#a78bfa'},
@@ -764,9 +790,66 @@ function renderHistory(rows){
 
   el.innerHTML=html||'<div style="color:var(--muted);text-align:center;padding:40px 0">No records found.</div>';
 }
-fetchSheet(DATA.sheetUrl);
-timer=setInterval(()=>fetchSheet(DATA.sheetUrl),(DATA.refreshSecs||300)*1000);
-render();
+// ═════ AUTH ═════
+var _supabase=null;
+
+async function initSupabase(){
+  try{
+    const cfg=await fetch('/api/config').then(r=>r.json());
+    if(!cfg.supabaseUrl||!cfg.supabaseKey){
+      showLogin('Configuration error — Supabase env vars not set in Vercel.');
+      return;
+    }
+    _supabase=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseKey);
+    const{data:{session}}=await _supabase.auth.getSession();
+    if(session)showDashboard();
+    else showLogin();
+    _supabase.auth.onAuthStateChange((_evt,session)=>{
+      if(session)showDashboard();
+      else showLogin();
+    });
+  }catch(err){
+    showLogin('Init error: '+err.message);
+  }
+}
+
+function showDashboard(){
+  document.getElementById('loginScreen').style.display='none';
+  document.getElementById('appMain').style.display='';
+  render();
+  fetchSheet(DATA.sheetUrl);
+  if(!timer)timer=setInterval(()=>fetchSheet(DATA.sheetUrl),(DATA.refreshSecs||300)*1000);
+}
+
+function showLogin(errMsg){
+  document.getElementById('loginScreen').style.display='flex';
+  document.getElementById('appMain').style.display='none';
+  if(timer){clearInterval(timer);timer=null;}
+  if(errMsg){
+    var el=document.getElementById('loginError');
+    if(el)el.textContent=errMsg;
+  }
+}
+
+async function handleLogin(e){
+  e.preventDefault();
+  var email=document.getElementById('loginEmail').value.trim();
+  var password=document.getElementById('loginPassword').value;
+  var errEl=document.getElementById('loginError');
+  var btn=document.getElementById('loginBtn');
+  btn.disabled=true;btn.textContent='Signing in...';errEl.textContent='';
+  const{error}=await _supabase.auth.signInWithPassword({email,password});
+  if(error){
+    errEl.textContent=error.message;
+    btn.disabled=false;btn.textContent='Sign In';
+  }
+}
+
+async function signOut(){
+  if(_supabase)await _supabase.auth.signOut();
+}
+
+initSupabase();
 
 
 // ═════ CALL PERFORMANCE ═════
