@@ -629,71 +629,61 @@ function applyRefresh(){
   const secs=parseInt(document.getElementById('refreshInterval').value);
   DATA.refreshSecs=secs;saveLocal();
   if(timer)clearInterval(timer);
-  timer=setInterval(()=>fetchSheet(DATA.sheetUrl),secs*1000);
+  timer=setInterval(fetchRaceData,secs*1000);
   document.getElementById('configStatus').innerHTML='<span style="color:var(--accent2)">Auto-refresh updated.</span>';
 }
 function connectSheets(){applyRefresh();}
-function fetchSheet(url){
-  fetch(url).then(r=>r.text()).then(txt=>{
-    const json=JSON.parse(txt.replace(/^[^(]*\(/,'').replace(/\);\s*$/,''));
-    parseSheet(json);
-    document.getElementById('configStatus').innerHTML=`<span style="color:var(--accent2)">Connected — synced ${new Date().toLocaleTimeString()}</span>`;
+
+async function fetchRaceData(){
+  if(!_supabase)return;
+  try{
+    const{data,error}=await _supabase.from('race_data').select('*');
+    if(error)throw error;
+    parseRaceData(data);
+    document.getElementById('configStatus').innerHTML='<span style="color:var(--accent2)">Connected — synced '+new Date().toLocaleTimeString()+'</span>';
     document.getElementById('sourceDot').className='dot dot-live';
-    document.getElementById('sourceText').textContent='Live — auto-syncing from Google Sheets';
+    document.getElementById('sourceText').textContent='Live — syncing from Supabase';
     render();
-  }).catch(e=>{
-    document.getElementById('configStatus').innerHTML=`<span style="color:var(--danger)">Error: ${e.message}</span>`;
-  });
-}
-/*
-  Sheet columns expected (GAS writes this):
-  A:AgentID  B:Name  C:Team  D:WL  E:UL  F:Term  G:Health  H:Auto  I:Fire
-  J:Placed  K:Answered  L:Missed  M:Voicemail  N:TalkMin  O:AvgMin
-*/
-function parseSheet(json){
-  const rows=json.table.rows||[];
-  // Reset before repopulating — ensures a cleared sheet wipes stale localStorage cache
-  DATA.policies={};DATA.phone={};DATA.raceWideMissed=0;DATA.raceWideVoicemail=0;
-  rows.forEach(row=>{
-    const c=row.c;const v=i=>c[i]?.v??0;
-    const id=String(v(0));
-    const existing=DATA.agents.find(a=>a.id===id);
-    const team=String(v(2)).toLowerCase().includes('service')?'service':'sales';
-    if(!existing)DATA.agents.push({id,name:String(v(1)),team});
-    else{existing.name=String(v(1));existing.team=team;} // team is source of truth from sheet
-    DATA.policies[id]={wl:+v(3)||0,ul:+v(4)||0,term:+v(5)||0,health:+v(6)||0,auto:+v(7)||0,fire:+v(8)||0};
-    DATA.phone[id]={placed:+v(9)||0,answered:+v(10)||0,missed:+v(11)||0,voicemail:+v(12)||0,talkMin:+v(13)||0,avgMin:+v(14)||0};
-    // Race-wide deductions (same value on every row — grab from any row)
-    DATA.raceWideMissed=+v(15)||0;
-    DATA.raceWideVoicemail=+v(16)||0;
-    // Last updated timestamp from sheet
-    const ts=c[17]?.v;
-    if(ts&&typeof ts==='string'&&ts.startsWith('Date(')){
-      try{const parts=ts.replace('Date(','').replace(')','').split(',').map(Number);const d=new Date(Date.UTC(...parts));if(!isNaN(d))document.getElementById('lastUpdate').textContent=d.toLocaleString('en-US',{timeZone:'America/Los_Angeles',month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true})+' PST';}catch(e){}
-    }
-  });
+  }catch(err){
+    document.getElementById('configStatus').innerHTML='<span style="color:var(--danger)">Error: '+err.message+'</span>';
+  }
 }
 
-function setTeam(id,team){
+function parseRaceData(rows){
+  DATA.policies={};DATA.phone={};DATA.raceWideMissed=0;DATA.raceWideVoicemail=0;
+  rows.forEach(function(row){
+    var id=String(row.agent_id);
+    var existing=DATA.agents.find(function(a){return a.id===id;});
+    var team=String(row.team||'sales').toLowerCase();
+    if(!existing)DATA.agents.push({id,name:row.name,team});
+    else{existing.name=row.name;existing.team=team;}
+    DATA.policies[id]={wl:row.wl||0,ul:row.ul||0,term:row.term||0,health:row.health||0,auto:row.auto||0,fire:row.fire||0};
+    DATA.phone[id]={placed:row.placed||0,answered:row.answered||0,missed:row.missed||0,voicemail:row.voicemail||0,talkMin:+row.talk_min||0,avgMin:+row.avg_min||0};
+    if(row.race_wide_missed)DATA.raceWideMissed=row.race_wide_missed;
+    if(row.race_wide_voicemail)DATA.raceWideVoicemail=row.race_wide_voicemail;
+    if(row.last_updated){
+      try{
+        var d=new Date(row.last_updated);
+        if(!isNaN(d))document.getElementById('lastUpdate').textContent=d.toLocaleString('en-US',{timeZone:'America/Los_Angeles',month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true})+' PST';
+      }catch(e){}
+    }
+  });
+  saveLocal();
+}
+
+async function setTeam(id,team){
   const a=DATA.agents.find(x=>x.id===id);
   if(a)a.team=team;
   renderAdmin();
   const st=document.getElementById('teamSaveStatus');
   if(st)st.innerHTML='<span style="color:var(--muted);font-size:12px">Saving...</span>';
-  fetch('/api/upload',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({fileType:'setteam',agentId:id,team})
-  }).then(r=>r.json()).then(result=>{
-    if(result.success){
-      if(st)st.innerHTML='<span style="color:var(--accent2);font-size:12px">&#10003; Saved</span>';
-      setTimeout(()=>fetchSheet(DATA.sheetUrl),1500);
-    }else{
-      if(st)st.innerHTML='<span style="color:var(--danger);font-size:12px">&#10007; '+(result.error||'Save failed')+'</span>';
-    }
-  }).catch(err=>{
-    if(st)st.innerHTML='<span style="color:var(--danger);font-size:12px">&#10007; '+err.message+'</span>';
-  });
+  const{error}=await _supabase.from('race_data').update({team}).eq('agent_id',id);
+  if(error){
+    if(st)st.innerHTML='<span style="color:var(--danger);font-size:12px">&#10007; '+error.message+'</span>';
+  }else{
+    if(st)st.innerHTML='<span style="color:var(--accent2);font-size:12px">&#10003; Saved</span>';
+    setTimeout(fetchRaceData,500);
+  }
 }
 function saveData(){
   document.querySelectorAll('.pol-input').forEach(el=>{const{agent,key}=el.dataset;if(!DATA.policies[agent])DATA.policies[agent]={};DATA.policies[agent][key]=parseFloat(el.value)||0;});
@@ -817,8 +807,8 @@ function showDashboard(){
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('appMain').style.display='';
   render();
-  fetchSheet(DATA.sheetUrl);
-  if(!timer)timer=setInterval(()=>fetchSheet(DATA.sheetUrl),(DATA.refreshSecs||300)*1000);
+  fetchRaceData();
+  if(!timer)timer=setInterval(fetchRaceData,(DATA.refreshSecs||300)*1000);
 }
 
 function showLogin(errMsg){
@@ -1138,7 +1128,7 @@ function uploadFile(file,type){
       if(result.success){
         var extra=result.new!==undefined?' ('+result.new+' new, '+result.skipped+' skipped)':'';
         status.innerHTML='<span style="color:var(--accent2)">&#10003; '+result.message+extra+'</span>';
-        if(DATA.sheetUrl)setTimeout(()=>fetchSheet(DATA.sheetUrl),2000);
+        setTimeout(fetchRaceData,2000);
       }else{
         var diagInfo = result.diag ? ' | bytes:'+result.diag.bytes+' magic:'+result.diag.magic+' xlsx:'+result.diag.isXlsx+(result.diag.errors&&result.diag.errors.length?' errs:['+result.diag.errors.join('; ')+']':'') : '';
         status.innerHTML='<span style="color:var(--danger)">&#10007; '+(result.error||'Upload failed')+diagInfo+'</span>';
