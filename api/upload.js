@@ -149,6 +149,7 @@ async function processCallUpload(rows) {
     disposition:r[2],
     talk_secs:  r[3] ? Math.round(r[3]*60) : null,
     call_dt:    r[4] || null,
+    call_slot:  r[5] != null ? r[5] : null,
   }));
   await supabase.from('call_log').upsert(logInserts, { onConflict:'hash', ignoreDuplicates:true });
 
@@ -355,7 +356,7 @@ function classifyCalls(data, knownHashes) {
     if (knownHashes[hash]) { duplicatesSkipped++; continue; }
 
     if (category==='internal'||category==='other') {
-      newLogRows.push([hash,'skip',category,0,dateOnly(dt),'']);
+      newLogRows.push([hash,'skip',category,0,dateOnly(dt),null]);
       continue;
     }
 
@@ -369,7 +370,8 @@ function classifyCalls(data, knownHashes) {
     }
 
     const talkMin = Math.round((talkSecs/60)*10)/10;
-    newLogRows.push([hash, agentId, category, talkMin, dateOnly(dt), '']);
+    const slot = category === 'voicemail' ? timeSlot(dt) : null;
+    newLogRows.push([hash, agentId, category, talkMin, dateOnly(dt), slot]);
   }
 
   return { newLogRows, duplicatesSkipped };
@@ -499,6 +501,14 @@ function secsFromStr(val) {
   const parts = s.split(':');
   if (parts.length===3) return parseInt(parts[0])*3600+parseInt(parts[1])*60+parseInt(parts[2]);
   return parseFloat(s)||0;
+}
+
+function timeSlot(dtStr) {
+  try {
+    const d = new Date(dtStr);
+    if (isNaN(d.getTime())) return null;
+    return d.getHours() * 2 + (d.getMinutes() >= 30 ? 1 : 0);
+  } catch(e) { return null; }
 }
 
 function dateOnly(dtStr) {
