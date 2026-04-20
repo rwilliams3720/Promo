@@ -83,21 +83,29 @@ export default async function handler(req, res) {
   const userId = user.id;
 
   try {
-    const { fileType, fileBase64, fileName, mimeType, columnMap } = req.body;
+    const body      = req.body || {};
+    const fileType  = body.type  || body.fileType;
+    const columnMap = body.columnMap || null;
 
     if (fileType === 'setteam') return res.json({ success: true });
 
-    if (!fileBase64) return res.status(400).json({ error: 'No file data provided.' });
-
-    const buffer = Buffer.from(fileBase64, 'base64');
-    const rows   = parseFile(buffer);
+    let rows;
+    if (body.data != null) {
+      rows = Array.isArray(body.data) ? body.data
+           : typeof body.data === 'string' ? JSON.parse(body.data) : null;
+    } else if (body.fileBase64) {
+      const buffer = Buffer.from(body.fileBase64, 'base64');
+      rows = parseFile(buffer);
+    } else {
+      return res.status(400).json({ error: 'No file data provided.' });
+    }
 
     if (!rows || rows.length === 0) {
       return res.json({ success: false, error: 'Could not parse file. Ensure it is a valid .xlsx or .xls file.' });
     }
 
     const result = fileType === 'sales'
-      ? await processSalesUpload(rows, userId, columnMap || null)
+      ? await processSalesUpload(rows, userId, columnMap)
       : await processCallUpload(rows, userId);
 
     return res.json(result);

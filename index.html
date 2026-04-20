@@ -528,6 +528,7 @@ let _acctStatus = 'trial';
 let _columnMap  = {};
 let _pendingUploadData = null;
 let _pendingUploadType = null;
+let _uploadInProgress  = false;
 let _perfData = null;
 let _adminRows = [];
 
@@ -654,11 +655,15 @@ async function handleLogin() {
   const email = document.getElementById('li-email').value.trim();
   const pass  = document.getElementById('li-pass').value;
   if (!email || !pass) return showMsg('li-msg', 'Email and password are required.');
+  const btn = document.querySelector('#screen-login .auth-btn');
+  if (btn) btn.disabled = true;
   try {
     const { error } = await _supabase.auth.signInWithPassword({ email, password: pass });
     if (error) showMsg('li-msg', error.message);
   } catch(e) {
     showMsg('li-msg', 'Connection error: ' + e.message);
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -675,12 +680,18 @@ async function handleSignup() {
   if (!company || !contact || !email || !pass) return showMsg('su-msg', 'Please fill in all required fields.');
   if (pass.length < 8) return showMsg('su-msg', 'Password must be at least 8 characters.');
 
-  const { error } = await _supabase.auth.signUp({
-    email, password: pass,
-    options: { data: { company_name: company, contact_name: contact, phone, plan, agent_count: agents, referral_source: referral } }
-  });
-  if (error) return showMsg('su-msg', error.message);
-  showMsg('su-msg', 'Account created! Check your email to confirm, or sign in now if confirmation is disabled.', 'ok');
+  const btn = document.querySelector('#screen-signup .auth-btn');
+  if (btn) btn.disabled = true;
+  try {
+    const { error } = await _supabase.auth.signUp({
+      email, password: pass,
+      options: { data: { company_name: company, contact_name: contact, phone, plan, agent_count: agents, referral_source: referral } }
+    });
+    if (error) return showMsg('su-msg', error.message);
+    showMsg('su-msg', 'Account created! Check your email to confirm, or sign in now if confirmation is disabled.', 'ok');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 async function handleForgotPassword() {
@@ -933,8 +944,13 @@ async function saveScoring() {
 // ── FILE UPLOAD ───────────────────────────────────────────────────────────────
 function handleFile(type, input) {
   if (_acctStatus === 'past_due' || _acctStatus === 'cancelled') return;
+  if (_uploadInProgress) return;
   const file = input.files[0];
   if (!file) return;
+
+  _uploadInProgress = true;
+  ['calls','sales'].forEach(t => { const fi = document.getElementById('fi-'+t); if (fi) fi.disabled = true; });
+
   const logEl = document.getElementById('ul-' + type);
   logEl.innerHTML = '<span>Reading file…</span>';
 
@@ -946,15 +962,15 @@ function handleFile(type, input) {
       const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
       logEl.innerHTML = `<span class="ok">Parsed ${raw.length - 1} rows. Uploading…</span>`;
 
-      const hdrs = await authHeaders();
-      const formData = new FormData();
-      formData.append('type', type);
-      formData.append('data', JSON.stringify(raw));
-      if (_columnMap && Object.keys(_columnMap).length) {
-        formData.append('columnMap', JSON.stringify(_columnMap));
-      }
+      const hdrs    = await authHeaders();
+      const payload = { type, data: raw };
+      if (_columnMap && Object.keys(_columnMap).length) payload.columnMap = _columnMap;
 
-      const res  = await fetch('/api/upload', { method: 'POST', headers: hdrs, body: formData });
+      const res  = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { ...hdrs, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
       const json = await res.json();
 
       if (json.needsMapping) {
@@ -965,18 +981,22 @@ function handleFile(type, input) {
         return;
       }
 
-      if (!res.ok) { logEl.innerHTML = `<span class="err">Error: ${json.error || 'Upload failed'}</span>`; return; }
+      if (!res.ok || json.success === false) {
+        logEl.innerHTML = `<span class="err">Error: ${json.error || 'Upload failed'}</span>`;
+        return;
+      }
 
-      logEl.innerHTML = `
-        <span class="ok">Upload complete</span>
-        ${json.calls_inserted!=null?`<br><span>Calls inserted: ${json.calls_inserted}</span>`:''}
-        ${json.sales_inserted!=null?`<br><span>Sales inserted: ${json.sales_inserted}</span>`:''}
-        ${json.race_updated?`<br><span class="ok">Race data updated</span>`:''}`;
+      logEl.innerHTML = `<span class="ok">${json.message || 'Upload complete'}</span>`
+        + (json.new != null ? `<br><span>${json.new} new record${json.new !== 1 ? 's' : ''} inserted</span>` : '')
+        + (json.skipped ? `<br><span class="warn">${json.skipped} duplicate${json.skipped !== 1 ? 's' : ''} skipped</span>` : '');
 
       document.getElementById('last-upload-time').textContent = new Date().toLocaleString();
       await loadRaceData();
     } catch(err) {
       document.getElementById('ul-' + type).innerHTML = `<span class="err">Error: ${err.message}</span>`;
+    } finally {
+      _uploadInProgress = false;
+      ['calls','sales'].forEach(t => { const fi = document.getElementById('fi-'+t); if (fi) fi.disabled = false; });
     }
   };
   reader.readAsArrayBuffer(file);
@@ -1019,16 +1039,20 @@ async function submitColMapper() {
 
   if (_pendingUploadData && _pendingUploadType) {
     const logEl = document.getElementById('ul-' + _pendingUploadType);
-    const hdrs  = await authHeaders();
-    const formData = new FormData();
-    formData.append('type', _pendingUploadType);
-    formData.append('data', JSON.stringify(_pendingUploadData));
-    formData.append('columnMap', JSON.stringify(_columnMap));
-    const res  = await fetch('/api/upload', { method: 'POST', headers: hdrs, body: formData });
-    const json = await res.json();
-    if (!res.ok) { logEl.innerHTML = `<span class="err">Error: ${json.error}</span>`; return; }
-    logEl.innerHTML = `<span class="ok">Upload complete after mapping.</span>`;
-    await loadRaceData();
+    try {
+      const hdrs = await authHeaders();
+      const res  = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { ...hdrs, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: _pendingUploadType, data: _pendingUploadData, columnMap: _columnMap }),
+      });
+      const json = await res.json();
+      if (!res.ok || json.success === false) { logEl.innerHTML = `<span class="err">Error: ${json.error || 'Upload failed'}</span>`; return; }
+      logEl.innerHTML = `<span class="ok">${json.message || 'Upload complete after mapping.'}</span>`;
+      await loadRaceData();
+    } catch(err) {
+      logEl.innerHTML = `<span class="err">Error: ${err.message}</span>`;
+    }
   }
 }
 
