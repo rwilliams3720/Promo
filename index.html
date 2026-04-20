@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sales Boat Race — April 2026</title>
+<title>Sales Boat Race</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -21,6 +21,30 @@
     pointer-events:none;z-index:0;}
   main{position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:2rem 1.5rem 5rem;}
 
+  /* ── AUTH SCREENS ── */
+  .auth-wrap{display:flex;align-items:center;justify-content:center;min-height:100vh;position:relative;z-index:1;padding:2rem;}
+  .auth-box{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:2.5rem 2rem;width:100%;max-width:420px;}
+  .auth-logo{font-family:'Bebas Neue',sans-serif;font-size:2.8rem;letter-spacing:.04em;color:var(--text);text-align:center;margin-bottom:.25rem;}
+  .auth-logo span{color:var(--accent);}
+  .auth-subtitle{font-size:13px;color:var(--muted);text-align:center;margin-bottom:2rem;}
+  .auth-field{margin-bottom:1rem;}
+  .auth-field label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px;letter-spacing:.04em;}
+  .auth-field input,.auth-field select{width:100%;padding:10px 14px;background:var(--deep);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .2s;}
+  .auth-field input:focus,.auth-field select:focus{border-color:var(--accent);}
+  .auth-field select option{background:var(--deep);}
+  .auth-btn{width:100%;padding:12px;background:var(--accent);color:var(--deep);border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;margin-top:.5rem;transition:opacity .2s;}
+  .auth-btn:hover{opacity:.9;}
+  .auth-btn:disabled{opacity:.5;cursor:not-allowed;}
+  .auth-footer{display:flex;gap:1rem;justify-content:center;margin-top:1.5rem;flex-wrap:wrap;}
+  .auth-link{background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;text-decoration:underline;font-family:'DM Sans',sans-serif;padding:0;}
+  .auth-link:hover{color:var(--accent);}
+  .auth-msg{font-size:13px;margin-top:1rem;text-align:center;padding:10px;border-radius:8px;}
+  .auth-msg.err{background:rgba(255,77,109,.1);border:1px solid rgba(255,77,109,.3);color:var(--danger);}
+  .auth-msg.ok{background:rgba(0,255,148,.08);border:1px solid rgba(0,255,148,.25);color:var(--accent2);}
+  .auth-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  @media(max-width:480px){.auth-row{grid-template-columns:1fr;}}
+
+  /* ── APP SHELL ── */
   .header{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:2rem;flex-wrap:wrap;gap:1rem;}
   .header h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(2.8rem,6vw,5rem);letter-spacing:.04em;line-height:.9;}
   .header h1 span{color:var(--accent);}
@@ -36,7 +60,10 @@
   .dot-live{background:var(--accent2);animation:pulse 1.8s infinite;}
   .dot-local{background:var(--warn);}
 
-  .tabs{display:flex;gap:4px;margin-bottom:2rem;background:var(--deep);border-radius:12px;padding:4px;width:fit-content;}
+  .restrict-banner{display:none;align-items:center;gap:12px;background:rgba(255,77,109,.1);border:1px solid rgba(255,77,109,.3);
+    border-radius:12px;padding:14px 18px;margin-bottom:1.5rem;font-size:14px;color:var(--danger);}
+
+  .tabs{display:flex;gap:4px;margin-bottom:2rem;background:var(--deep);border-radius:12px;padding:4px;width:fit-content;flex-wrap:wrap;}
   .tab{padding:8px 20px;border-radius:9px;border:none;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:500;background:transparent;color:var(--muted);transition:all .2s;}
   .tab.active{background:var(--card);color:var(--text);box-shadow:0 2px 8px rgba(0,0,0,.3);}
   .tab:hover:not(.active){color:var(--text);}
@@ -98,1132 +125,1154 @@
 
   /* DEDUCT BOX */
   .deduct-box{background:rgba(255,77,109,.07);border:1px solid rgba(255,77,109,.2);border-radius:12px;padding:14px 18px;margin-top:14px;}
-  .deduct-box h4{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--danger);margin-bottom:10px;}
-  .deduct-row{display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;}
-  .deduct-row span:first-child{color:var(--muted);}
-  .deduct-row span:last-child{font-family:'DM Mono',monospace;color:var(--danger);}
 
-  /* HBARS */
-  .hbar-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
-  .hbar-label{font-size:12px;width:100px;text-align:right;color:var(--muted);flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .hbar-track{flex:1;background:rgba(255,255,255,.06);border-radius:8px;height:18px;overflow:hidden;}
-  .hbar-fill{height:100%;border-radius:8px;transition:width 1.2s cubic-bezier(.34,1.2,.64,1);}
-  .hbar-val{font-family:'DM Mono',monospace;font-size:12px;width:45px;}
+  /* SCORING */
+  .score-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;}
+  .score-field{display:flex;flex-direction:column;gap:5px;}
+  .score-field label{font-size:12px;color:var(--muted);}
+  .score-field input{padding:8px 12px;background:var(--deep);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;font-family:'DM Mono',monospace;outline:none;width:100%;}
+  .score-field input:focus{border-color:var(--accent);}
+  .btn{padding:9px 22px;border-radius:9px;border:none;cursor:pointer;font-size:13px;font-weight:600;font-family:'DM Sans',sans-serif;transition:all .2s;}
+  .btn-primary{background:var(--accent);color:var(--deep);}
+  .btn-primary:hover{opacity:.85;}
+  .btn-primary:disabled{opacity:.45;cursor:not-allowed;}
+  .btn-secondary{background:var(--card2);color:var(--text);border:1px solid var(--border);}
+  .btn-secondary:hover{border-color:var(--accent);color:var(--accent);}
+  .btn-danger{background:rgba(255,77,109,.15);color:var(--danger);border:1px solid rgba(255,77,109,.3);}
+  .btn-danger:hover{background:rgba(255,77,109,.25);}
 
-  /* ADMIN */
-  .admin-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;}
-  .admin-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px 22px;}
-  .admin-card h3{font-family:'Bebas Neue',sans-serif;font-size:1.1rem;letter-spacing:.06em;color:var(--accent);margin-bottom:14px;}
-  .agent-admin-row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border2);}
-  .agent-admin-row:last-child{border-bottom:none;}
-  .agent-admin-name{font-size:13px;font-weight:500;}
-  .team-toggle{display:flex;border-radius:8px;overflow:hidden;border:1px solid var(--border);}
-  .team-toggle button{padding:5px 12px;font-size:11px;font-weight:600;letter-spacing:.05em;border:none;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;background:transparent;color:var(--muted);}
-  .team-toggle button.active-sales{background:rgba(0,212,255,.2);color:var(--accent);}
-  .team-toggle button.active-service{background:rgba(0,255,148,.2);color:var(--accent2);}
-  .input-table{width:100%;border-collapse:collapse;}
-  .input-table th{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:0 5px 8px;text-align:left;font-weight:500;}
-  .input-table td{padding:4px 5px;border-bottom:1px solid var(--border2);font-size:12px;}
-  .input-table tr:last-child td{border-bottom:none;}
-  .input-table input[type=number]{width:62px;background:var(--deep);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:6px;font-size:12px;font-family:'DM Mono',monospace;text-align:right;}
-  .input-table input:focus{outline:none;border-color:var(--accent);}
-  .save-btn{margin-top:16px;padding:10px 28px;background:var(--accent);color:var(--ocean);border:none;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;}
-  .save-btn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(0,212,255,.35);}
+  /* UPLOAD */
+  .drop-zone{border:2px dashed var(--border);border-radius:14px;padding:3rem 2rem;text-align:center;cursor:pointer;transition:all .2s;position:relative;}
+  .drop-zone:hover,.drop-zone.drag-over{border-color:var(--accent);background:rgba(0,212,255,.04);}
+  .drop-icon{font-size:2.5rem;margin-bottom:12px;}
+  .drop-label{font-size:15px;font-weight:500;}
+  .drop-sub{font-size:12px;color:var(--muted);margin-top:6px;}
+  .drop-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;}
+  .upload-log{margin-top:16px;font-size:12px;font-family:'DM Mono',monospace;color:var(--muted);line-height:1.8;max-height:200px;overflow-y:auto;}
+  .upload-log .ok{color:var(--accent2);}
+  .upload-log .err{color:var(--danger);}
+  .upload-log .warn{color:var(--warn);}
 
-  /* SHEETS */
-  .sheets-box{background:rgba(0,212,255,.05);border:1px solid rgba(0,212,255,.2);border-radius:14px;padding:18px 20px;margin-bottom:16px;}
-  .sheets-box h3{font-family:'Bebas Neue',sans-serif;font-size:1.15rem;color:var(--accent);margin-bottom:4px;}
-  .sheets-box p{font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.5;}
-  .cfg-row{display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap;}
-  .cfg-label{font-size:12px;color:var(--muted);width:110px;flex-shrink:0;}
-  .cfg-input{flex:1;min-width:180px;background:var(--card);border:1px solid var(--border);color:var(--text);padding:7px 12px;border-radius:8px;font-size:13px;font-family:'DM Mono',monospace;}
-  .cfg-input:focus{outline:none;border-color:var(--accent);}
-  .cfg-btn{padding:7px 18px;background:rgba(0,212,255,.15);color:var(--accent);border:1px solid rgba(0,212,255,.3);border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;font-family:'DM Sans',sans-serif;transition:all .15s;white-space:nowrap;}
-  .cfg-btn:hover{background:rgba(0,212,255,.25);}
+  /* PERF TABLE */
+  .perf-controls{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center;}
+  .perf-select{padding:7px 12px;background:var(--deep);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;outline:none;}
+  .perf-select:focus{border-color:var(--accent);}
+  .tbl{width:100%;border-collapse:collapse;font-size:12px;}
+  .tbl th{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:6px 8px;text-align:right;border-bottom:1px solid var(--border);}
+  .tbl th:first-child{text-align:left;}
+  .tbl td{padding:6px 8px;border-bottom:1px solid var(--border2);text-align:right;font-family:'DM Mono',monospace;}
+  .tbl td:first-child{text-align:left;font-family:'DM Sans',sans-serif;}
+  .tbl tr:hover td{background:rgba(255,255,255,.02);}
+  .tbl tr.total-row td{color:var(--muted);font-size:11px;font-style:italic;}
 
-  /* PERF SUB-TABS */
-  .perf-tabs{display:flex;gap:3px;margin-bottom:16px;background:var(--deep);border-radius:10px;padding:3px;width:fit-content;flex-wrap:wrap;}
-  .perf-tab{padding:6px 15px;border-radius:7px;border:none;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;background:transparent;color:var(--muted);transition:all .2s;}
-  .perf-tab.active{background:var(--card2);color:var(--text);box-shadow:0 2px 6px rgba(0,0,0,.3);}
-  .perf-tab:hover:not(.active){color:var(--text);}
+  /* VM HEATMAP */
+  .heatmap-wrap{overflow-x:auto;}
+  .heatmap{display:grid;grid-template-columns:repeat(48,1fr);gap:2px;min-width:600px;}
+  .hm-cell{height:20px;border-radius:3px;background:rgba(0,212,255,.05);transition:background .3s;}
+  .hm-labels{display:grid;grid-template-columns:repeat(8,1fr);min-width:600px;margin-top:4px;}
+  .hm-label{font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;text-align:center;}
 
-  .wave-footer{position:fixed;bottom:0;left:0;right:0;height:4px;z-index:10;background:linear-gradient(90deg,var(--accent),var(--accent2),var(--accent));background-size:200% 100%;animation:waveSlide 3s linear infinite;opacity:.7;}
-  @keyframes waveSlide{0%{background-position:0%}100%{background-position:200%}}
+  /* HISTORY TABLE */
+  .hist-tbl{width:100%;border-collapse:collapse;font-size:12px;}
+  .hist-tbl th{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:6px 10px;text-align:left;border-bottom:1px solid var(--border);}
+  .hist-tbl td{padding:7px 10px;border-bottom:1px solid var(--border2);font-family:'DM Mono',monospace;}
+  .hist-rank-1{color:var(--gold);}
+  .hist-rank-2{color:var(--silver);}
+  .hist-rank-3{color:var(--bronze);}
 
-  @media(max-width:640px){
-    .race-row{grid-template-columns:28px 1fr 130px 55px;}
-    .team-badge{display:none;}
-  }
+  /* ACCOUNT TAB */
+  .acct-section{margin-bottom:2rem;}
+  .acct-section h3{font-size:14px;font-weight:600;color:var(--accent);margin-bottom:1rem;text-transform:uppercase;letter-spacing:.06em;}
+  .acct-info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:1rem;}
+  .acct-info-item{background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:12px 14px;}
+  .acct-info-label{font-size:11px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;}
+  .acct-info-val{font-size:14px;font-weight:500;}
+  .acct-field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px;}
+  .acct-field label{font-size:12px;color:var(--muted);}
+  .acct-field input{padding:9px 12px;background:var(--deep);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;font-family:'DM Sans',sans-serif;outline:none;max-width:400px;}
+  .acct-field input:focus{border-color:var(--accent);}
+  .col-map-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:1rem;}
+  .col-map-item{display:flex;flex-direction:column;gap:4px;}
+  .col-map-item label{font-size:12px;color:var(--muted);}
+  .col-map-item input{padding:7px 10px;background:var(--deep);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:'DM Mono',monospace;outline:none;}
+  .col-map-item input:focus{border-color:var(--accent);}
+
+  /* ADMIN PANEL */
+  .admin-tbl{width:100%;border-collapse:collapse;font-size:12px;}
+  .admin-tbl th{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:8px 10px;text-align:left;border-bottom:1px solid var(--border);}
+  .admin-tbl td{padding:8px 10px;border-bottom:1px solid var(--border2);vertical-align:middle;}
+  .admin-tbl tr:hover td{background:rgba(255,255,255,.02);}
+  .status-pill{display:inline-block;font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:20px;}
+  .sp-trial{background:rgba(251,191,36,.15);color:var(--warn);border:1px solid rgba(251,191,36,.3);}
+  .sp-paid{background:rgba(0,255,148,.12);color:var(--accent2);border:1px solid rgba(0,255,148,.25);}
+  .sp-deferred{background:rgba(0,212,255,.12);color:var(--accent);border:1px solid rgba(0,212,255,.25);}
+  .sp-past_due{background:rgba(255,77,109,.12);color:var(--danger);border:1px solid rgba(255,77,109,.3);}
+  .sp-cancelled{background:rgba(107,141,181,.1);color:var(--muted);border:1px solid rgba(107,141,181,.2);}
+  .admin-select{padding:5px 8px;background:var(--deep);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;font-family:'DM Sans',sans-serif;outline:none;}
+  .admin-notes{padding:5px 8px;background:var(--deep);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;font-family:'DM Sans',sans-serif;outline:none;width:180px;}
+
+  /* MODAL */
+  .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center;}
+  .modal-overlay.open{display:flex;}
+  .modal-box{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:2rem;max-width:500px;width:100%;margin:1rem;}
+  .modal-title{font-family:'Bebas Neue',sans-serif;font-size:1.4rem;color:var(--accent);margin-bottom:1.2rem;}
+  .modal-field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px;}
+  .modal-field label{font-size:12px;color:var(--muted);}
+  .modal-field select{padding:9px 12px;background:var(--deep);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;font-family:'DM Sans',sans-serif;outline:none;}
+  .modal-footer{display:flex;gap:10px;justify-content:flex-end;margin-top:1.5rem;}
 </style>
 </head>
 <body>
-<!-- ══ LOGIN ══ -->
-<div id="loginScreen" style="display:none;min-height:100vh;align-items:center;justify-content:center;padding:2rem;">
-  <div style="background:var(--card);border:1px solid var(--border);border-radius:20px;padding:40px 36px;width:100%;max-width:400px;position:relative;z-index:1;">
-    <div style="text-align:center;margin-bottom:28px;">
-      <div style="font-family:'Bebas Neue',sans-serif;font-size:3.5rem;letter-spacing:.04em;line-height:.9;">BOAT <span style="color:var(--accent);">RACE</span></div>
-      <div style="font-size:13px;color:var(--muted);margin-top:8px;font-family:'DM Mono',monospace;letter-spacing:.05em;">SIGN IN TO CONTINUE</div>
+
+<!-- ── AUTH: LOGIN ── -->
+<div id="screen-login" class="auth-wrap">
+  <div class="auth-box">
+    <div class="auth-logo">BOAT <span>RACE</span></div>
+    <p class="auth-subtitle">Sales Competition Dashboard</p>
+    <div class="auth-field"><label>EMAIL</label><input id="li-email" type="email" placeholder="you@company.com" autocomplete="email"></div>
+    <div class="auth-field"><label>PASSWORD</label><input id="li-pass" type="password" placeholder="••••••••" autocomplete="current-password"></div>
+    <button class="auth-btn" onclick="handleLogin()">Sign In</button>
+    <div id="li-msg" class="auth-msg" style="display:none"></div>
+    <div class="auth-footer">
+      <button class="auth-link" onclick="showScreen('forgot')">Forgot password?</button>
+      <button class="auth-link" onclick="showScreen('signup')">Create account</button>
     </div>
-    <form onsubmit="handleLogin(event)">
-      <div style="margin-bottom:14px;">
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:6px;">Email</div>
-        <input id="loginEmail" type="email" class="cfg-input" style="width:100%;" placeholder="your@email.com" required autocomplete="email">
-      </div>
-      <div style="margin-bottom:20px;">
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:6px;">Password</div>
-        <input id="loginPassword" type="password" class="cfg-input" style="width:100%;" placeholder="••••••••" required autocomplete="current-password">
-      </div>
-      <button id="loginBtn" type="submit" class="save-btn" style="width:100%;padding:12px;">Sign In</button>
-      <div id="loginError" style="margin-top:12px;font-size:13px;color:var(--danger);min-height:18px;text-align:center;"></div>
-    </form>
   </div>
 </div>
 
-<main id="appMain" style="display:none;">
-
-<div class="header">
-  <div>
-    <h1>BOAT <span>RACE</span></h1>
-    <p id="dateLabel">APRIL 2026 · LOADING...</p>
-  </div>
-  <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
-    <div style="display:flex;gap:8px;align-items:center;">
-      <div class="live-badge"><span class="live-dot"></span>LIVE</div>
-      <button onclick="signOut()" style="padding:5px 12px;background:rgba(255,77,109,.1);border:1px solid rgba(255,77,109,.25);color:var(--danger);border-radius:8px;cursor:pointer;font-size:11px;font-weight:600;font-family:'DM Sans',sans-serif;letter-spacing:.04em;">Sign Out</button>
+<!-- ── AUTH: SIGN UP ── -->
+<div id="screen-signup" class="auth-wrap" style="display:none">
+  <div class="auth-box">
+    <div class="auth-logo">CREATE <span>ACCOUNT</span></div>
+    <p class="auth-subtitle">21-day free trial — no credit card required</p>
+    <div class="auth-row">
+      <div class="auth-field"><label>COMPANY NAME</label><input id="su-company" type="text" placeholder="Acme Insurance"></div>
+      <div class="auth-field"><label>CONTACT NAME</label><input id="su-contact" type="text" placeholder="Jane Smith"></div>
     </div>
-    <div style="font-size:12px;color:var(--muted);">Updated: <span id="lastUpdate">—</span></div>
+    <div class="auth-row">
+      <div class="auth-field"><label>EMAIL</label><input id="su-email" type="email" placeholder="jane@acme.com" autocomplete="email"></div>
+      <div class="auth-field"><label>PHONE</label><input id="su-phone" type="tel" placeholder="555-555-5555"></div>
+    </div>
+    <div class="auth-row">
+      <div class="auth-field"><label>NUMBER OF AGENTS</label><input id="su-agents" type="number" min="1" max="500" value="1"></div>
+      <div class="auth-field"><label>PLAN</label>
+        <select id="su-plan">
+          <option value="basic">Basic</option>
+          <option value="pro">Pro</option>
+          <option value="enterprise">Enterprise</option>
+        </select>
+      </div>
+    </div>
+    <div class="auth-field"><label>HOW DID YOU HEAR ABOUT US?</label><input id="su-referral" type="text" placeholder="Google, referral, etc."></div>
+    <div class="auth-field"><label>PASSWORD</label><input id="su-pass" type="password" placeholder="At least 8 characters" autocomplete="new-password"></div>
+    <button class="auth-btn" onclick="handleSignup()">Create Account</button>
+    <div id="su-msg" class="auth-msg" style="display:none"></div>
+    <div class="auth-footer">
+      <button class="auth-link" onclick="showScreen('login')">Already have an account? Sign in</button>
+    </div>
   </div>
 </div>
 
-<div class="source-banner">
-  <span class="dot dot-local" id="sourceDot"></span>
-  <span id="sourceText">Using local data — connect Google Sheets in Manage tab for automated email sync</span>
+<!-- ── AUTH: FORGOT PASSWORD ── -->
+<div id="screen-forgot" class="auth-wrap" style="display:none">
+  <div class="auth-box">
+    <div class="auth-logo">RESET <span>PASSWORD</span></div>
+    <p class="auth-subtitle">Enter your email and we'll send a reset link</p>
+    <div class="auth-field"><label>EMAIL</label><input id="fp-email" type="email" placeholder="you@company.com"></div>
+    <button class="auth-btn" onclick="handleForgotPassword()">Send Reset Link</button>
+    <div id="fp-msg" class="auth-msg" style="display:none"></div>
+    <div class="auth-footer">
+      <button class="auth-link" onclick="showScreen('login')">Back to sign in</button>
+    </div>
+  </div>
 </div>
 
-<div class="tabs">
-  <button class="tab active" onclick="switchTab('race')">&#127960; Race</button>
-  <button class="tab" onclick="switchTab('stats')">&#128202; Stats</button>
-  <button class="tab" onclick="switchTab('admin')">&#9881; Manage</button>
-  <button class="tab" onclick="switchTab('history')">&#127942; History</button>
+<!-- ── AUTH: PASSWORD RECOVERY ── -->
+<div id="screen-recovery" class="auth-wrap" style="display:none">
+  <div class="auth-box">
+    <div class="auth-logo">NEW <span>PASSWORD</span></div>
+    <p class="auth-subtitle">Enter your new password below</p>
+    <div class="auth-field"><label>NEW PASSWORD</label><input id="rc-pass" type="password" placeholder="At least 8 characters" autocomplete="new-password"></div>
+    <div class="auth-field"><label>CONFIRM PASSWORD</label><input id="rc-pass2" type="password" placeholder="Repeat password" autocomplete="new-password"></div>
+    <button class="auth-btn" onclick="handlePasswordReset()">Update Password</button>
+    <div id="rc-msg" class="auth-msg" style="display:none"></div>
+  </div>
 </div>
 
-<!-- ══ RACE ══ -->
-<div id="tab-race">
-  <div class="stats-row" id="statsRow"></div>
-  <div class="panel">
-    <div class="panel-title">&#127947; PODIUM</div>
-    <div class="podium-wrap" id="podiumWrap"></div>
+<!-- ── APP SHELL ── -->
+<div id="screen-app" style="display:none">
+<main>
+  <div class="header">
+    <div>
+      <h1>SALES BOAT <span>RACE</span></h1>
+      <p id="header-month">Loading…</p>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
+      <span class="live-badge"><span class="live-dot"></span>LIVE</span>
+      <span id="user-info" style="font-size:12px;color:var(--muted);font-family:'DM Mono',monospace;"></span>
+      <button class="btn btn-secondary" style="font-size:12px;padding:5px 14px;" onclick="handleSignOut()">Sign Out</button>
+    </div>
   </div>
-  <div class="panel">
-    <div class="panel-title">&#9875; FULL STANDINGS</div>
-    <div id="raceTrack"></div>
+
+  <div id="restrict-banner" class="restrict-banner">
+    <span style="font-size:1.2rem">⚠</span>
+    <span id="restrict-msg">Your account has a past-due balance. Uploads are disabled. Please update your payment information.</span>
   </div>
-  <div style="background:var(--deep);border:1px solid var(--border);border-radius:12px;padding:16px 18px;">
-    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:12px;">&#9875; Policy Horsepower Key</div>
-    <div class="key-grid" id="keyGrid"></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px;">
+
+  <div class="source-banner">
+    <span class="dot dot-live"></span>
+    <span id="banner-text">Last upload: <span id="last-upload-time">—</span></span>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="showTab('race',this)">Race</button>
+    <button class="tab" onclick="showTab('scoring',this)">Scoring</button>
+    <button class="tab" onclick="showTab('manage',this)">Manage</button>
+    <button class="tab" onclick="showTab('perf',this)">Performance</button>
+    <button class="tab" onclick="showTab('history',this)">History</button>
+    <button class="tab" onclick="showTab('account',this)">Account</button>
+    <button class="tab" id="adminTab" style="display:none" onclick="showTab('adminpanel',this)">Admin</button>
+  </div>
+
+  <!-- ── TAB: RACE ── -->
+  <div id="tab-race">
+    <div class="stats-row" id="stats-row"></div>
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-title">Leaderboard</div>
+        <div id="race-list"></div>
+      </div>
       <div>
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:10px;">&#128222; Phone Points Earned</div>
-        <div style="font-size:12px;display:flex;flex-direction:column;gap:6px;">
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted)">Placed Calls (Sales)</span><span style="font-family:'DM Mono',monospace">+1 pt</span></div>
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted)">Placed Calls (Service)</span><span style="font-family:'DM Mono',monospace">+0.25 pt</span></div>
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted)">Answered Calls (Sales)</span><span style="font-family:'DM Mono',monospace">+1 pt</span></div>
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted)">Answered Calls (Service)</span><span style="font-family:'DM Mono',monospace">+5 pts</span></div>
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted)">Total Talk Time</span><span style="font-family:'DM Mono',monospace">+0.1 pt/min</span></div>
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted)">Avg Talk Time</span><span style="font-family:'DM Mono',monospace">+2 pts/min avg</span></div>
+        <div class="panel">
+          <div class="panel-title">Podium</div>
+          <div class="podium-wrap" id="podium"></div>
         </div>
-      </div>
-      <div class="deduct-box" style="margin-top:0;height:fit-content;">
-        <h4>&#128308; Deductions — Race Wide</h4>
-        <div class="deduct-row"><span>Missed Calls</span><span id="rwMissed">—</span></div>
-        <div class="deduct-row"><span>Voicemails Received</span><span id="rwVoicemail">—</span></div>
-        <div style="font-size:11px;color:var(--muted);margin-top:8px;">Applied equally to both Sales and Service teams</div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ══ STATS ══ -->
-<div id="tab-stats" style="display:none;">
-  <div class="grid-2">
-    <div class="panel">
-      <div class="panel-title">&#127919; Top Scorers — Net Points</div>
-      <div id="chartTopAll"></div>
-    </div>
-    <div class="panel">
-      <div class="panel-title">&#9875; Sales vs Service Split</div>
-      <div style="height:220px;position:relative;"><canvas id="chartTeams" role="img" aria-label="Sales vs service total points donut chart"></canvas></div>
-    </div>
-  </div>
-  <div class="grid-2">
-    <div class="panel">
-      <div class="panel-title">&#128296; Policy Sales Breakdown</div>
-      <div style="height:240px;position:relative;"><canvas id="chartPolicies" role="img" aria-label="Policy sales stacked bar chart by agent"></canvas></div>
-    </div>
-    <div class="panel">
-      <div class="panel-title">&#128308; Deductions — Race Wide</div>
-      <div id="chartDeductions"></div>
-    </div>
-  </div>
-  <div class="panel">
-    <div class="panel-title">&#127381; Points Source Stack</div>
-    <div style="height:240px;position:relative;"><canvas id="chartSource" role="img" aria-label="Stacked points by source including deductions"></canvas></div>
-  </div>
-</div>
-
-<!-- ══ ADMIN ══ -->
-<div id="tab-admin" style="display:none;">
-
-  <div class="sheets-box" style="margin-bottom:16px;">
-    <h3>&#128193; Upload Report</h3>
-    <p>Upload a call report (.xlsx) or sales report (.xls/.xlsx) to update race data instantly. Deduplication is handled automatically — re-uploading the same file is safe.  The call report will reset the month and archive on new month's input</p>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
-      <div>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">Call Report (.xlsx)</div>
-        <input type="file" id="callReportFile" accept=".xlsx" style="display:none">
-        <div id="callDropZone" onclick="document.getElementById('callReportFile').click()"
-          ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
-          ondragleave="this.style.borderColor='rgba(0,212,255,0.25)'"
-          ondrop="handleFileDrop(event,'calls')"
-          style="border:2px dashed rgba(0,212,255,0.25);border-radius:10px;padding:24px 12px;text-align:center;cursor:pointer;background:rgba(0,212,255,0.04);transition:border-color .2s;">
-          <div style="font-size:22px;margin-bottom:6px;">&#128222;</div>
-          <div style="font-size:12px;color:var(--muted);">Click or drag .xlsx here</div>
-        </div>
-      </div>
-      <div>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">Sales Report (.xls / .xlsx)</div>
-        <input type="file" id="salesReportFile" accept=".xls,.xlsx" style="display:none">
-        <div id="salesDropZone" onclick="document.getElementById('salesReportFile').click()"
-          ondragover="event.preventDefault();this.style.borderColor='var(--accent2)'"
-          ondragleave="this.style.borderColor='rgba(0,255,148,0.25)'"
-          ondrop="handleFileDrop(event,'sales')"
-          style="border:2px dashed rgba(0,255,148,0.25);border-radius:10px;padding:24px 12px;text-align:center;cursor:pointer;background:rgba(0,255,148,0.04);transition:border-color .2s;">
-          <div style="font-size:22px;margin-bottom:6px;">&#128202;</div>
-          <div style="font-size:12px;color:var(--muted);">Click or drag .xls/.xlsx here</div>
+        <div class="panel">
+          <div class="panel-title">Legend</div>
+          <div class="key-grid" id="key-grid"></div>
+          <div class="deduct-box" id="deduct-box"></div>
         </div>
       </div>
     </div>
-    <div id="uploadStatus" style="font-size:13px;min-height:20px;"></div>
   </div>
 
-  <div class="sheets-box">
-    <h3>&#128279; Live Sync</h3>
-    <p>Data is read automatically from the configured Google Sheet. Upload reports on the Manage tab to update race data.</p>
-    <div class="cfg-row">
-      <span class="cfg-label">Auto-refresh</span>
-      <select class="cfg-input" id="refreshInterval" style="flex:unset;min-width:unset;width:160px;">
-        <option value="60">Every 1 min</option>
-        <option value="300" selected>Every 5 min</option>
-        <option value="900">Every 15 min</option>
-        <option value="3600">Every hour</option>
-      </select>
-      <button class="cfg-btn" onclick="applyRefresh()">Apply</button>
+  <!-- ── TAB: SCORING ── -->
+  <div id="tab-scoring" style="display:none">
+    <div class="panel">
+      <div class="panel-title">Scoring Configuration</div>
+      <div class="score-grid" id="score-grid"></div>
+      <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="saveScoring()">Save</button>
+        <button class="btn btn-secondary" onclick="loadRaceData()">Reload</button>
+      </div>
+      <div id="scoring-msg" style="font-size:13px;margin-top:10px;color:var(--accent2);display:none"></div>
     </div>
-    <div style="font-size:12px;margin-top:6px;" id="configStatus"></div>
   </div>
 
-
-  <div class="admin-grid">
-    <div class="admin-card">
-      <h3>&#128101; Team Assignment</h3>
-      <div id="teamSaveStatus" style="min-height:18px;margin-bottom:8px;"></div>
-      <div id="teamAssignList"></div>
+  <!-- ── TAB: MANAGE ── -->
+  <div id="tab-manage" style="display:none">
+    <div class="panel" id="upload-panel-calls">
+      <div class="panel-title">Upload Call Log</div>
+      <div class="drop-zone" id="dz-calls" onclick="document.getElementById('fi-calls').click()">
+        <input type="file" id="fi-calls" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleFile('calls',this)">
+        <div class="drop-icon">📞</div>
+        <div class="drop-label">Drop call log here or click to browse</div>
+        <div class="drop-sub">XLSX, XLS, CSV — call disposition data</div>
+      </div>
+      <div class="upload-log" id="ul-calls"></div>
     </div>
-    <div class="admin-card">
-      <h3>&#128196; Policy Sales</h3>
+    <div class="panel" id="upload-panel-sales">
+      <div class="panel-title">Upload Sales Log</div>
+      <div class="drop-zone" id="dz-sales" onclick="document.getElementById('fi-sales').click()">
+        <input type="file" id="fi-sales" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleFile('sales',this)">
+        <div class="drop-icon">📈</div>
+        <div class="drop-label">Drop sales log here or click to browse</div>
+        <div class="drop-sub">XLSX, XLS, CSV — replaces current month's sales</div>
+      </div>
+      <div class="upload-log" id="ul-sales"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Race Controls</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <button class="btn btn-secondary" onclick="loadRaceData()">Refresh Data</button>
+        <button class="btn btn-danger" onclick="confirmArchive()">Archive Month &amp; Reset</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TAB: PERFORMANCE ── -->
+  <div id="tab-perf" style="display:none">
+    <div class="panel">
+      <div class="panel-title">Call Performance</div>
+      <div class="perf-controls">
+        <select class="perf-select" id="perf-period" onchange="renderPerf()">
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly" selected>Monthly</option>
+          <option value="yearly">Yearly</option>
+        </select>
+        <select class="perf-select" id="perf-date" onchange="renderPerf()"></select>
+        <button class="btn btn-secondary" onclick="loadPerf()">Refresh</button>
+      </div>
       <div style="overflow-x:auto;">
-        <table class="input-table">
-          <thead><tr><th>Agent</th><th>WL</th><th>UL</th><th>Term</th><th>Hlth</th><th>Auto</th><th>Fire</th></tr></thead>
-          <tbody id="policyBody"></tbody>
+        <table class="tbl" id="perf-tbl">
+          <thead><tr>
+            <th style="text-align:left">Agent</th><th>Team</th>
+            <th>Placed</th><th>Answered</th><th>VM</th><th>Missed</th>
+            <th>Talk Min</th><th>Avg Min</th><th>Max Min</th>
+          </tr></thead>
+          <tbody id="perf-body"></tbody>
         </table>
       </div>
     </div>
-    <div class="admin-card">
-      <h3>&#128222; Phone Activity</h3>
+    <div class="panel">
+      <div class="panel-title">Voicemail Heatmap</div>
+      <div class="perf-controls">
+        <select class="perf-select" id="vm-date" onchange="renderVmHeatmap()"></select>
+      </div>
+      <div class="heatmap-wrap">
+        <div class="heatmap" id="vm-heatmap"></div>
+        <div class="hm-labels" id="vm-labels"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TAB: HISTORY ── -->
+  <div id="tab-history" style="display:none">
+    <div class="panel">
+      <div class="panel-title">Historical Results</div>
       <div style="overflow-x:auto;">
-        <table class="input-table">
-          <thead><tr><th>Agent</th><th>Placed</th><th>Ans</th><th>Missed</th><th>VM</th><th>Talk</th><th>Avg</th></tr></thead>
-          <tbody id="phoneBody"></tbody>
+        <table class="hist-tbl">
+          <thead><tr>
+            <th>Month</th><th>Rank</th><th>Agent</th><th>Team</th>
+            <th>Score</th><th>Gross</th><th>Deductions</th>
+          </tr></thead>
+          <tbody id="hist-body"></tbody>
         </table>
       </div>
     </div>
   </div>
 
-  <div class="panel" style="margin-top:16px;" id="scoringPanel">
-    <div class="panel-title">&#9881;&#65039; SCORING CONFIGURATION</div>
-    <div id="scoringEditorWrap">
-      <div style="color:var(--muted);font-size:13px;padding:12px 0;">Loading scoring config...</div>
+  <!-- ── TAB: ACCOUNT ── -->
+  <div id="tab-account" style="display:none">
+    <div class="panel">
+      <div class="acct-section">
+        <h3>Account Info</h3>
+        <div class="acct-info-grid" id="acct-info-grid"></div>
+      </div>
+      <div class="acct-section">
+        <h3>Change Password</h3>
+        <div class="acct-field"><label>NEW PASSWORD</label><input id="ac-newpass" type="password" placeholder="New password" autocomplete="new-password"></div>
+        <div class="acct-field"><label>CONFIRM PASSWORD</label><input id="ac-confpass" type="password" placeholder="Confirm password" autocomplete="new-password"></div>
+        <button class="btn btn-primary" onclick="changePassword()">Update Password</button>
+        <div id="ac-pw-msg" style="font-size:13px;margin-top:10px;display:none"></div>
+      </div>
+      <div class="acct-section">
+        <h3>Sales Column Mapping</h3>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">If your sales file uses non-standard column names, map them here. Leave blank to use auto-detection.</p>
+        <div class="col-map-grid" id="col-map-grid"></div>
+        <button class="btn btn-primary" onclick="saveColumnMap()">Save Mapping</button>
+        <div id="colmap-msg" style="font-size:13px;margin-top:10px;color:var(--accent2);display:none"></div>
+      </div>
     </div>
   </div>
 
-  <div class="panel" style="margin-top:16px;">
-    <div class="panel-title">&#128222; CALL PERFORMANCE</div>
-    <div class="perf-tabs" id="perfTabs">
-      <button class="perf-tab active" data-view="daily"   onclick="switchPerfView('daily')">Daily</button>
-      <button class="perf-tab"        data-view="weekly"  onclick="switchPerfView('weekly')">Weekly</button>
-      <button class="perf-tab"        data-view="monthly" onclick="switchPerfView('monthly')">Monthly</button>
-      <button class="perf-tab"        data-view="yearly"  onclick="switchPerfView('yearly')">Yearly</button>
-      <button class="perf-tab"        data-view="heatmap" onclick="switchPerfView('heatmap')">&#128293; Heatmap</button>
-    </div>
-    <div id="perfViewContent">
-      <div style="color:var(--muted);font-size:13px;padding:20px 0;">Switch to the Manage tab to load performance data.</div>
+  <!-- ── TAB: ADMIN ── -->
+  <div id="tab-adminpanel" style="display:none">
+    <div class="panel">
+      <div class="panel-title">Account Management</div>
+      <div style="display:flex;gap:10px;margin-bottom:1rem;flex-wrap:wrap;align-items:center;">
+        <button class="btn btn-secondary" onclick="loadAdminPanel()">Refresh</button>
+        <input id="admin-search" type="text" placeholder="Search email / company…"
+          style="padding:7px 12px;background:var(--deep);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;outline:none;width:260px;"
+          oninput="filterAdminTable()">
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="admin-tbl" id="admin-tbl">
+          <thead><tr>
+            <th>Email</th><th>Company</th><th>Contact</th><th>Plan</th>
+            <th>Status</th><th>Agents</th><th>Trial Ends</th><th>Paid Through</th>
+            <th>Notes</th><th>Admin</th><th>Actions</th>
+          </tr></thead>
+          <tbody id="admin-body"></tbody>
+        </table>
+      </div>
     </div>
   </div>
-</div>
-
-<!-- ══ HISTORY ══ -->
-<div id="tab-history" style="display:none;">
-  <div id="historyContent">
-    <div style="color:var(--muted);text-align:center;padding:40px 0;font-size:14px;">Loading historical data...</div>
-  </div>
-</div>
 
 </main>
-<div class="wave-footer"></div>
+</div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- ── COLUMN MAPPER MODAL ── -->
+<div class="modal-overlay" id="col-mapper-modal">
+  <div class="modal-box">
+    <div class="modal-title">Map Sales Columns</div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:1.2rem;">We couldn't auto-detect all required columns. Map them manually:</p>
+    <div id="col-mapper-fields"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeColMapper()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitColMapper()">Apply & Upload</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
-const POLICY_KEY=[
-  {id:'wl',   label:'Whole Life',    color:'#a78bfa'},
-  {id:'ul',   label:'Universal Life',color:'#60a5fa'},
-  {id:'term', label:'Term Life',     color:'#34d399'},
-  {id:'health',label:'Health',       color:'#86efac'},
-  {id:'auto', label:'Auto',          color:'#fbbf24'},
-  {id:'fire', label:'Fire',          color:'#fb923c'},
-];
-let SCORING={
-  wl:100,ul:75,term:50,health:30,auto:15,fire:10,
-  placed_sales:1,placed_service:0.25,
-  answered_sales:1,answered_service:5,
-  talk_per_min:0.1,avg_min:2,
-  missed_deduct:-3,voicemail_deduct:-2,
-};
-const COLORS=['#00d4ff','#00ff94','#ffd166','#ff4d6d','#a78bfa','#fb923c','#60a5fa','#f472b6','#34d399','#facc15','#38bdf8'];
+// ── CONFIG ──────────────────────────────────────────────────────────────────
+let _supabase = null;
+let _userId   = null;
+let _userEmail= null;
+let _isAdmin  = false;
+let _acctStatus = 'trial';
+let _columnMap  = {};
+let _pendingUploadData = null;
+let _pendingUploadType = null;
+let _perfData = null;
+let _adminRows = [];
 
-let DATA={
-  sheetUrl:'/api/sheet',refreshSecs:300,
-  agents:[
-    {id:'susan',   name:'Susan Navarro',    team:'sales'},
-    {id:'peyton',  name:'Peyton Tooze',     team:'sales'},
-    {id:'joseph',  name:'Joseph Underwood', team:'sales'},
-    {id:'tiffany', name:'Tiffany Dabe',     team:'sales'},
-    {id:'amin',    name:'Amin Kalas',        team:'sales'},
-    {id:'tracy',   name:'Tracy Ankrah',      team:'service'},
-    {id:'ashley',  name:'Ashley McEniry',    team:'service'},
-    {id:'fiona',   name:'Fiona Rodriguez',   team:'service'},
-    {id:'jocelyn', name:'Jocelyn Hernandez', team:'service'},
-    {id:'andy',    name:'Andy Rose',         team:'service'},
-    {id:'russel',  name:'Russel Williams',   team:'service'},
-  ],
-  policies:{
-    susan:  {wl:0,ul:0,term:1,health:0,auto:12,fire:6},
-    peyton: {wl:0,ul:0,term:1,health:0,auto:13,fire:1},
-    joseph: {wl:0,ul:0,term:1,health:1,auto:10,fire:3},
-    tiffany:{wl:0,ul:0,term:0,health:0,auto:8, fire:5},
-    amin:   {wl:0,ul:0,term:0,health:0,auto:4, fire:3},
-    tracy:  {wl:0,ul:0,term:0,health:0,auto:3, fire:0},
-    ashley: {wl:0,ul:0,term:0,health:0,auto:2, fire:1},
-    fiona:  {wl:0,ul:0,term:0,health:0,auto:3, fire:0},
-    jocelyn:{wl:0,ul:0,term:0,health:0,auto:2, fire:0},
-    andy:   {wl:0,ul:0,term:0,health:0,auto:1, fire:1},
-    russel: {wl:0,ul:0,term:0,health:0,auto:1, fire:0},
-  },
-  phone:{
-    susan:  {placed:45,answered:38,missed:7, voicemail:4, talkMin:210,avgMin:5.5},
-    peyton: {placed:52,answered:41,missed:11,voicemail:6, talkMin:240,avgMin:5.8},
-    joseph: {placed:38,answered:30,missed:8, voicemail:3, talkMin:185,avgMin:6.2},
-    tiffany:{placed:42,answered:35,missed:7, voicemail:5, talkMin:195,avgMin:5.6},
-    amin:   {placed:28,answered:22,missed:6, voicemail:2, talkMin:130,avgMin:5.9},
-    tracy:  {placed:15,answered:62,missed:3, voicemail:8, talkMin:320,avgMin:5.2},
-    ashley: {placed:12,answered:48,missed:4, voicemail:10,talkMin:260,avgMin:5.4},
-    fiona:  {placed:10,answered:55,missed:2, voicemail:7, talkMin:290,avgMin:5.3},
-    jocelyn:{placed:18,answered:50,missed:5, voicemail:9, talkMin:275,avgMin:5.5},
-    andy:   {placed:8, answered:44,missed:3, voicemail:6, talkMin:230,avgMin:5.2},
-    russel: {placed:9, answered:40,missed:4, voicemail:5, talkMin:210,avgMin:5.3},
+const COL_FIELDS = ['product','written_by','written_date','policy_name','policy_type'];
+const FIELD_LABELS = {
+  product:'Product / LOB',
+  written_by:'Written By (agent)',
+  written_date:'Written Date',
+  policy_name:'Policy Name / Number',
+  policy_type:'Policy Type'
+};
+
+const COLORS = ['#00d4ff','#00ff94','#ffd166','#ff8c42','#b0bec5','#ff4d6d','#a78bfa','#34d399','#f472b6','#fb923c','#60a5fa'];
+const AGENT_COLORS = {};
+
+const DEFAULT_SCORING = {
+  wl:5,ul:4,term:3,health:3,auto:2,fire:2,
+  placed_sales:8,placed_service:6,answered_sales:4,answered_service:3,
+  talk_per_min:0.5,avg_min:1,missed_deduct:-2,voicemail_deduct:-1
+};
+let SCORING = {...DEFAULT_SCORING};
+
+// ── INIT ─────────────────────────────────────────────────────────────────────
+async function init() {
+  try {
+    const r = await fetch('/api/config');
+    const cfg = await r.json();
+    _supabase = window.supabase.createClient(cfg.url, cfg.anonKey);
+
+    _supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        showScreen('recovery');
+        return;
+      }
+      if (session) {
+        await checkAccountAndShow(session);
+      } else {
+        showScreen('login');
+      }
+    });
+
+    const { data: { session } } = await _supabase.auth.getSession();
+    if (session) {
+      await checkAccountAndShow(session);
+    } else {
+      showScreen('login');
+    }
+  } catch(e) {
+    showScreen('login');
   }
-};
-try{const s=localStorage.getItem('brd3');if(s)DATA=JSON.parse(s);}catch(e){}
-// Always use the proxy — append custom sheet ID if stored
-var _customSid=localStorage.getItem('brd_race_sheet_id')||'';
-DATA.sheetUrl='/api/sheet'+(_customSid?'?sid='+encodeURIComponent(_customSid):'');
-
-function calcScore(id){
-  const ag=DATA.agents.find(a=>a.id===id);
-  const p=DATA.policies[id]||{};
-  const ph=DATA.phone[id]||{};
-  const svc=ag.team==='service';
-  const n=DATA.agents.length||1;
-  const polPts=(p.wl||0)*SCORING.wl+(p.ul||0)*SCORING.ul+(p.term||0)*SCORING.term
-              +(p.health||0)*SCORING.health+(p.auto||0)*SCORING.auto+(p.fire||0)*SCORING.fire;
-  const placed=(ph.placed||0)*(svc?SCORING.placed_service:SCORING.placed_sales);
-  const ans=(ph.answered||0)*(svc?SCORING.answered_service:SCORING.answered_sales);
-  const talk=(ph.talkMin||0)*SCORING.talk_per_min;
-  const avg=(ph.avgMin||0)*SCORING.avg_min;
-  const rwMissD=(DATA.raceWideMissed||0)*SCORING.missed_deduct;
-  const rwVmD=(DATA.raceWideVoicemail||0)*SCORING.voicemail_deduct;
-  const gross=Math.round(polPts+placed+ans+talk+avg);
-  const deduct=Math.round(rwMissD+rwVmD);
-  return{
-    total:Math.max(0,gross+deduct),gross,deduct,
-    polPts:Math.round(polPts),
-    ansPts:Math.round(ans),
-    placedPts:Math.round(placed),
-    talkPts:Math.round(talk+avg),
-    missD:Math.round(rwMissD),vmD:Math.round(rwVmD)
-  };
 }
 
-function scored(){
-  return DATA.agents.map((a,i)=>({...a,color:COLORS[i%COLORS.length],...calcScore(a.id)}))
-    .sort((a,b)=>b.total-a.total);
+// ── AUTH HELPERS ─────────────────────────────────────────────────────────────
+function showScreen(name) {
+  ['login','signup','forgot','recovery','app'].forEach(s => {
+    const el = document.getElementById('screen-' + s);
+    if (el) el.style.display = (s === name) ? (s === 'app' ? 'block' : 'flex') : 'none';
+  });
 }
 
-let charts={};
-function dc(id){if(charts[id]){charts[id].destroy();delete charts[id];}}
+function showMsg(id, text, type='err') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'auth-msg ' + type;
+  el.style.display = 'block';
+}
 
-function render(){
-  const sc=scored();
-  const mx=Math.max(...sc.map(a=>a.total),1);
-  const mxD=Math.max(...sc.map(a=>Math.abs(a.deduct)),1);
-  document.getElementById('dateLabel').textContent='APRIL 2026 · '+sc.length+' AGENTS';
-  if(!DATA.sheetUrl)document.getElementById('lastUpdate').textContent=new Date().toLocaleTimeString();
-  const rwm=document.getElementById('rwMissed');const rwv=document.getElementById('rwVoicemail');
-  if(rwm)rwm.textContent=DATA.raceWideMissed!=null?`${DATA.raceWideMissed} (${(DATA.raceWideMissed*3)} pts)`:'—';
-  if(rwv)rwv.textContent=DATA.raceWideVoicemail!=null?`${DATA.raceWideVoicemail} (${(DATA.raceWideVoicemail*2)} pts)`:'—';
+async function authHeaders() {
+  const { data: { session } } = await _supabase.auth.getSession();
+  if (!session) return {};
+  return { 'Authorization': 'Bearer ' + session.access_token };
+}
 
-  const totPts=sc.reduce((s,a)=>s+a.total,0);
-  const totDed=sc.reduce((s,a)=>s+Math.abs(a.deduct),0);
-  const totPols=DATA.agents.reduce((s,a)=>{const p=DATA.policies[a.id]||{};return s+Object.values(p).reduce((x,v)=>x+(+v||0),0);},0);
-  document.getElementById('statsRow').innerHTML=`
-    <div class="stat-card" style="--accent-line:var(--gold)"><div class="stat-label">Top Score</div><div class="stat-val">${sc[0]?.total||0}</div><div class="stat-sub">${sc[0]?.name.split(' ')[0]||''}</div></div>
-    <div class="stat-card" style="--accent-line:var(--accent)"><div class="stat-label">Team Total</div><div class="stat-val">${totPts.toLocaleString()}</div><div class="stat-sub">net points</div></div>
-    <div class="stat-card" style="--accent-line:var(--accent2)"><div class="stat-label">Policies</div><div class="stat-val">${totPols}</div><div class="stat-sub">written</div></div>
-    <div class="stat-card" style="--accent-line:var(--danger)"><div class="stat-label">Deductions</div><div class="stat-val">-${Math.abs((DATA.raceWideMissed||0)*3+(DATA.raceWideVoicemail||0)*2)}</div><div class="stat-sub">race-wide per agent</div></div>`;
+async function checkAccountAndShow(session) {
+  _userId    = session.user.id;
+  _userEmail = session.user.email;
 
-  // PODIUM
-  const top3=sc.slice(0,3);
-  const ord=[top3[1],top3[0],top3[2]].filter(Boolean);
-  const ht=[95,130,70];const bc=['podium-2','podium-1','podium-3'];const med=['&#129352;','&#127947;','&#129353;'];
-  document.getElementById('podiumWrap').innerHTML=ord.map((a,i)=>`
-    <div class="podium-col">
-      <div class="podium-trophy">${med[i]}</div>
-      <div class="podium-name" style="color:${a.color}">${a.name.split(' ')[0]}</div>
-      <div class="podium-pts">${a.total} pts</div>
-      <div class="podium-block ${bc[i]}" style="height:${ht[i]}px">${i===1?1:i===0?2:3}</div>
-    </div>`).join('');
+  const { data: acct } = await _supabase
+    .from('accounts')
+    .select('*')
+    .eq('user_id', _userId)
+    .single();
 
-  // STANDINGS
-  document.getElementById('raceTrack').innerHTML=sc.map((a,i)=>{
-    const r=i+1;
-    const rc=r===1?'rank-gold':r===2?'rank-silver':r===3?'rank-bronze':'rank-other';
-    const rl=r<=3?['&#127947;','&#129352;','&#129353;'][r-1]:r;
-    const pct=Math.round((a.total/mx)*100);
-    const dpct=Math.round((Math.abs(a.deduct)/mxD)*100);
-    const badge=a.team==='sales'?'<span class="team-badge badge-sales">Sales</span>':'<span class="team-badge badge-service">Service</span>';
-    const pills=[a.polPts?`Pol:${a.polPts}`:'',a.ansPts?`Ans:${a.ansPts}`:'',a.placedPts?`Placed:${a.placedPts}`:'',a.talkPts?`Talk:${a.talkPts}`:''].filter(Boolean);
-    const npills=[a.missD?`Miss:${a.missD}`:'',a.vmD?`VM:${a.vmD}`:''].filter(Boolean);
-    return`<div class="race-row">
-      <div class="race-rank ${rc}">${rl}</div>
+  if (acct) {
+    _isAdmin     = acct.is_admin || false;
+    _acctStatus  = acct.status   || 'trial';
+    _columnMap   = acct.sales_column_map || {};
+
+    if (_acctStatus === 'trial' && acct.trial_ends_at) {
+      if (new Date(acct.trial_ends_at) < new Date()) {
+        _acctStatus = 'past_due';
+      }
+    }
+  }
+
+  showScreen('app');
+  document.getElementById('user-info').textContent = _userEmail;
+
+  const restricted = (_acctStatus === 'past_due' || _acctStatus === 'cancelled');
+  const banner = document.getElementById('restrict-banner');
+  const msg    = document.getElementById('restrict-msg');
+  if (restricted) {
+    banner.style.display = 'flex';
+    msg.textContent = _acctStatus === 'cancelled'
+      ? 'Your account has been cancelled. Uploads are disabled.'
+      : 'Your account has a past-due balance. Uploads are disabled. Please update your payment information.';
+    document.getElementById('upload-panel-calls').style.display = 'none';
+    document.getElementById('upload-panel-sales').style.display = 'none';
+  }
+
+  if (_isAdmin) document.getElementById('adminTab').style.display = '';
+
+  buildColumnMapUI();
+  await loadRaceData();
+  loadHistory();
+  loadPerf();
+}
+
+// ── LOGIN / SIGNUP / AUTH ────────────────────────────────────────────────────
+async function handleLogin() {
+  const email = document.getElementById('li-email').value.trim();
+  const pass  = document.getElementById('li-pass').value;
+  if (!email || !pass) return showMsg('li-msg', 'Email and password are required.');
+  const { error } = await _supabase.auth.signInWithPassword({ email, password: pass });
+  if (error) showMsg('li-msg', error.message);
+}
+
+async function handleSignup() {
+  const company  = document.getElementById('su-company').value.trim();
+  const contact  = document.getElementById('su-contact').value.trim();
+  const email    = document.getElementById('su-email').value.trim();
+  const phone    = document.getElementById('su-phone').value.trim();
+  const agents   = parseInt(document.getElementById('su-agents').value) || 1;
+  const plan     = document.getElementById('su-plan').value;
+  const referral = document.getElementById('su-referral').value.trim();
+  const pass     = document.getElementById('su-pass').value;
+
+  if (!company || !contact || !email || !pass) return showMsg('su-msg', 'Please fill in all required fields.');
+  if (pass.length < 8) return showMsg('su-msg', 'Password must be at least 8 characters.');
+
+  const { error } = await _supabase.auth.signUp({
+    email, password: pass,
+    options: { data: { company_name: company, contact_name: contact, phone, plan, agent_count: agents, referral_source: referral } }
+  });
+  if (error) return showMsg('su-msg', error.message);
+  showMsg('su-msg', 'Account created! Check your email to confirm, or sign in now if confirmation is disabled.', 'ok');
+}
+
+async function handleForgotPassword() {
+  const email = document.getElementById('fp-email').value.trim();
+  if (!email) return showMsg('fp-msg', 'Please enter your email.');
+  const { error } = await _supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.href
+  });
+  if (error) return showMsg('fp-msg', error.message);
+  showMsg('fp-msg', 'Reset link sent! Check your email.', 'ok');
+}
+
+async function handlePasswordReset() {
+  const p1 = document.getElementById('rc-pass').value;
+  const p2 = document.getElementById('rc-pass2').value;
+  if (!p1 || p1.length < 8) return showMsg('rc-msg', 'Password must be at least 8 characters.');
+  if (p1 !== p2) return showMsg('rc-msg', 'Passwords do not match.');
+  const { error } = await _supabase.auth.updateUser({ password: p1 });
+  if (error) return showMsg('rc-msg', error.message);
+  showMsg('rc-msg', 'Password updated! Redirecting…', 'ok');
+  setTimeout(() => showScreen('login'), 1800);
+}
+
+async function handleSignOut() {
+  await _supabase.auth.signOut();
+  _userId = _userEmail = null;
+  _isAdmin = false;
+  showScreen('login');
+}
+
+// ── TABS ──────────────────────────────────────────────────────────────────────
+function showTab(name, btn) {
+  document.querySelectorAll('[id^="tab-"]').forEach(el => el.style.display = 'none');
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  const tab = document.getElementById('tab-' + name);
+  if (tab) tab.style.display = 'block';
+  if (btn) btn.classList.add('active');
+  if (name === 'account') loadAccountTab();
+  if (name === 'adminpanel') loadAdminPanel();
+}
+
+// ── LOAD RACE DATA ────────────────────────────────────────────────────────────
+async function loadRaceData() {
+  if (!_userId) return;
+
+  const [rdRes, scRes, rcRes] = await Promise.all([
+    _supabase.from('race_data').select('*').eq('user_id', _userId),
+    _supabase.from('scoring_config').select('config_key,config_value').eq('user_id', _userId),
+    _supabase.from('race_config').select('key,value').eq('user_id', _userId),
+  ]);
+
+  if (scRes.data && scRes.data.length) {
+    scRes.data.forEach(r => {
+      if (r.config_key in SCORING) SCORING[r.config_key] = parseFloat(r.config_value) || 0;
+    });
+  }
+
+  const month = (rcRes.data || []).find(r => r.key === 'current_month')?.value || '';
+  document.getElementById('header-month').textContent = month || 'No race data uploaded';
+
+  buildScoringUI();
+  renderRace(rdRes.data || []);
+}
+
+function calcScore(ag) {
+  const svc = ag.team === 'service';
+  const polPts = (ag.wl||0)*SCORING.wl + (ag.ul||0)*SCORING.ul + (ag.term||0)*SCORING.term +
+    (ag.health||0)*SCORING.health + (ag.auto||0)*SCORING.auto + (ag.fire||0)*SCORING.fire;
+  const plPts  = (ag.placed||0)   * (svc ? SCORING.placed_service  : SCORING.placed_sales);
+  const ansPts = (ag.answered||0) * (svc ? SCORING.answered_service : SCORING.answered_sales);
+  const talkPts= (ag.talk_min||0)*SCORING.talk_per_min + (ag.avg_min||0)*SCORING.avg_min;
+  const gross  = Math.round(polPts + plPts + ansPts + talkPts);
+  const deduct = Math.round((ag.race_wide_missed||0)*SCORING.missed_deduct + (ag.race_wide_voicemail||0)*SCORING.voicemail_deduct);
+  return { gross, deduct, total: Math.max(0, gross + deduct) };
+}
+
+function renderRace(data) {
+  if (!data.length) {
+    document.getElementById('race-list').innerHTML = '<p style="color:var(--muted);font-size:13px">No race data yet. Upload a call log to begin.</p>';
+    document.getElementById('stats-row').innerHTML = '';
+    document.getElementById('podium').innerHTML = '';
+    document.getElementById('key-grid').innerHTML = '';
+    document.getElementById('deduct-box').innerHTML = '';
+    return;
+  }
+
+  const agents = data.map((ag, i) => {
+    if (!AGENT_COLORS[ag.agent_id]) AGENT_COLORS[ag.agent_id] = COLORS[Object.keys(AGENT_COLORS).length % COLORS.length];
+    const sc = calcScore(ag);
+    return { ...ag, ...sc, color: AGENT_COLORS[ag.agent_id] };
+  });
+
+  agents.sort((a, b) => b.total - a.total);
+  const maxScore = agents[0]?.total || 1;
+  const maxDeduct = Math.max(...agents.map(a => Math.abs(a.deduct)), 1);
+  const rwMissed  = data[0]?.race_wide_missed   || 0;
+  const rwVm      = data[0]?.race_wide_voicemail || 0;
+
+  // Stats row
+  const totalPlaced   = agents.reduce((s, a) => s + (a.placed||0), 0);
+  const totalAnswered = agents.reduce((s, a) => s + (a.answered||0), 0);
+  const totalTalk     = agents.reduce((s, a) => s + (a.talk_min||0), 0);
+  const topAgent      = agents[0];
+
+  document.getElementById('stats-row').innerHTML = `
+    <div class="stat-card" style="--accent-line:var(--gold)">
+      <div class="stat-label">Leader</div>
+      <div class="stat-val" style="font-size:1.3rem;color:var(--gold)">${topAgent.name.split(' ')[0]}</div>
+      <div class="stat-sub">${topAgent.total} pts</div>
+    </div>
+    <div class="stat-card" style="--accent-line:var(--accent2)">
+      <div class="stat-label">Placed Calls</div>
+      <div class="stat-val">${totalPlaced}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Answered</div>
+      <div class="stat-val">${totalAnswered}</div>
+    </div>
+    <div class="stat-card" style="--accent-line:var(--accent)">
+      <div class="stat-label">Talk Minutes</div>
+      <div class="stat-val">${Math.round(totalTalk)}</div>
+    </div>
+    <div class="stat-card" style="--accent-line:var(--danger)">
+      <div class="stat-label">VM / Missed</div>
+      <div class="stat-val" style="color:var(--danger)">${rwVm} / ${rwMissed}</div>
+    </div>`;
+
+  // Leaderboard
+  const rankClasses = ['rank-gold','rank-silver','rank-bronze'];
+  document.getElementById('race-list').innerHTML = agents.map((ag, i) => {
+    const sc = ag;
+    const barW = maxScore > 0 ? (sc.total / maxScore * 100) : 0;
+    const dedW = maxDeduct > 0 ? (Math.abs(sc.deduct) / maxDeduct * 100) : 0;
+    const rankClass = rankClasses[i] || 'rank-other';
+    const svc = ag.team === 'service';
+    const polPts = (ag.wl||0)*SCORING.wl + (ag.ul||0)*SCORING.ul + (ag.term||0)*SCORING.term +
+      (ag.health||0)*SCORING.health + (ag.auto||0)*SCORING.auto + (ag.fire||0)*SCORING.fire;
+    return `<div class="race-row">
+      <div class="race-rank ${rankClass}">${i+1}</div>
       <div>
-        <div class="agent-top"><span class="agent-color" style="background:${a.color}"></span><span class="agent-name">${a.name}</span>${badge}</div>
-        <div class="pill-row">${pills.map(p=>`<span class="pill">${p}</span>`).join('')}${npills.map(p=>`<span class="pill pill-neg">${p}</span>`).join('')}</div>
+        <div class="agent-top">
+          <div class="agent-color" style="background:${ag.color}"></div>
+          <div class="agent-name">${ag.name}</div>
+          <span class="team-badge ${svc?'badge-service':'badge-sales'}">${ag.team}</span>
+        </div>
+        <div class="pill-row">
+          ${ag.wl?`<span class="pill">WL×${ag.wl}</span>`:''}
+          ${ag.ul?`<span class="pill">UL×${ag.ul}</span>`:''}
+          ${ag.term?`<span class="pill">T×${ag.term}</span>`:''}
+          ${ag.health?`<span class="pill">H×${ag.health}</span>`:''}
+          ${ag.auto?`<span class="pill">A×${ag.auto}</span>`:''}
+          ${ag.fire?`<span class="pill">F×${ag.fire}</span>`:''}
+        </div>
+        <div class="race-bar-bg" style="margin-top:6px">
+          <div class="race-bar-fill" style="width:${barW}%;background:linear-gradient(90deg,${ag.color}88,${ag.color})">
+            <span class="race-bar-text">${Math.round((ag.talk_min||0)*10)/10} min</span>
+          </div>
+        </div>
+        ${sc.deduct<0?`<div class="deduct-bar"><div class="deduct-fill" style="width:${dedW}%"></div></div>`:''}
       </div>
-      <div>
-        <div class="race-bar-bg"><div class="race-bar-fill" id="rf-${a.id}" style="background:${a.color};width:0%;opacity:.85;"><span class="race-bar-text">${a.total}</span></div></div>
-        ${a.deduct<0?`<div class="deduct-bar"><div class="deduct-fill" id="df-${a.id}" style="width:0%;"></div></div>`:''}
-      </div>
+      <div></div>
       <div class="race-score-col">
-        <div class="race-score">${a.total}</div>
-        ${a.deduct<0?`<div class="race-deduct">${a.deduct}</div><div class="race-gross">(${a.gross})</div>`:''}
+        <div class="race-score">${sc.total}</div>
+        ${sc.deduct<0?`<div class="race-deduct">${sc.deduct}</div>`:''}
+        <div class="race-gross">gross ${sc.gross}</div>
       </div>
     </div>`;
   }).join('');
 
-  setTimeout(()=>{sc.forEach((a,i)=>{
-    const pct=Math.round((a.total/mx)*100);
-    const dpct=Math.round((Math.abs(a.deduct)/mxD)*100);
-    setTimeout(()=>{
-      const rf=document.getElementById(`rf-${a.id}`);
-      const df=document.getElementById(`df-${a.id}`);
-      if(rf)rf.style.width=pct+'%';
-      if(df)df.style.width=dpct+'%';
-    },i*80);
-  });},60);
+  // Podium
+  const [p1, p2, p3] = agents;
+  document.getElementById('podium').innerHTML = `
+    ${p2?`<div class="podium-col">
+      <div class="podium-name">${p2.name.split(' ')[0]}</div>
+      <div class="podium-pts">${p2.total}</div>
+      <div class="podium-trophy">🥈</div>
+      <div class="podium-block podium-2" style="height:130px">2</div>
+    </div>`:''}
+    ${p1?`<div class="podium-col">
+      <div class="podium-name">${p1.name.split(' ')[0]}</div>
+      <div class="podium-pts">${p1.total}</div>
+      <div class="podium-trophy">🥇</div>
+      <div class="podium-block podium-1" style="height:170px">1</div>
+    </div>`:''}
+    ${p3?`<div class="podium-col">
+      <div class="podium-name">${p3.name.split(' ')[0]}</div>
+      <div class="podium-pts">${p3.total}</div>
+      <div class="podium-trophy">🥉</div>
+      <div class="podium-block podium-3" style="height:100px">3</div>
+    </div>`:''}`;
 
-  // KEY
-  document.getElementById('keyGrid').innerHTML=POLICY_KEY.map(k=>`
-    <div class="key-item"><div class="key-dot" style="background:${k.color}"></div><div><div class="key-type">${k.label}</div><div class="key-pts">${SCORING[k.id]} pts</div></div></div>`).join('');
+  // Key
+  const keyItems = [
+    {label:'Whole Life',key:'wl',color:'#00d4ff'},
+    {label:'Universal Life',key:'ul',color:'#a78bfa'},
+    {label:'Term',key:'term',color:'#60a5fa'},
+    {label:'Health',key:'health',color:'#34d399'},
+    {label:'Auto',key:'auto',color:'#fbbf24'},
+    {label:'Fire',key:'fire',color:'#fb923c'},
+  ];
+  document.getElementById('key-grid').innerHTML = keyItems.map(k =>
+    `<div class="key-item"><div class="key-dot" style="background:${k.color}"></div>
+    <div><div class="key-type">${k.label}</div><div class="key-pts">${SCORING[k.key]} pts each</div></div></div>`
+  ).join('');
 
-  renderCharts(sc);
-  renderAdmin();
+  document.getElementById('deduct-box').innerHTML = `
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:600">RACE-WIDE DEDUCTIONS</div>
+    <div style="display:flex;gap:24px;flex-wrap:wrap;">
+      <div><div style="font-size:11px;color:var(--muted)">Voicemails</div><div style="font-family:'DM Mono',monospace;color:var(--danger);font-size:15px">${rwVm} × ${SCORING.voicemail_deduct} = ${Math.round(rwVm*SCORING.voicemail_deduct)}</div></div>
+      <div><div style="font-size:11px;color:var(--muted)">Missed</div><div style="font-family:'DM Mono',monospace;color:var(--danger);font-size:15px">${rwMissed} × ${SCORING.missed_deduct} = ${Math.round(rwMissed*SCORING.missed_deduct)}</div></div>
+      <div><div style="font-size:11px;color:var(--muted)">Total Deduction</div><div style="font-family:'DM Mono',monospace;color:var(--danger);font-size:15px">${Math.round(rwVm*SCORING.voicemail_deduct + rwMissed*SCORING.missed_deduct)}</div></div>
+    </div>`;
 }
 
-function renderCharts(sc){
-  // Top scorers
-  const ct=document.getElementById('chartTopAll');
-  ct.innerHTML=sc.map(a=>`<div class="hbar-row">
-    <div class="hbar-label" title="${a.name}">${a.name.split(' ')[0]}</div>
-    <div class="hbar-track"><div class="hbar-fill" style="background:${a.color};opacity:.85;width:0%;" data-pct="${Math.round((a.total/sc[0].total)*100)}"></div></div>
-    <div class="hbar-val">${a.total}</div></div>`).join('');
-  setTimeout(()=>ct.querySelectorAll('.hbar-fill').forEach(el=>{el.style.transition='width 1.2s cubic-bezier(.34,1.2,.64,1)';el.style.width=el.dataset.pct+'%';}),80);
+// ── SCORING UI ────────────────────────────────────────────────────────────────
+function buildScoringUI() {
+  const fields = [
+    ['wl','Whole Life pts'],['ul','Universal Life pts'],['term','Term pts'],
+    ['health','Health pts'],['auto','Auto pts'],['fire','Fire pts'],
+    ['placed_sales','Placed (sales)'],['placed_service','Placed (service)'],
+    ['answered_sales','Answered (sales)'],['answered_service','Answered (service)'],
+    ['talk_per_min','Talk pts/min'],['avg_min','Avg min pts'],
+    ['missed_deduct','Missed deduct'],['voicemail_deduct','Voicemail deduct'],
+  ];
+  document.getElementById('score-grid').innerHTML = fields.map(([k,lbl]) =>
+    `<div class="score-field"><label>${lbl}</label>
+    <input type="number" id="sc-${k}" step="0.1" value="${SCORING[k]}"></div>`
+  ).join('');
+}
 
-  // Deductions — Race Wide
-  const cd=document.getElementById('chartDeductions');
-  const rwM=DATA.raceWideMissed||0, rwV=DATA.raceWideVoicemail||0;
-  const rwMpts=rwM*3, rwVpts=rwV*2, rwTotal=rwMpts+rwVpts;
-  cd.innerHTML=(rwM===0&&rwV===0)
-    ?'<div style="color:var(--muted);font-size:13px;padding:20px 0">No deductions recorded</div>'
-    :`<div class="deduct-row" style="padding:10px 0;border-bottom:1px solid var(--border)">
-        <span style="color:var(--muted)">Missed Calls</span>
-        <span style="font-family:'DM Mono',monospace;color:var(--danger)">${rwM} &nbsp;(−${rwMpts} pts)</span>
-      </div>
-      <div class="deduct-row" style="padding:10px 0;border-bottom:1px solid var(--border)">
-        <span style="color:var(--muted)">Voicemails Received</span>
-        <span style="font-family:'DM Mono',monospace;color:var(--danger)">${rwV} &nbsp;(−${rwVpts} pts)</span>
-      </div>
-      <div class="deduct-row" style="padding:12px 0">
-        <span style="font-weight:600">Total Deduction</span>
-        <span style="font-family:'DM Mono',monospace;color:var(--danger);font-size:1.15em">−${rwTotal} pts</span>
-      </div>
-      <div style="font-size:11px;color:var(--muted);margin-top:4px">Applied equally to all agents</div>`;
-
-  // Policy stacked
-  dc('cp');charts['cp']=new Chart(document.getElementById('chartPolicies').getContext('2d'),{
-    type:'bar',data:{labels:sc.map(a=>a.name.split(' ')[0]),datasets:POLICY_KEY.map(k=>({label:k.label,data:sc.map(a=>(DATA.policies[a.id]||{})[k.id]||0),backgroundColor:k.color+'cc',borderColor:k.color,borderWidth:1,borderRadius:2}))},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{stacked:true,ticks:{color:'#6b8db5',font:{size:10}},grid:{color:'rgba(0,212,255,.06)'}},y:{stacked:true,ticks:{color:'#6b8db5'},grid:{color:'rgba(0,212,255,.06)'}}}}
+async function saveScoring() {
+  if (!_userId) return;
+  const fields = Object.keys(DEFAULT_SCORING);
+  fields.forEach(k => {
+    const val = parseFloat(document.getElementById('sc-'+k)?.value);
+    if (!isNaN(val)) SCORING[k] = val;
   });
 
-  // Donut
-  dc('ct');const sT=sc.filter(a=>a.team==='sales').reduce((s,a)=>s+a.total,0);const svT=sc.filter(a=>a.team==='service').reduce((s,a)=>s+a.total,0);
-  charts['ct']=new Chart(document.getElementById('chartTeams').getContext('2d'),{
-    type:'doughnut',data:{labels:['Sales','Service'],datasets:[{data:[sT,svT],backgroundColor:['#00d4ffcc','#00ff94cc'],borderColor:['#00d4ff','#00ff94'],borderWidth:2,hoverOffset:6}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'bottom',labels:{color:'#6b8db5',font:{size:12},boxWidth:12,padding:14}}},cutout:'62%'}
-  });
+  const rows = fields.map(k => ({ user_id: _userId, config_key: k, config_value: String(SCORING[k]) }));
+  const { error } = await _supabase.from('scoring_config')
+    .upsert(rows, { onConflict: 'user_id,config_key' });
 
-  // Source stack
-  dc('cs');charts['cs']=new Chart(document.getElementById('chartSource').getContext('2d'),{
-    type:'bar',data:{labels:sc.map(a=>a.name.split(' ')[0]),datasets:[
-      {label:'Policy', data:sc.map(a=>a.polPts),   backgroundColor:'#a78bfacc',borderColor:'#a78bfa',borderWidth:1,borderRadius:2},
-      {label:'Answered',data:sc.map(a=>a.ansPts),  backgroundColor:'#00d4ffcc',borderColor:'#00d4ff',borderWidth:1,borderRadius:2},
-      {label:'Placed', data:sc.map(a=>a.placedPts),backgroundColor:'#fbbf24cc',borderColor:'#fbbf24',borderWidth:1,borderRadius:2},
-      {label:'Talk',   data:sc.map(a=>a.talkPts),  backgroundColor:'#34d399cc',borderColor:'#34d399',borderWidth:1,borderRadius:2},
-      {label:'Deducts',data:sc.map(a=>a.deduct),   backgroundColor:'#ff4d6dcc',borderColor:'#ff4d6d',borderWidth:1,borderRadius:2},
-    ]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'top',labels:{color:'#6b8db5',font:{size:10},boxWidth:10,padding:10}}},scales:{x:{stacked:true,ticks:{color:'#6b8db5',font:{size:10}},grid:{color:'rgba(0,212,255,.06)'}},y:{stacked:true,ticks:{color:'#6b8db5'},grid:{color:'rgba(0,212,255,.06)'}}}}
-  });
+  const msg = document.getElementById('scoring-msg');
+  msg.style.display = 'block';
+  if (error) { msg.style.color='var(--danger)'; msg.textContent='Error: '+error.message; }
+  else { msg.style.color='var(--accent2)'; msg.textContent='Scoring saved.'; renderRace([]); loadRaceData(); }
+  setTimeout(() => { msg.style.display='none'; }, 3000);
 }
 
-function renderAdmin(){
-  document.getElementById('teamAssignList').innerHTML=DATA.agents.map(a=>`
-    <div class="agent-admin-row">
-      <div class="agent-admin-name">${a.name}</div>
-      <div class="team-toggle">
-        <button onclick="setTeam('${a.id}','sales')" class="${a.team==='sales'?'active-sales':''}">Sales</button>
-        <button onclick="setTeam('${a.id}','service')" class="${a.team==='service'?'active-service':''}">Service</button>
-      </div>
-    </div>`).join('');
+// ── FILE UPLOAD ───────────────────────────────────────────────────────────────
+function handleFile(type, input) {
+  if (_acctStatus === 'past_due' || _acctStatus === 'cancelled') return;
+  const file = input.files[0];
+  if (!file) return;
+  const logEl = document.getElementById('ul-' + type);
+  logEl.innerHTML = '<span>Reading file…</span>';
 
-  document.getElementById('policyBody').innerHTML=DATA.agents.map(a=>{
-    const p=DATA.policies[a.id]||{};
-    return`<tr><td style="font-size:11px;color:var(--muted);white-space:nowrap;">${a.name.split(' ')[0]}</td>${['wl','ul','term','health','auto','fire'].map(k=>`<td style="font-family:'DM Mono',monospace;font-size:12px;text-align:right;padding:6px 5px;">${p[k]||0}</td>`).join('')}</tr>`;
-  }).join('');
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      logEl.innerHTML = `<span class="ok">Parsed ${raw.length - 1} rows. Uploading…</span>`;
 
-  document.getElementById('phoneBody').innerHTML=DATA.agents.map(a=>{
-    const p=DATA.phone[a.id]||{};
-    return`<tr><td style="font-size:11px;color:var(--muted);white-space:nowrap;">${a.name.split(' ')[0]}</td>${['placed','answered','missed','voicemail','talkMin','avgMin'].map(k=>`<td style="font-family:'DM Mono',monospace;font-size:12px;text-align:right;padding:6px 5px;">${p[k]||0}</td>`).join('')}</tr>`;
-  }).join('');
-
-  document.getElementById('refreshInterval').value=DATA.refreshSecs||300;
-}
-
-// ═════ SHEETS LIVE SYNC ═════
-let timer=null;
-function applyRefresh(){
-  const secs=parseInt(document.getElementById('refreshInterval').value);
-  DATA.refreshSecs=secs;saveLocal();
-  if(timer)clearInterval(timer);
-  timer=setInterval(fetchRaceData,secs*1000);
-  document.getElementById('configStatus').innerHTML='<span style="color:var(--accent2)">Auto-refresh updated.</span>';
-}
-function connectSheets(){applyRefresh();}
-
-async function fetchRaceData(){
-  if(!_supabase)return;
-  try{
-    const{data,error}=await _supabase.from('race_data').select('*');
-    if(error)throw error;
-    parseRaceData(data);
-    document.getElementById('configStatus').innerHTML='<span style="color:var(--accent2)">Connected — synced '+new Date().toLocaleTimeString()+'</span>';
-    document.getElementById('sourceDot').className='dot dot-live';
-    document.getElementById('sourceText').textContent='Live — syncing from Supabase';
-    render();
-  }catch(err){
-    document.getElementById('configStatus').innerHTML='<span style="color:var(--danger)">Error: '+err.message+'</span>';
-  }
-}
-
-function parseRaceData(rows){
-  DATA.policies={};DATA.phone={};DATA.raceWideMissed=0;DATA.raceWideVoicemail=0;
-  rows.forEach(function(row){
-    var id=String(row.agent_id);
-    var existing=DATA.agents.find(function(a){return a.id===id;});
-    var team=String(row.team||'sales').toLowerCase();
-    if(!existing)DATA.agents.push({id,name:row.name,team});
-    else{existing.name=row.name;existing.team=team;}
-    DATA.policies[id]={wl:row.wl||0,ul:row.ul||0,term:row.term||0,health:row.health||0,auto:row.auto||0,fire:row.fire||0};
-    DATA.phone[id]={placed:row.placed||0,answered:row.answered||0,missed:row.missed||0,voicemail:row.voicemail||0,talkMin:+row.talk_min||0,avgMin:+row.avg_min||0};
-    if(row.race_wide_missed)DATA.raceWideMissed=row.race_wide_missed;
-    if(row.race_wide_voicemail)DATA.raceWideVoicemail=row.race_wide_voicemail;
-    if(row.last_updated){
-      try{
-        var d=new Date(row.last_updated);
-        if(!isNaN(d))document.getElementById('lastUpdate').textContent=d.toLocaleString('en-US',{timeZone:'America/Los_Angeles',month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true})+' PST';
-      }catch(e){}
-    }
-  });
-  saveLocal();
-}
-
-async function setTeam(id,team){
-  const a=DATA.agents.find(x=>x.id===id);
-  if(a)a.team=team;
-  renderAdmin();
-  const st=document.getElementById('teamSaveStatus');
-  if(st)st.innerHTML='<span style="color:var(--muted);font-size:12px">Saving...</span>';
-  const{error}=await _supabase.from('race_data').update({team}).eq('agent_id',id);
-  if(error){
-    if(st)st.innerHTML='<span style="color:var(--danger);font-size:12px">&#10007; '+error.message+'</span>';
-  }else{
-    if(st)st.innerHTML='<span style="color:var(--accent2);font-size:12px">&#10003; Saved</span>';
-    setTimeout(fetchRaceData,500);
-  }
-}
-function saveData(){
-  document.querySelectorAll('.pol-input').forEach(el=>{const{agent,key}=el.dataset;if(!DATA.policies[agent])DATA.policies[agent]={};DATA.policies[agent][key]=parseFloat(el.value)||0;});
-  document.querySelectorAll('.ph-input').forEach(el=>{const{agent,key}=el.dataset;if(!DATA.phone[agent])DATA.phone[agent]={};DATA.phone[agent][key]=parseFloat(el.value)||0;});
-  saveLocal();render();
-  const m=document.getElementById('saveMsg');m.style.display='block';setTimeout(()=>m.style.display='none',3000);
-  switchTab('race');
-}
-function saveLocal(){try{localStorage.setItem('brd3',JSON.stringify(DATA));}catch(e){}}
-function switchTab(t){
-  ['race','stats','admin','history'].forEach(x=>document.getElementById('tab-'+x).style.display=x===t?'':'none');
-  document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',['race','stats','admin','history'][i]===t));
-  if(t==='stats')setTimeout(()=>renderCharts(scored()),100);
-  if(t==='history')fetchHistory();
-  if(t==='admin'){renderScoringEditor();renderPerfSection();}
-}
-
-// ═════ HISTORY ═════
-function fetchHistory(){
-  fetch('/api/history').then(r=>r.json()).then(data=>{
-    renderHistory(data);
-  }).catch(err=>{
-    document.getElementById('historyContent').innerHTML='<div style="color:var(--danger);text-align:center;padding:40px 0">Error loading history: '+err.message+'</div>';
-  });
-}
-function renderHistory(rows){
-  var el=document.getElementById('historyContent');
-  if(!rows||rows.length<2){
-    el.innerHTML='<div style="color:var(--muted);text-align:center;padding:60px 0;font-size:14px">No historical data yet. After the first month ends and a new month\'s data is uploaded, results will be archived here automatically.</div>';
-    return;
-  }
-  // rows[0] = header, rows[1..] = data
-  // Cols: 0=Month 1=Rank 2=AgentID 3=Name 4=Team 5=TotalScore 6=Gross 7=Deductions
-  var byMonth={};
-  for(var i=1;i<rows.length;i++){
-    var r=rows[i];
-    var month=String(r[0]);
-    if(!byMonth[month])byMonth[month]=[];
-    byMonth[month].push(r);
-  }
-  // Sort months newest first
-  var months=Object.keys(byMonth).sort(function(a,b){
-    var yr=function(s){var m=s.match(/\d{4}/);return m?+m[0]:0;};
-    var mi=function(s){var ns=['January','February','March','April','May','June','July','August','September','October','November','December'];for(var i=0;i<ns.length;i++)if(s.indexOf(ns[i])!==-1)return i;return -1;};
-    var dy=yr(b)-yr(a);return dy!==0?dy:mi(b)-mi(a);
-  });
-
-  var html=months.map(function(month){
-    var agents=byMonth[month].slice().sort(function(a,b){return +a[1]-+b[1];});
-    var winner=agents[0];
-    var salesTotal=agents.filter(function(a){return String(a[4]).indexOf('service')===-1;}).reduce(function(s,a){return s+(+a[5]||0);},0);
-    var serviceTotal=agents.filter(function(a){return String(a[4]).indexOf('service')!==-1;}).reduce(function(s,a){return s+(+a[5]||0);},0);
-    var winTeam=salesTotal>=serviceTotal?'Sales':'Service';
-    var podium=agents.slice(0,3).map(function(a,idx){
-      var medals=['&#127947;','&#129352;','&#129353;'];
-      var isService=String(a[4]).indexOf('service')!==-1;
-      return '<div style="text-align:center;padding:8px 16px;background:var(--card);border:1px solid var(--border);border-radius:10px;min-width:90px;">'+
-        '<div style="font-size:18px">'+medals[idx]+'</div>'+
-        '<div style="font-size:12px;font-weight:600;margin:4px 0">'+String(a[3]).split(' ')[0]+'</div>'+
-        '<div style="font-size:11px;color:'+(isService?'var(--accent2)':'var(--accent)')+'">'+String(a[5])+' pts</div>'+
-        '</div>';
-    }).join('');
-    var rows=agents.map(function(a){
-      var isService=String(a[4]).indexOf('service')!==-1;
-      return '<tr><td style="color:var(--muted);width:32px">#'+a[1]+'</td>'+
-        '<td style="font-weight:500">'+a[3]+'</td>'+
-        '<td><span style="font-size:9px;font-weight:600;padding:2px 6px;border-radius:4px;background:'+(isService?'rgba(0,255,148,.12)':'rgba(0,212,255,.15)')+';color:'+(isService?'var(--accent2)':'var(--accent)')+'">'+
-        (isService?'Service':'Sales')+'</span></td>'+
-        '<td style="font-family:\'DM Mono\',monospace;text-align:right;color:var(--gold)">'+a[5]+'</td>'+
-        '<td style="font-family:\'DM Mono\',monospace;text-align:right;color:var(--muted);font-size:11px">'+a[7]+'</td></tr>';
-    }).join('');
-    return '<div class="panel" style="margin-bottom:20px;">'+
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">'+
-        '<div class="panel-title" style="margin:0">&#128197; '+month+'</div>'+
-        '<div style="display:flex;gap:10px;align-items:center;">'+
-          '<span style="font-size:11px;color:var(--muted)">Team winner:</span>'+
-          '<span style="font-size:12px;font-weight:600;padding:3px 10px;border-radius:6px;background:'+(winTeam==='Sales'?'rgba(0,212,255,.15)':'rgba(0,255,148,.12)')+';color:'+(winTeam==='Sales'?'var(--accent)':'var(--accent2)')+'">'+winTeam+'</span>'+
-          '<span style="font-size:11px;color:var(--muted)">Sales '+salesTotal+' pts · Service '+serviceTotal+' pts</span>'+
-        '</div>'+
-      '</div>'+
-      '<div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">'+podium+'</div>'+
-      '<table style="width:100%;border-collapse:collapse;font-size:13px;">'+
-        '<thead><tr style="color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em;">'+
-          '<th style="text-align:left;padding:0 0 8px;font-weight:500">Rank</th>'+
-          '<th style="text-align:left;padding:0 0 8px;font-weight:500">Agent</th>'+
-          '<th style="text-align:left;padding:0 0 8px;font-weight:500">Team</th>'+
-          '<th style="text-align:right;padding:0 0 8px;font-weight:500">Score</th>'+
-          '<th style="text-align:right;padding:0 0 8px;font-weight:500">Deductions</th>'+
-        '</tr></thead>'+
-        '<tbody>'+rows+'</tbody>'+
-      '</table>'+
-    '</div>';
-  }).join('');
-
-  el.innerHTML=html||'<div style="color:var(--muted);text-align:center;padding:40px 0">No records found.</div>';
-}
-// ═════ AUTH ═════
-var _supabase=null;
-
-async function initSupabase(){
-  try{
-    const cfg=await fetch('/api/config').then(r=>r.json());
-    if(!cfg.supabaseUrl||!cfg.supabaseKey){
-      showLogin('Configuration error — Supabase env vars not set in Vercel.');
-      return;
-    }
-    _supabase=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseKey);
-    const{data:{session}}=await _supabase.auth.getSession();
-    if(session)showDashboard();
-    else showLogin();
-    _supabase.auth.onAuthStateChange((_evt,session)=>{
-      if(session)showDashboard();
-      else showLogin();
-    });
-  }catch(err){
-    showLogin('Init error: '+err.message);
-  }
-}
-
-function showDashboard(){
-  document.getElementById('loginScreen').style.display='none';
-  document.getElementById('appMain').style.display='';
-  loadScoring();
-  fetchRaceData();
-  if(!timer)timer=setInterval(fetchRaceData,(DATA.refreshSecs||300)*1000);
-}
-
-function showLogin(errMsg){
-  document.getElementById('loginScreen').style.display='flex';
-  document.getElementById('appMain').style.display='none';
-  if(timer){clearInterval(timer);timer=null;}
-  if(errMsg){
-    var el=document.getElementById('loginError');
-    if(el)el.textContent=errMsg;
-  }
-}
-
-async function handleLogin(e){
-  e.preventDefault();
-  var email=document.getElementById('loginEmail').value.trim();
-  var password=document.getElementById('loginPassword').value;
-  var errEl=document.getElementById('loginError');
-  var btn=document.getElementById('loginBtn');
-  btn.disabled=true;btn.textContent='Signing in...';errEl.textContent='';
-  const{error}=await _supabase.auth.signInWithPassword({email,password});
-  if(error){
-    errEl.textContent=error.message;
-    btn.disabled=false;btn.textContent='Sign In';
-  }
-}
-
-async function signOut(){
-  if(_supabase)await _supabase.auth.signOut();
-}
-
-// ═════ SCORING CONFIG ═════
-async function loadScoring(){
-  if(!_supabase)return;
-  const{data,error}=await _supabase.from('scoring_config').select('config_key,config_value');
-  if(!error&&data&&data.length){
-    data.forEach(function(r){if(SCORING.hasOwnProperty(r.config_key))SCORING[r.config_key]=+r.config_value;});
-  }
-  renderScoringEditor();
-  render();
-}
-
-function renderScoringEditor(){
-  var wrap=document.getElementById('scoringEditorWrap');
-  if(!wrap)return;
-  function row(key,label,step){
-    return'<div class="cfg-row" style="margin-bottom:6px;">'
-      +'<span class="cfg-label" style="min-width:180px;">'+label+'</span>'
-      +'<input type="number" step="'+(step||'1')+'" id="sc_'+key+'" value="'+(SCORING[key]||0)+'" class="cfg-input" style="flex:unset;width:90px;text-align:right;">'
-      +'</div>';
-  }
-  wrap.innerHTML=
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px;">'
-    +'<div>'
-    +'<div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px;margin-top:4px;">Policy Points</div>'
-    +row('wl',   'Whole Life (WL)')
-    +row('ul',   'Universal Life (UL)')
-    +row('term', 'Term Life')
-    +row('health','Health')
-    +row('auto', 'Auto')
-    +row('fire', 'Fire / Home')
-    +'</div>'
-    +'<div>'
-    +'<div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px;margin-top:4px;">Call Points</div>'
-    +row('placed_sales',     'Placed — Sales team',    '0.01')
-    +row('placed_service',   'Placed — Service team',  '0.01')
-    +row('answered_sales',   'Answered — Sales team',  '0.01')
-    +row('answered_service', 'Answered — Service team','0.01')
-    +row('talk_per_min',     'Talk time (per min)',     '0.01')
-    +row('avg_min',          'Avg call length (per min)','0.01')
-    +'<div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px;margin-top:12px;">Deductions (race-wide)</div>'
-    +row('missed_deduct',    'Missed call (per call)')
-    +row('voicemail_deduct', 'Voicemail received (per VM)')
-    +'</div>'
-    +'</div>'
-    +'<div style="margin-top:14px;display:flex;gap:10px;align-items:center;">'
-    +'<button class="cfg-btn" onclick="saveScoring()">Save Scoring</button>'
-    +'<span id="scoringSaveStatus" style="font-size:12px;"></span>'
-    +'</div>';
-}
-
-async function saveScoring(){
-  var statusEl=document.getElementById('scoringSaveStatus');
-  if(!_supabase){if(statusEl)statusEl.textContent='Not connected.';return;}
-  var upserts=Object.keys(SCORING).map(function(k){
-    var el=document.getElementById('sc_'+k);
-    var val=el?parseFloat(el.value):SCORING[k];
-    if(!isNaN(val))SCORING[k]=val;
-    return{config_key:k,config_value:SCORING[k]};
-  });
-  if(statusEl)statusEl.textContent='Saving...';
-  var{error}=await _supabase.from('scoring_config').upsert(upserts,{onConflict:'config_key'});
-  if(error){
-    if(statusEl)statusEl.textContent='Error: '+error.message;
-  }else{
-    if(statusEl)statusEl.textContent='Saved!';
-    setTimeout(function(){if(statusEl)statusEl.textContent='';},2500);
-    render();
-  }
-}
-
-initSupabase();
-
-
-// ═════ CALL PERFORMANCE ═════
-var PERF_DATA=null;
-var _perfView='daily';
-var _perfFetching=false;
-
-function switchPerfView(view){
-  _perfView=view;
-  document.querySelectorAll('.perf-tab').forEach(el=>el.classList.toggle('active',el.dataset.view===view));
-  renderPerfSection();
-}
-
-function fetchPerfData(){
-  if(_perfFetching)return;
-  _perfFetching=true;
-  var wrap=document.getElementById('perfViewContent');
-  if(wrap)wrap.innerHTML='<div style="color:var(--muted);font-size:13px;padding:20px 0;">Loading performance data...</div>';
-  fetch('/api/perf').then(r=>r.json()).then(data=>{
-    PERF_DATA=data;_perfFetching=false;renderPerfSection();
-  }).catch(err=>{
-    _perfFetching=false;
-    var wrap=document.getElementById('perfViewContent');
-    if(wrap)wrap.innerHTML='<div style="color:var(--danger);font-size:13px;padding:20px 0;">Error loading performance data: '+err.message+'</div>';
-  });
-}
-
-function renderPerfSection(){
-  var wrap=document.getElementById('perfViewContent');
-  if(!wrap)return;
-  if(!PERF_DATA){fetchPerfData();return;}
-  if(PERF_DATA.error){
-    wrap.innerHTML='<div style="color:var(--danger);font-size:13px;padding:20px 0;">Performance sheet error: '+PERF_DATA.error+'</div>';
-    return;
-  }
-  if(_perfView==='heatmap'){renderPerfHeatmap(wrap);return;}
-  var rows=PERF_DATA[_perfView]||[];
-  if(!rows.length){
-    wrap.innerHTML='<div style="color:var(--muted);font-size:13px;padding:20px 0;">No '+_perfView+' performance data yet. Upload a call report to populate this view.</div>';
-    return;
-  }
-  // Collect unique periods
-  var seen={},periods=[];
-  rows.forEach(function(r){var p=String(r[0]);if(p&&!seen[p]){seen[p]=true;periods.push(p);}});
-  periods=sortPerfPeriods(periods,_perfView);
-  wrap.innerHTML='<div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">'
-    +'<span style="font-size:12px;color:var(--muted);">Period:</span>'
-    +'<select id="perfPeriodDropdown" class="cfg-input" style="flex:unset;width:auto;min-width:130px;font-size:12px;" onchange="renderPerfChart()">'
-    +periods.map(function(p){return'<option value="'+p+'">'+p+'</option>';}).join('')
-    +'</select>'
-    +'<button class="cfg-btn" onclick="PERF_DATA=null;fetchPerfData();" style="padding:5px 14px;font-size:12px;">&#8635; Refresh</button>'
-    +'</div>'
-    +'<div style="height:260px;position:relative;margin-bottom:16px;"><canvas id="chartCallPerf" role="img" aria-label="Call performance chart"></canvas></div>'
-    +'<div id="perfTableWrap" style="overflow-x:auto;"></div>';
-  renderPerfChart();
-}
-
-function sortPerfPeriods(periods,view){
-  if(view==='daily'){
-    return periods.sort(function(a,b){
-      function pd(s){var p=s.split('/').map(Number);return p[2]*10000+p[0]*100+p[1];}
-      try{return pd(b)-pd(a);}catch(e){return b.localeCompare(a);}
-    });
-  }
-  if(view==='weekly'){
-    return periods.sort(function(a,b){
-      function pw(s){var m=s.match(/(\d{4}) Week (\d+)/);return m?+m[1]*100+ +m[2]:0;}
-      return pw(b)-pw(a);
-    });
-  }
-  if(view==='monthly'){
-    var MO=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    return periods.sort(function(a,b){
-      function pm(s){var p=s.split(' ');return(+p[1]||0)*100+MO.indexOf(p[0]);}
-      return pm(b)-pm(a);
-    });
-  }
-  return periods.sort(function(a,b){return b.localeCompare(a);});
-}
-
-function renderPerfChart(){
-  if(!PERF_DATA)return;
-  var dropdown=document.getElementById('perfPeriodDropdown');
-  if(!dropdown)return;
-  var period=dropdown.value;
-  var rows=(PERF_DATA[_perfView]||[]).filter(function(r){return String(r[0])===period;});
-  var agentRows=rows.filter(function(r){return String(r[1])!=='— TEAM TOTAL —';});
-  var teamRow=rows.find(function(r){return String(r[1])==='— TEAM TOTAL —';});
-
-  dc('ccp');
-  var canvas=document.getElementById('chartCallPerf');
-  if(!canvas)return;
-  charts['ccp']=new Chart(canvas.getContext('2d'),{
-    type:'bar',
-    data:{
-      labels:agentRows.map(function(r){return String(r[1]).split(' ')[0];}),
-      datasets:[
-        {label:'Placed',   data:agentRows.map(function(r){return +r[3]||0;}),backgroundColor:'#fbbf24aa',borderColor:'#fbbf24',borderWidth:1,borderRadius:3},
-        {label:'Answered', data:agentRows.map(function(r){return +r[4]||0;}),backgroundColor:'#00d4ffaa',borderColor:'#00d4ff',borderWidth:1,borderRadius:3},
-        {label:'Talk Min', data:agentRows.map(function(r){return +r[7]||0;}),backgroundColor:'#34d399aa',borderColor:'#34d399',borderWidth:1,borderRadius:3},
-      ]
-    },
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:true,position:'top',labels:{color:'#6b8db5',font:{size:10},boxWidth:10,padding:10}}},
-      scales:{
-        x:{ticks:{color:'#6b8db5',font:{size:10}},grid:{color:'rgba(0,212,255,.06)'}},
-        y:{ticks:{color:'#6b8db5'},grid:{color:'rgba(0,212,255,.06)'}}
+      const hdrs = await authHeaders();
+      const formData = new FormData();
+      formData.append('type', type);
+      formData.append('data', JSON.stringify(raw));
+      if (_columnMap && Object.keys(_columnMap).length) {
+        formData.append('columnMap', JSON.stringify(_columnMap));
       }
-    }
-  });
 
-  // Team totals summary
-  var teamHtml='';
-  if(teamRow){
-    var vm=String(teamRow[5]||'—');
-    var missed=String(teamRow[6]||'—');
-    teamHtml='<div style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap;">'
-      +'<div style="background:rgba(255,77,109,.07);border:1px solid rgba(255,77,109,.2);border-radius:10px;padding:10px 18px;">'
-      +'<div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--danger);margin-bottom:4px;">Missed (Team)</div>'
-      +'<div style="font-family:\'DM Mono\',monospace;font-size:1.2rem;color:var(--danger);">'+missed+'</div></div>'
-      +'<div style="background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.2);border-radius:10px;padding:10px 18px;">'
-      +'<div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--warn);margin-bottom:4px;">Voicemails (Team)</div>'
-      +'<div style="font-family:\'DM Mono\',monospace;font-size:1.2rem;color:var(--warn);">'+vm+'</div></div>'
-      +'</div>';
-  }
+      const res  = await fetch('/api/upload', { method: 'POST', headers: hdrs, body: formData });
+      const json = await res.json();
 
-  // Agent table
-  var tableHtml=teamHtml
-    +'<table style="width:100%;border-collapse:collapse;font-size:12px;">'
-    +'<thead><tr style="color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border);">'
-    +'<th style="text-align:left;padding:0 8px 8px 0;font-weight:500;">Agent</th>'
-    +'<th style="text-align:left;padding:0 8px 8px;font-weight:500;">Team</th>'
-    +'<th style="text-align:right;padding:0 8px 8px;font-weight:500;">Placed</th>'
-    +'<th style="text-align:right;padding:0 8px 8px;font-weight:500;">Answered</th>'
-    +'<th style="text-align:right;padding:0 8px 8px;font-weight:500;">Talk Min</th>'
-    +'<th style="text-align:right;padding:0 8px 8px;font-weight:500;">Avg Talk</th>'
-    +'<th style="text-align:right;padding:0 0 8px 8px;font-weight:500;">Max Call</th>'
-    +'</tr></thead><tbody>'
-    +agentRows.map(function(r){
-      var isSvc=String(r[2]).indexOf('service')!==-1;
-      var badgeBg=isSvc?'rgba(0,255,148,.12)':'rgba(0,212,255,.15)';
-      var badgeC=isSvc?'var(--accent2)':'var(--accent)';
-      return'<tr style="border-bottom:1px solid var(--border2);">'
-        +'<td style="padding:6px 8px 6px 0;font-weight:500;">'+r[1]+'</td>'
-        +'<td style="padding:6px 8px;"><span style="font-size:9px;font-weight:600;padding:2px 6px;border-radius:4px;background:'+badgeBg+';color:'+badgeC+'">'+(isSvc?'Service':'Sales')+'</span></td>'
-        +'<td style="padding:6px 8px;text-align:right;font-family:\'DM Mono\',monospace;color:var(--warn);">'+(+r[3]||0)+'</td>'
-        +'<td style="padding:6px 8px;text-align:right;font-family:\'DM Mono\',monospace;color:var(--accent);">'+(+r[4]||0)+'</td>'
-        +'<td style="padding:6px 8px;text-align:right;font-family:\'DM Mono\',monospace;color:var(--accent2);">'+(+r[7]||0).toFixed(1)+'</td>'
-        +'<td style="padding:6px 8px;text-align:right;font-family:\'DM Mono\',monospace;color:var(--muted);">'+(+r[8]||0).toFixed(2)+'</td>'
-        +'<td style="padding:6px 0 6px 8px;text-align:right;font-family:\'DM Mono\',monospace;color:var(--muted);">'+(+r[9]||0).toFixed(2)+'</td>'
-        +'</tr>';
-    }).join('')
-    +'</tbody></table>';
-
-  document.getElementById('perfTableWrap').innerHTML=tableHtml;
-}
-
-function renderPerfHeatmap(wrap){
-  var vmSlots=PERF_DATA&&PERF_DATA.vmSlots;
-  if(!vmSlots||!vmSlots.length){
-    wrap.innerHTML='<div style="color:var(--muted);font-size:13px;padding:20px 0;">No voicemail heatmap data available. Upload a call report first.</div>';
-    return;
-  }
-  var rows=vmSlots.map(function(row){
-    return{date:String(row[0]).replace(/^'/,''),counts:Array.from({length:48},function(_,i){return parseInt(row[i+1])||0;})};
-  }).filter(function(r){return r.date&&r.date!=='';});
-  rows.sort(function(a,b){
-    function pd(s){var p=s.split('/').map(Number);return(p[2]||0)*10000+(p[0]||0)*100+(p[1]||0);}
-    try{return pd(b.date)-pd(a.date);}catch(e){return 0;}
-  });
-  if(!rows.length){wrap.innerHTML='<div style="color:var(--muted);font-size:13px;padding:20px 0;">No voicemail data rows found.</div>';return;}
-
-  var maxCount=Math.max.apply(null,rows.map(function(r){return Math.max.apply(null,r.counts);}));
-  if(maxCount<1)maxCount=1;
-
-  var CW=11,CH=20,GAP=1,ML=78,MT=28;
-  var W=ML+48*(CW+GAP);
-  var H=MT+rows.length*(CH+GAP)+10;
-
-  var canvas=document.createElement('canvas');
-  canvas.width=W;canvas.height=H;
-  canvas.style.cssText='display:block;border-radius:8px;cursor:crosshair;';
-
-  var ctx=canvas.getContext('2d');
-  ctx.fillStyle='#060e1c';
-  ctx.fillRect(0,0,W,H);
-
-  // Time labels every 4 slots (every 2 hours)
-  ctx.font='9px monospace';ctx.fillStyle='#6b8db5';ctx.textAlign='center';
-  for(var s=0;s<48;s+=4){
-    var x=ML+s*(CW+GAP)+(CW/2);
-    var h=Math.floor(s/2);
-    var lh=h%12||12;var ap=h<12?'a':'p';
-    ctx.fillText(lh+ap,x,16);
-  }
-
-  // Rows
-  for(var r=0;r<rows.length;r++){
-    var y=MT+r*(CH+GAP);
-    ctx.font='9px monospace';ctx.fillStyle='#6b8db5';ctx.textAlign='right';
-    ctx.fillText(rows[r].date,ML-5,y+CH-5);
-    for(var s=0;s<48;s++){
-      var cx=ML+s*(CW+GAP);
-      var v=rows[r].counts[s];
-      if(v===0){
-        ctx.fillStyle='rgba(255,255,255,0.05)';
-      }else{
-        var intensity=v/maxCount;
-        var g=Math.round(77+(1-intensity)*110);
-        var b2=Math.round(109*(1-intensity)*0.4);
-        ctx.fillStyle='rgb(255,'+g+','+b2+')';
+      if (json.needsMapping) {
+        _pendingUploadData = raw;
+        _pendingUploadType = type;
+        openColMapper(json.headers, json.missing);
+        logEl.innerHTML = '<span class="warn">Column mapping required — see modal.</span>';
+        return;
       }
-      ctx.fillRect(cx,y,CW,CH);
+
+      if (!res.ok) { logEl.innerHTML = `<span class="err">Error: ${json.error || 'Upload failed'}</span>`; return; }
+
+      logEl.innerHTML = `
+        <span class="ok">Upload complete</span>
+        ${json.calls_inserted!=null?`<br><span>Calls inserted: ${json.calls_inserted}</span>`:''}
+        ${json.sales_inserted!=null?`<br><span>Sales inserted: ${json.sales_inserted}</span>`:''}
+        ${json.race_updated?`<br><span class="ok">Race data updated</span>`:''}`;
+
+      document.getElementById('last-upload-time').textContent = new Date().toLocaleString();
+      await loadRaceData();
+    } catch(err) {
+      document.getElementById('ul-' + type).innerHTML = `<span class="err">Error: ${err.message}</span>`;
     }
-  }
-
-  // Tooltip
-  canvas.addEventListener('mousemove',function(e){
-    var rect=canvas.getBoundingClientRect();
-    var mx=(e.clientX-rect.left)*(canvas.width/rect.width);
-    var my=(e.clientY-rect.top)*(canvas.height/rect.height);
-    var si=Math.floor((mx-ML)/(CW+GAP));
-    var ri=Math.floor((my-MT)/(CH+GAP));
-    if(si>=0&&si<48&&ri>=0&&ri<rows.length){
-      var hh=Math.floor(si/2);var mm=si%2===0?'00':'30';
-      var lhh=hh%12||12;var aapp=hh<12?'AM':'PM';
-      canvas.title=rows[ri].date+' · '+lhh+':'+mm+' '+aapp+' → '+rows[ri].counts[si]+' VM'+(rows[ri].counts[si]!==1?'s':'');
-    }else{canvas.title='';}
-  });
-
-  // Legend
-  var legendCells='';
-  for(var li=0;li<=8;li++){
-    var lintensity=li/8;
-    var lc;
-    if(lintensity===0)lc='rgba(255,255,255,0.05)';
-    else{var lg=Math.round(77+(1-lintensity)*110);var lb=Math.round(109*(1-lintensity)*0.4);lc='rgb(255,'+lg+','+lb+')';}
-    legendCells+='<div style="width:14px;height:14px;background:'+lc+';border-radius:2px;"></div>';
-  }
-
-  var outerDiv=document.createElement('div');
-  var info=document.createElement('div');
-  info.style.cssText='font-family:\'DM Mono\',monospace;font-size:11px;color:var(--muted);margin-bottom:8px;';
-  info.textContent='Voicemail distribution by 30-min slot · '+rows.length+' day'+(rows.length!==1?'s':'')+' · hover cell for detail';
-  var scrollDiv=document.createElement('div');
-  scrollDiv.style.overflowX='auto';
-  scrollDiv.appendChild(canvas);
-  var legendDiv=document.createElement('div');
-  legendDiv.style.cssText='display:flex;align-items:center;gap:6px;margin-top:10px;font-size:11px;color:var(--muted);';
-  legendDiv.innerHTML='<span>0</span><div style="display:flex;gap:2px;">'+legendCells+'</div><span>'+maxCount+' VM'+(maxCount!==1?'s':'')+'</span>';
-  outerDiv.appendChild(info);outerDiv.appendChild(scrollDiv);outerDiv.appendChild(legendDiv);
-  wrap.innerHTML='';wrap.appendChild(outerDiv);
-}
-
-// ═════ FILE UPLOAD ═════
-document.getElementById('callReportFile').addEventListener('change',function(e){
-  if(e.target.files[0])uploadFile(e.target.files[0],'calls');
-  e.target.value='';
-});
-document.getElementById('salesReportFile').addEventListener('change',function(e){
-  if(e.target.files[0])uploadFile(e.target.files[0],'sales');
-  e.target.value='';
-});
-function handleFileDrop(e,type){
-  e.preventDefault();
-  var f=e.dataTransfer.files[0];
-  if(f)uploadFile(f,type);
-}
-function uploadFile(file,type){
-  var status=document.getElementById('uploadStatus');
-  status.innerHTML='<span style="color:var(--warn)">&#9203; Reading file...</span>';
-  var reader=new FileReader();
-  reader.onload=function(e){
-    var base64=e.target.result.split(',')[1];
-    status.innerHTML='<span style="color:var(--warn)">&#9203; Uploading and processing — this may take 20–30 seconds...</span>';
-    var mime=file.type||(file.name.endsWith('.xlsx')
-      ?'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-      :'application/vnd.ms-excel');
-    fetch('/api/upload',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({fileType:type,fileName:file.name,fileBase64:base64,mimeType:mime})
-    })
-    .then(r=>r.json())
-    .then(result=>{
-      if(result.success){
-        var extra=result.new!==undefined?' ('+result.new+' new, '+result.skipped+' skipped)':'';
-        status.innerHTML='<span style="color:var(--accent2)">&#10003; '+result.message+extra+'</span>';
-        setTimeout(fetchRaceData,2000);
-      }else{
-        var diagInfo = result.diag ? ' | bytes:'+result.diag.bytes+' magic:'+result.diag.magic+' xlsx:'+result.diag.isXlsx+(result.diag.errors&&result.diag.errors.length?' errs:['+result.diag.errors.join('; ')+']':'') : '';
-        status.innerHTML='<span style="color:var(--danger)">&#10007; '+(result.error||'Upload failed')+diagInfo+'</span>';
-      }
-    })
-    .catch(err=>{
-      status.innerHTML='<span style="color:var(--danger)">&#10007; '+err.message+'</span>';
-    });
   };
-  reader.readAsDataURL(file);
+  reader.readAsArrayBuffer(file);
+  input.value = '';
 }
+
+// ── COLUMN MAPPER MODAL ───────────────────────────────────────────────────────
+function openColMapper(headers, missing) {
+  const container = document.getElementById('col-mapper-fields');
+  container.innerHTML = (missing || COL_FIELDS).map(field => `
+    <div class="modal-field">
+      <label>${FIELD_LABELS[field] || field}</label>
+      <select class="admin-select" id="cm-${field}" style="width:100%;padding:9px 12px;font-size:13px;">
+        <option value="">— select column —</option>
+        ${(headers||[]).map(h => `<option value="${h}">${h}</option>`).join('')}
+      </select>
+    </div>`).join('');
+  document.getElementById('col-mapper-modal').classList.add('open');
+}
+
+function closeColMapper() {
+  document.getElementById('col-mapper-modal').classList.remove('open');
+  _pendingUploadData = null;
+  _pendingUploadType = null;
+}
+
+async function submitColMapper() {
+  const map = {};
+  COL_FIELDS.forEach(f => {
+    const sel = document.getElementById('cm-' + f);
+    if (sel && sel.value) map[f] = sel.value;
+  });
+  _columnMap = { ..._columnMap, ...map };
+
+  await _supabase.from('accounts')
+    .update({ sales_column_map: _columnMap })
+    .eq('user_id', _userId);
+
+  closeColMapper();
+
+  if (_pendingUploadData && _pendingUploadType) {
+    const logEl = document.getElementById('ul-' + _pendingUploadType);
+    const hdrs  = await authHeaders();
+    const formData = new FormData();
+    formData.append('type', _pendingUploadType);
+    formData.append('data', JSON.stringify(_pendingUploadData));
+    formData.append('columnMap', JSON.stringify(_columnMap));
+    const res  = await fetch('/api/upload', { method: 'POST', headers: hdrs, body: formData });
+    const json = await res.json();
+    if (!res.ok) { logEl.innerHTML = `<span class="err">Error: ${json.error}</span>`; return; }
+    logEl.innerHTML = `<span class="ok">Upload complete after mapping.</span>`;
+    await loadRaceData();
+  }
+}
+
+// ── PERFORMANCE TAB ───────────────────────────────────────────────────────────
+async function loadPerf() {
+  const hdrs = await authHeaders();
+  const res  = await fetch('/api/perf', { headers: hdrs });
+  if (!res.ok) return;
+  _perfData  = await res.json();
+  populatePerfDates();
+  renderPerf();
+  populateVmDates();
+  renderVmHeatmap();
+}
+
+function populatePerfDates() {
+  const period = document.getElementById('perf-period').value;
+  const rows   = _perfData?.[period] || [];
+  const periods = [...new Set(rows.map(r => r[0]))].sort().reverse();
+  const sel = document.getElementById('perf-date');
+  sel.innerHTML = periods.map(p => `<option value="${p}">${p}</option>`).join('');
+}
+
+function renderPerf() {
+  if (!_perfData) return;
+  populatePerfDates();
+  const period   = document.getElementById('perf-period').value;
+  const selected = document.getElementById('perf-date').value;
+  const rows = (_perfData[period] || []).filter(r => r[0] === selected);
+
+  document.getElementById('perf-body').innerHTML = rows.map(r => {
+    const isTotal = r[1] === '— TEAM TOTAL —';
+    return `<tr${isTotal?' class="total-row"':''}>
+      <td>${r[1]}</td><td>${r[2]||''}</td>
+      <td>${r[3]||0}</td><td>${r[4]||0}</td>
+      <td>${r[5]||0}</td><td>${r[6]||0}</td>
+      <td>${r[7]||0}</td><td>${r[8]||0}</td><td>${r[9]||0}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="9" style="color:var(--muted);text-align:center;padding:20px">No data</td></tr>';
+}
+
+function populateVmDates() {
+  const dates = (_perfData?.vmSlots || []).map(r => r[0]).sort().reverse();
+  document.getElementById('vm-date').innerHTML = dates.map(d => `<option value="${d}">${d}</option>`).join('');
+}
+
+function renderVmHeatmap() {
+  if (!_perfData) return;
+  const selected = document.getElementById('vm-date').value;
+  const row = (_perfData.vmSlots || []).find(r => r[0] === selected);
+  const counts = row ? row.slice(1) : new Array(48).fill(0);
+  const maxC = Math.max(...counts, 1);
+
+  document.getElementById('vm-heatmap').innerHTML = counts.map((c, i) => {
+    const alpha = c / maxC;
+    const bg = c === 0 ? 'rgba(0,212,255,.04)' : `rgba(255,77,109,${0.1 + alpha * 0.85})`;
+    const hour = Math.floor(i / 2);
+    const half = i % 2 === 0 ? '00' : '30';
+    return `<div class="hm-cell" title="${hour}:${half} — ${c} VMs" style="background:${bg}"></div>`;
+  }).join('');
+
+  const labels = [];
+  for (let h = 0; h < 24; h += 3) labels.push(`<div class="hm-label">${h}:00</div>`);
+  document.getElementById('vm-labels').innerHTML = labels.join('');
+}
+
+// ── HISTORY TAB ───────────────────────────────────────────────────────────────
+async function loadHistory() {
+  const hdrs = await authHeaders();
+  const res  = await fetch('/api/history', { headers: hdrs });
+  if (!res.ok) return;
+  const data = await res.json();
+  const rows = data.slice(1);
+  const rankCls = ['hist-rank-1','hist-rank-2','hist-rank-3'];
+  document.getElementById('hist-body').innerHTML = rows.map(r =>
+    `<tr>
+      <td>${r[0]}</td>
+      <td class="${rankCls[(r[1]||99)-1]||''}">${r[1]}</td>
+      <td>${r[3]}</td><td>${r[4]}</td>
+      <td>${r[5]}</td><td>${r[6]}</td><td>${r[7]}</td>
+    </tr>`
+  ).join('') || '<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:20px">No history yet</td></tr>';
+}
+
+// ── ACCOUNT TAB ───────────────────────────────────────────────────────────────
+async function loadAccountTab() {
+  if (!_userId) return;
+  const { data: acct } = await _supabase.from('accounts').select('*').eq('user_id', _userId).single();
+  if (!acct) return;
+
+  const statusLabels = { trial:'Trial', paid:'Paid', deferred:'Deferred', past_due:'Past Due', cancelled:'Cancelled' };
+  const trialEnd = acct.trial_ends_at ? new Date(acct.trial_ends_at).toLocaleDateString() : '—';
+  const paidThru = acct.paid_through  ? new Date(acct.paid_through).toLocaleDateString()  : '—';
+
+  document.getElementById('acct-info-grid').innerHTML = [
+    ['Email', acct.email],
+    ['Company', acct.company_name || '—'],
+    ['Contact', acct.contact_name || '—'],
+    ['Phone', acct.phone || '—'],
+    ['Plan', acct.plan || '—'],
+    ['Status', statusLabels[acct.status] || acct.status],
+    ['Agents', acct.agent_count || 1],
+    ['Trial Ends', trialEnd],
+    ['Paid Through', paidThru],
+  ].map(([lbl, val]) =>
+    `<div class="acct-info-item"><div class="acct-info-label">${lbl}</div><div class="acct-info-val">${val}</div></div>`
+  ).join('');
+
+  buildColumnMapUI();
+  if (acct.sales_column_map) _columnMap = acct.sales_column_map;
+  COL_FIELDS.forEach(f => {
+    const el = document.getElementById('cmap-' + f);
+    if (el) el.value = (_columnMap[f] || '');
+  });
+}
+
+async function changePassword() {
+  const p1 = document.getElementById('ac-newpass').value;
+  const p2 = document.getElementById('ac-confpass').value;
+  const msg = document.getElementById('ac-pw-msg');
+  msg.style.display = 'block';
+  if (!p1 || p1.length < 8) { msg.style.color='var(--danger)'; msg.textContent='Password must be at least 8 characters.'; return; }
+  if (p1 !== p2) { msg.style.color='var(--danger)'; msg.textContent='Passwords do not match.'; return; }
+  const { error } = await _supabase.auth.updateUser({ password: p1 });
+  if (error) { msg.style.color='var(--danger)'; msg.textContent=error.message; }
+  else { msg.style.color='var(--accent2)'; msg.textContent='Password updated.'; document.getElementById('ac-newpass').value=''; document.getElementById('ac-confpass').value=''; }
+  setTimeout(() => { msg.style.display='none'; }, 4000);
+}
+
+function buildColumnMapUI() {
+  document.getElementById('col-map-grid').innerHTML = COL_FIELDS.map(f =>
+    `<div class="col-map-item"><label>${FIELD_LABELS[f]}</label>
+    <input type="text" id="cmap-${f}" placeholder="Column header in your file" value="${_columnMap[f]||''}"></div>`
+  ).join('');
+}
+
+async function saveColumnMap() {
+  const map = {};
+  COL_FIELDS.forEach(f => {
+    const val = document.getElementById('cmap-' + f)?.value.trim();
+    if (val) map[f] = val;
+  });
+  _columnMap = map;
+  const { error } = await _supabase.from('accounts').update({ sales_column_map: map }).eq('user_id', _userId);
+  const msg = document.getElementById('colmap-msg');
+  msg.style.display = 'block';
+  if (error) { msg.style.color='var(--danger)'; msg.textContent='Error: '+error.message; }
+  else { msg.style.color='var(--accent2)'; msg.textContent='Column mapping saved.'; }
+  setTimeout(() => { msg.style.display='none'; }, 3000);
+}
+
+// ── ADMIN PANEL ───────────────────────────────────────────────────────────────
+async function loadAdminPanel() {
+  if (!_isAdmin) return;
+  const hdrs = await authHeaders();
+  const res  = await fetch('/api/admin', { headers: hdrs });
+  if (!res.ok) return;
+  _adminRows = await res.json();
+  renderAdminTable(_adminRows);
+}
+
+function renderAdminTable(rows) {
+  const statusOpts = ['trial','paid','deferred','past_due','cancelled'].map(s =>
+    `<option value="${s}">${s}</option>`).join('');
+
+  document.getElementById('admin-body').innerHTML = rows.map(r => `
+    <tr data-uid="${r.user_id}">
+      <td>${r.email}</td>
+      <td>${r.company_name||'—'}</td>
+      <td>${r.contact_name||'—'}</td>
+      <td>${r.plan||'—'}</td>
+      <td><span class="status-pill sp-${r.status||'trial'}">${r.status||'trial'}</span></td>
+      <td>${r.agent_count||1}</td>
+      <td>${r.trial_ends_at ? new Date(r.trial_ends_at).toLocaleDateString() : '—'}</td>
+      <td>${r.paid_through  ? new Date(r.paid_through).toLocaleDateString()  : '—'}</td>
+      <td><input class="admin-notes" value="${(r.notes||'').replace(/"/g,'&quot;')}" onblur="adminSave('${r.user_id}','notes',this.value)"></td>
+      <td>${r.is_admin?'✓':''}</td>
+      <td style="display:flex;gap:6px;flex-wrap:wrap;">
+        <select class="admin-select" onchange="adminSave('${r.user_id}','status',this.value)">
+          ${['trial','paid','deferred','past_due','cancelled'].map(s =>
+            `<option value="${s}"${s===r.status?' selected':''}>${s}</option>`).join('')}
+        </select>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="11" style="color:var(--muted);text-align:center;padding:20px">No accounts</td></tr>';
+}
+
+function filterAdminTable() {
+  const q = document.getElementById('admin-search').value.toLowerCase();
+  const filtered = _adminRows.filter(r =>
+    (r.email||'').toLowerCase().includes(q) || (r.company_name||'').toLowerCase().includes(q));
+  renderAdminTable(filtered);
+}
+
+async function adminSave(uid, field, value) {
+  if (!_isAdmin) return;
+  const hdrs = await authHeaders();
+  await fetch('/api/admin', {
+    method: 'PATCH',
+    headers: { ...hdrs, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: uid, [field]: value })
+  });
+  await loadAdminPanel();
+}
+
+// ── ARCHIVE / RESET ───────────────────────────────────────────────────────────
+async function confirmArchive() {
+  if (!confirm('Archive current month results to history and reset the race? This cannot be undone.')) return;
+
+  const { data: rdRows } = await _supabase.from('race_data').select('*').eq('user_id', _userId);
+  const { data: rcRow  } = await _supabase.from('race_config').select('value').eq('user_id', _userId).eq('key','current_month').single();
+  const month = rcRow?.value || new Date().toISOString().slice(0,7);
+
+  if (rdRows?.length) {
+    const agents = rdRows.map((ag, i) => {
+      const sc = calcScore(ag);
+      return { ...ag, ...sc };
+    }).sort((a,b) => b.total - a.total);
+
+    const histRows = agents.map((ag, i) => ({
+      user_id: _userId,
+      month,
+      rank: i + 1,
+      agent_id: ag.agent_id,
+      name: ag.name,
+      team: ag.team,
+      total_score: ag.total,
+      gross_score: ag.gross,
+      deductions: ag.deduct,
+    }));
+
+    await _supabase.from('historical_wins').insert(histRows);
+  }
+
+  await _supabase.from('race_data').update({
+    wl:0,ul:0,term:0,health:0,auto:0,fire:0,
+    placed:0,answered:0,missed:0,voicemail:0,
+    talk_min:0,avg_min:0,race_wide_missed:0,race_wide_voicemail:0
+  }).eq('user_id', _userId);
+
+  await _supabase.from('call_log').delete().eq('user_id', _userId);
+  await _supabase.from('sales_log').delete().eq('user_id', _userId);
+  await _supabase.from('race_config').update({ value: '' }).eq('user_id', _userId).eq('key','current_month');
+
+  await loadRaceData();
+  loadHistory();
+  alert('Month archived and race reset.');
+}
+
+// ── STARTUP ───────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', init);
 </script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 </body>
 </html>
