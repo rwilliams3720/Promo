@@ -516,6 +516,7 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 // ── CONFIG ──────────────────────────────────────────────────────────────────
@@ -576,6 +577,7 @@ async function init() {
     }
   } catch(e) {
     showScreen('login');
+    showMsg('li-msg', 'Init error: ' + e.message);
   }
 }
 
@@ -648,11 +650,16 @@ async function checkAccountAndShow(session) {
 
 // ── LOGIN / SIGNUP / AUTH ────────────────────────────────────────────────────
 async function handleLogin() {
+  if (!_supabase) return showMsg('li-msg', 'Still connecting — please try again in a moment.');
   const email = document.getElementById('li-email').value.trim();
   const pass  = document.getElementById('li-pass').value;
   if (!email || !pass) return showMsg('li-msg', 'Email and password are required.');
-  const { error } = await _supabase.auth.signInWithPassword({ email, password: pass });
-  if (error) showMsg('li-msg', error.message);
+  try {
+    const { error } = await _supabase.auth.signInWithPassword({ email, password: pass });
+    if (error) showMsg('li-msg', error.message);
+  } catch(e) {
+    showMsg('li-msg', 'Connection error: ' + e.message);
+  }
 }
 
 async function handleSignup() {
@@ -1273,6 +1280,5 @@ async function confirmArchive() {
 // ── STARTUP ───────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', init);
 </script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 </body>
 </html>
