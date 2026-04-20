@@ -1,64 +1,90 @@
 # Boat Race Dashboard — Project Context
 
 ## What This Is
-An internal sales competition dashboard. Agents earn points for policies sold and call activity. All data enters via file upload on the Manage tab (no email monitoring). Data flows through Vercel serverless functions into Google Apps Script, which writes to Google Sheets. The frontend reads the sheet directly via GViz JSON API.
+An internal sales competition dashboard. Agents earn points for policies sold and call activity. All data enters via file upload on the Admin tab. The backend is fully Supabase (Postgres + Auth) — Google Apps Script and Google Sheets are no longer used.
 
 ## Architecture
 
 ```
 Browser (index.html, served by Vercel)
-  ↓ fetch /api/sheet?sid=<id>
-Vercel proxy (api/sheet.js) → Google Sheets GViz JSON API (read-only, public)
-  ↓ fetch /api/upload (POST)
-Vercel proxy (api/upload.js) → GAS Web App (doPost) → Google Sheet (read/write)
-  ↓ fetch /api/history?action=<action> (GET)
-Vercel proxy (api/history.js) → GAS Web App (doGet) → HistoricalWins / config
+  ↓ Supabase JS client (anon key, via /api/config)
+    → race_data table (read on load, team writes)
+    → scoring_config table (read/write from Admin tab)
+  ↓ POST /api/upload
+Vercel Node function (api/upload.js)
+  → SheetJS parses XLSX/XLS in-process
+  → SHA-256 dedup against call_log / sales_log
+  → writes call_log, sales_log, race_data, historical_wins (service key)
+  ↓ GET /api/history
+Vercel Node function (api/history.js)
+  → queries historical_wins directly (service key)
+  ↓ GET /api/perf
+Vercel Node function (api/perf.js)
+  → aggregates call_log into daily/weekly/monthly/yearly + heatmap (service key)
+  ↓ GET /api/config
+Vercel Node function (api/config.js)
+  → serves SUPABASE_URL + SUPABASE_ANON_KEY to browser
 ```
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `index.html` | Entire frontend — scoring, rendering, upload UI, Manage tab |
-| `api/upload.js` | Vercel proxy — streams raw body to GAS, follows redirect |
-| `api/sheet.js` | Vercel proxy — fetches GViz JSON; accepts `?sid=` for custom sheet ID |
-| `api/history.js` | Vercel proxy — passes `?action=` through to GAS doGet |
-| `UploadHandler.gs` | GAS entry point (doPost/doGet) — month detection, archive, reset, Sheet ID config |
-| `EmailParser.gs.txt` | GAS — XLSX parsing, call classification, dedup, RaceData writes |
-| `SalesParser.gs.txt` | GAS — sales classification, dedup, policy totals |
-| `CallReportProcessor.gs.txt` | GAS — call aggregation, Performance Tracking sheet, Voicemail Heatmap |
+| `index.html` | Entire frontend — auth, scoring, rendering, upload UI, admin tab |
+| `api/upload.js` | Upload processor — XLSX parsing, dedup, Supabase writes |
+| `api/history.js` | Queries `historical_wins` table, returns 2-D array for History tab |
+| `api/perf.js` | Aggregates `call_log` into perf views + heatmap for Admin tab |
+| `api/config.js` | Serves public Supabase keys to the browser |
 | `vercel.json` | Builds + routes for all API files and index.html |
+| `package.json` | Dependencies: `@supabase/supabase-js`, `xlsx` |
 
-> The `.gs.txt` files are the source of truth for GAS scripts. Copy their contents into the corresponding files in the Apps Script editor when deploying.
+## Vercel Environment Variables
 
-## Google Sheet
-- **Default Race Sheet ID:** `1gfqzLbjNgt7KVvhGNETtBB6TN7qMZAK13R_yKh6RMHA`
-- **Default Perf Sheet ID:** `1-3t8XAu-59NLOaLiWPxwYtkJfa7rs7JpGLMl52FPHiE`
-- **GViz gid:** `471942583` (RaceData tab)
-- **Race sheet tabs:** RaceData, CallLog, SalesLog, HistoricalWins, RaceConfig
+| Variable | Used by | Purpose |
+|----------|---------|---------|
+| `SUPABASE_URL` | all API routes + `/api/config` | Supabase project URL |
+| `SUPABASE_ANON_KEY` | `/api/config` → browser | Public key for client-side auth + reads |
+| `SUPABASE_SERVICE_KEY` | upload, history, perf | Service role key for trusted server writes |
 
-Sheet IDs are stored in **Script Properties** (not hardcoded). The Manage tab "Sheet ID Configuration" section updates them. Falls back to the default IDs above if not set.
+## Supabase Tables
 
-### RaceData columns (A–R)
-A=AgentID, B=Name, C=Team, D=WL, E=UL, F=Term, G=Health, H=Auto, I=Fire,
-J=Placed, K=Answered, L=Missed, M=Voicemail, N=TalkMin, O=AvgMin,
-P=RaceWideMissed, Q=RaceWideVoicemail, R=LastUpdated
+| Table | Purpose |
+|-------|---------|
+| `race_data` | One row per agent — live race totals, team, call stats |
+| `call_log` | Every classified call — hash, agent_id, disposition, talk_secs, call_dt, call_slot |
+| `sales_log` | Every classified sale — hash, agent_id, category, sale_date |
+| `historical_wins` | Archived end-of-month results — one row per agent per month |
+| `race_config` | Key-value store — `current_month` tracks active race month |
+| `scoring_config` | Point values per category — editable from Admin tab |
+
+### race_data columns
+`agent_id, name, team, wl, ul, term, health, auto, fire, placed, answered, missed, voicemail, talk_min, avg_min, race_wide_missed, race_wide_voicemail, last_updated`
+
+### call_log columns
+`hash (PK), agent_id, disposition, talk_secs, call_dt (DATE), call_slot (SMALLINT 0–47)`
+- `call_slot` = half-hour slot index for voicemail heatmap (0 = 12:00–12:30 AM)
+
+### scoring_config columns
+`config_key (PK), config_value`
+Keys: `wl, ul, term, health, auto, fire, placed_sales, placed_service, answered_sales, answered_service, talk_per_min, avg_min, missed_deduct, voicemail_deduct`
 
 ## Scoring Formula (frontend `calcScore`)
 ```javascript
-polPts      = wl*100 + ul*75 + term*50 + health*30 + auto*15 + fire*10
-placedPts   = placed   * (service ? 0.25 : 1)
-answeredPts = answered * (service ? 5    : 1)
-talkPts     = talkMin*0.1 + avgMin*2
+polPts      = wl*SCORING.wl + ul*SCORING.ul + term*SCORING.term + ...
+placedPts   = placed   * (service ? SCORING.placed_service  : SCORING.placed_sales)
+answeredPts = answered * (service ? SCORING.answered_service : SCORING.answered_sales)
+talkPts     = talkMin*SCORING.talk_per_min + avgMin*SCORING.avg_min
 gross       = round(polPts + placedPts + answeredPts + talkPts)
-deduct      = round(raceWideMissed*(-3) + raceWideVoicemail*(-2))  // applied equally to all agents
+deduct      = round(raceWideMissed*SCORING.missed_deduct + raceWideVoicemail*SCORING.voicemail_deduct)
 total       = max(0, gross + deduct)
 ```
-**Deductions are race-wide only** — individual per-agent missed/voicemail columns (L, M) are not used in scoring.
+**Deductions are race-wide** — applied equally to all agents.
+**Default values** (loaded from `scoring_config`, fallback if table empty):
+WL=100, UL=75, Term=50, Health=30, Auto=15, Fire=10 | Placed sales=1, service=0.25 | Answered sales=1, service=5 | Talk/min=0.1, AvgMin=2 | Missed=-3, VM=-2
 
 ## Agents
-| ID | Name | Default Team |
-|----|------|-------------|
+| ID | Name | Team |
+|----|------|------|
 | ashley | Ashley McEniry | service |
 | fiona | Fiona Rodriguez | service |
 | jocelyn | Jocelyn Hernandez | service |
@@ -71,82 +97,41 @@ total       = max(0, gross + deduct)
 | andy | Andy Rose | service |
 | russel | Russel Williams | service |
 
-**Team is source of truth from the sheet** (overrides hardcoded defaults on load).
+Team is stored in `race_data.team` (source of truth). Admin tab Team Assignment writes directly to Supabase.
 
-## GAS Scripts (in Apps Script project)
-Four script files share the same global namespace:
-- **UploadHandler.gs** — web app entry point, month management, archive/reset, Sheet ID management
-- **EmailParser.gs** — XLSX parsing (`parseXlsxBytes`), call classification (`classifyCalls`), aggregation, RaceData writes
-- **SalesParser.gs** — sales classification (`classifySales`), aggregation, policy totals
-- **CallReportProcessor.gs** — call aggregation (`aggregateCallData`), Performance Tracking sheet, Voicemail Heatmap
-
-### GAS Web App
-- Execute as: Me
-- Who has access: Anyone
-- URL stored in Vercel env var: `GAS_UPLOAD_URL`
-- **After any GAS change: Deploy → Manage deployments → Edit → New version → Deploy**
-
-### GAS doPost actions
-| `fileType` value | Handler |
-|-----------------|---------|
-| `calls` | `processCallUpload(blob)` |
-| `sales` | `processSalesUpload(blob)` |
-| `setteam` | `updateAgentTeam(agentId, team)` |
-| `setsheetid` | `updateSheetIds({raceSheetId, perfSheetId})` |
-
-### GAS doGet actions
-| `action` param | Returns |
-|---------------|---------|
-| `history` | HistoricalWins rows as JSON array |
-| `getconfig` | `{raceSheetId, perfSheetId}` from Script Properties |
-
-### XLSX Parsing (call reports)
-GAS cannot use npm packages. Call reports are parsed via 3-attempt fallback:
-1. `parseXlsxBytes` — direct XML unzip (handles inlineStr, sharedStrings optional)
-2. `getXlsxBytesViaDrive` — Drive round-trip then re-parse
-3. `readXlsxBlobViaSheets` — Drive→Sheets conversion (most reliable)
-
-Sales reports use `readXlsBlobAsSheet` (Drive→Sheets conversion).
-
-**"Search Call Details" XLSX format:** uses `inlineStr` for all string cells; **no `sharedStrings.xml`** in the zip. `parseXlsxBytes` treats sharedStrings as optional — absent = empty array, parsing continues via inlineStr path.
+## Call Classification (`classifyCalls` in api/upload.js)
+- **INBOUND VM, external** → `voicemail` → race-wide voicemail count
+- **OUTBOUND VM, external** → `placed` → counts as placed call for agent
+- **VM with Internal / Voice Mail Access** → `internal` → skipped
+- **Abandon** → `missed` → race-wide missed count
+- **Internal** → `internal` → skipped
+- **OUTBOUND non-VM** → `placed` for agent
+- **INBOUND Handled** → `answered` for agent
 
 ### Dedup Logic
-- **Call dedup:** SHA-256 of `[dt, ext, dir, dur, disp]` for answered/placed; SHA-256 of `[dt, dir, dur, disp]` (NO ext) for voicemail/missed — hunt groups ring multiple extensions for the same event, ext-less hash prevents N-counting.
-- **Sales dedup:** SHA-256 of `[agent, policyName, product, date]`, stored in SalesLog col A.
+- **Answered/Placed:** SHA-256 of `[dt, ext, dir, dur, disp]`
+- **Voicemail/Missed:** SHA-256 of `[dt, dir, dur, disp]` — no ext, prevents hunt-group N-counting
 
-### Voicemail Counting Rules (`classifyCalls` in EmailParser.gs)
-- **INBOUND VM, external** (not Internal, not Voice Mail Access) → `'voicemail'` category → increments `raceWide.voicemails`
-- **OUTBOUND VM, external** → `'placed'` category → counts as a placed call for the agent (agent called a customer who didn't answer)
-- **Any VM with Internal or Voice Mail Access in disposition** → `'internal'` → skipped entirely
-- Correct external inbound VM count for April 2026 report: **175**
+### Month Upload Logic
+- **Future month:** rejected
+- **New month:** archives current race → `historical_wins`, resets logs, starts new month
+- **Same month:** dedup + append
+- **Old month:** archives call stats for that month; current race untouched
 
-### Month Upload Logic (`processCallUpload`)
-- **Future month** (data month > current calendar month): rejected with error
-- **New month** (data month > stored race month, not future): archives current RaceData → HistoricalWins, clears logs, starts new month
-- **Same month:** normal dedup + append processing
-- **Old month** (data month < stored race month): call stats archived to HistoricalWins for that month; current race untouched
-
-### Sheet ID Management
-Sheet IDs stored in Script Properties keys `RACE_SHEET_ID` and `PERF_SHEET_ID`. Updated via Manage tab UI or directly in Apps Script → Project Settings → Script Properties. `getSheetId()` / `getPerfSheetId()` in UploadHandler read these with hardcoded fallbacks.
-
-## Frontend Data Flow
-1. Page load → reads `localStorage` key `brd3` for cached DATA; `brd_race_sheet_id` for custom sheet ID
-2. `fetchSheet('/api/sheet?sid=<id>')` called immediately → `parseSheet` resets DATA then repopulates
-3. `render()` called → re-renders leaderboard and stats
-4. Auto-refresh every 300s (configurable in Manage tab)
-
-**localStorage keys:**
-- `brd3` — full DATA object cache
-- `brd_race_sheet_id` — custom Race Sheet ID (appended as `?sid=` on sheet fetches)
+## Frontend Auth Flow
+1. `initSupabase()` — fetches `/api/config`, creates Supabase client
+2. `getSession()` — if session exists → `showDashboard()`, else → `showLogin()`
+3. `onAuthStateChange` — keeps login/dashboard in sync
+4. `showDashboard()` — calls `loadScoring()` + `fetchRaceData()` + starts refresh timer
+5. Users managed in **Supabase → Authentication → Users**
+6. Email confirmation must be **disabled** (Supabase → Auth → Providers → Email → Confirm email OFF)
 
 ## Common Tasks
 
-### Redeploy after GAS changes
-1. Copy updated `.gs.txt` file content into Apps Script editor
-2. Deploy → Manage deployments → Edit (pencil) → New version → Deploy
-3. No Vercel redeploy needed unless `api/*.js` or `index.html` changed
+### Add a new user
+Supabase → Authentication → Users → Add user → Create new user (email + password)
 
-### Redeploy after frontend/API changes
+### Redeploy after code changes
 ```bash
 git add <files>
 git commit -m "message"
@@ -154,10 +139,19 @@ git push   # Vercel auto-deploys from main
 ```
 
 ### Reset the race manually
-Clear rows 2+ on: RaceData (cols D–R only), CallLog, SalesLog. Leave headers and RaceData cols A–C (agent IDs/names/teams).
+In Supabase SQL Editor:
+```sql
+UPDATE race_data SET wl=0,ul=0,term=0,health=0,auto=0,fire=0,
+  placed=0,answered=0,missed=0,voicemail=0,talk_min=0,avg_min=0,
+  race_wide_missed=0,race_wide_voicemail=0;
+DELETE FROM call_log;
+DELETE FROM sales_log;
+UPDATE race_config SET value='' WHERE key='current_month';
+```
 
-### Apply voicemail fix to live data
-The voicemail classification fix is in `EmailParser.gs.txt`. After deploying to Apps Script:
-1. Delete all rows below header in CallLog sheet
-2. Re-upload the call report from the Manage tab
-3. Voicemail counts will recalculate correctly on the fresh log
+### Re-populate heatmap after adding call_slot column
+Re-upload the current month's call report from the Admin tab — dedup will skip all existing rows (no race data change) but the new `call_slot` column will be populated for voicemail calls.
+
+### Update scoring values
+Admin tab → Scoring Configuration panel → edit values → Save Scoring.
+Changes take effect immediately and persist in `scoring_config` table.
