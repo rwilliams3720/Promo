@@ -113,6 +113,24 @@ ashley, fiona, jocelyn, joseph, peyton, susan, tiffany, tracy, amin, andy, russe
 
 Team is stored in `race_data.team` (source of truth).
 
+## Frontend Script Load Order (critical)
+
+Scripts in `index.html` must load in this order — Supabase **before** app code:
+```html
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>/* app code */</script>
+```
+`window.supabase.createClient(...)` is called inside `init()` on `DOMContentLoaded`. If the Supabase script loads after the inline script, `window.supabase` may be undefined and `_supabase` stays null, causing silent failures on every auth call.
+
+## /api/config Response Shape
+
+`config.js` returns `{ supabaseUrl, supabaseKey }`. The frontend reads those exact keys:
+```javascript
+_supabase = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey);
+```
+Do not rename these fields without updating both files.
+
 ## Common Tasks
 
 ### First-time setup
