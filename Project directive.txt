@@ -1,0 +1,7 @@
+1. Add secure, free, and easy method for creating a log in upon first load.  Research clerk, supabase, firebase, and auth.js models for password and account management.  Each account should have its own unique data set.
+
+2.Add method for creating admin that would allow to change the point structure.  Admin should be on the manage page and only able to update via password that matches the main login and handled by the solution from step 1.
+
+3. Remove ability to update google sheet id.  Confirm auto refresh setting is updating as selected in drop down.  Research if Google Sheets is best source for storing data if multiple users accounts need unique data sets.  Free storage solutions is a must.
+
+4. Highlight any issues that may have been overlooked.

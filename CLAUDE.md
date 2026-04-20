@@ -1,41 +1,40 @@
 # Boat Race Dashboard — Project Context
 
 ## What This Is
-An internal sales competition dashboard. Agents earn points for policies sold and call activity. All data enters via file upload on the Admin tab. The backend is fully Supabase (Postgres + Auth) — Google Apps Script and Google Sheets are no longer used.
+A multi-tenant SaaS sales competition dashboard. Each Supabase user = one company with fully isolated data. Agents earn points for policies sold and call activity. All data enters via file upload on the Manage tab.
 
 ## Architecture
 
 ```
 Browser (index.html, served by Vercel)
   ↓ Supabase JS client (anon key, via /api/config)
-    → race_data table (read on load, team writes)
-    → scoring_config table (read/write from Admin tab)
-  ↓ POST /api/upload
-Vercel Node function (api/upload.js)
-  → SheetJS parses XLSX/XLS in-process
-  → SHA-256 dedup against call_log / sales_log
-  → writes call_log, sales_log, race_data, historical_wins (service key)
-  ↓ GET /api/history
-Vercel Node function (api/history.js)
-  → queries historical_wins directly (service key)
-  ↓ GET /api/perf
-Vercel Node function (api/perf.js)
-  → aggregates call_log into daily/weekly/monthly/yearly + heatmap (service key)
+    → race_data, scoring_config, race_config, accounts (RLS-filtered to auth.uid())
+  ↓ POST /api/upload  (Authorization: Bearer <jwt>)
+    → SheetJS parses XLSX/XLS, resolves user from JWT
+    → SHA-256 dedup for calls; month-scoped replace for sales
+    → writes call_log, sales_log, race_data, historical_wins (service key)
+  ↓ GET /api/history  (Authorization: Bearer <jwt>)
+    → queries historical_wins filtered by user_id
+  ↓ GET /api/perf     (Authorization: Bearer <jwt>)
+    → aggregates call_log filtered by user_id
+  ↓ GET|PATCH /api/admin  (Authorization: Bearer <jwt>, admin only)
+    → lists/updates all accounts rows
   ↓ GET /api/config
-Vercel Node function (api/config.js)
-  → serves SUPABASE_URL + SUPABASE_ANON_KEY to browser
+    → serves SUPABASE_URL + SUPABASE_ANON_KEY to browser
 ```
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `index.html` | Entire frontend — auth, scoring, rendering, upload UI, admin tab |
-| `api/upload.js` | Upload processor — XLSX parsing, dedup, Supabase writes |
-| `api/history.js` | Queries `historical_wins` table, returns 2-D array for History tab |
-| `api/perf.js` | Aggregates `call_log` into perf views + heatmap for Admin tab |
+| `index.html` | Entire frontend — auth screens, scoring, rendering, upload UI, account tab, admin panel |
+| `api/upload.js` | Upload processor — JWT auth, XLSX parsing, user-scoped dedup, Supabase writes |
+| `api/history.js` | JWT-scoped historical_wins query |
+| `api/perf.js` | JWT-scoped call_log aggregation → daily/weekly/monthly/yearly + heatmap |
+| `api/admin.js` | Admin-only: list + update all accounts |
 | `api/config.js` | Serves public Supabase keys to the browser |
-| `vercel.json` | Builds + routes for all API files and index.html |
+| `setup.sql` | Full migration — run once in Supabase SQL Editor |
+| `vercel.json` | Builds + routes |
 | `package.json` | Dependencies: `@supabase/supabase-js`, `xlsx` |
 
 ## Vercel Environment Variables
@@ -44,29 +43,58 @@ Vercel Node function (api/config.js)
 |----------|---------|---------|
 | `SUPABASE_URL` | all API routes + `/api/config` | Supabase project URL |
 | `SUPABASE_ANON_KEY` | `/api/config` → browser | Public key for client-side auth + reads |
-| `SUPABASE_SERVICE_KEY` | upload, history, perf | Service role key for trusted server writes |
+| `SUPABASE_SERVICE_KEY` | upload, history, perf, admin | Service role key — bypasses RLS for server writes |
 
 ## Supabase Tables
 
-| Table | Purpose |
-|-------|---------|
-| `race_data` | One row per agent — live race totals, team, call stats |
-| `call_log` | Every classified call — hash, agent_id, disposition, talk_secs, call_dt, call_slot |
-| `sales_log` | Every classified sale — hash, agent_id, category, sale_date |
-| `historical_wins` | Archived end-of-month results — one row per agent per month |
-| `race_config` | Key-value store — `current_month` tracks active race month |
-| `scoring_config` | Point values per category — editable from Admin tab |
+All data tables have a `user_id uuid` column (FK → auth.users) and RLS policy `user_id = auth.uid()`.
+
+| Table | Purpose | PK |
+|-------|---------|-----|
+| `accounts` | One row per user — billing status, company info, column map | `user_id` |
+| `race_data` | Live race totals per agent per user | `(user_id, agent_id)` |
+| `call_log` | Every classified call | `(user_id, hash)` |
+| `sales_log` | Every classified sale | `(user_id, hash)` |
+| `historical_wins` | Archived end-of-month results | `user_id + month + agent_id` |
+| `race_config` | Key-value store — `current_month` | `(user_id, key)` |
+| `scoring_config` | Point values per category | `(user_id, config_key)` |
+
+### accounts columns
+`user_id, email, company_name, contact_name, phone, plan, agent_count, referral_source, status (trial/paid/deferred/past_due/cancelled), is_admin, notes, trial_ends_at, paid_through, stripe_customer_id, sales_column_map (jsonb), created_at, last_login`
 
 ### race_data columns
-`agent_id, name, team, wl, ul, term, health, auto, fire, placed, answered, missed, voicemail, talk_min, avg_min, race_wide_missed, race_wide_voicemail, last_updated`
+`user_id, agent_id, name, team, wl, ul, term, health, auto, fire, placed, answered, missed, voicemail, talk_min, avg_min, race_wide_missed, race_wide_voicemail, last_updated`
 
 ### call_log columns
-`hash (PK), agent_id, disposition, talk_secs, call_dt (DATE), call_slot (SMALLINT 0–47)`
-- `call_slot` = half-hour slot index for voicemail heatmap (0 = 12:00–12:30 AM)
+`user_id, hash, agent_id, disposition, talk_secs, call_dt (DATE), call_slot (SMALLINT 0–47)`
 
 ### scoring_config columns
-`config_key (PK), config_value`
+`user_id, config_key, config_value`
 Keys: `wl, ul, term, health, auto, fire, placed_sales, placed_service, answered_sales, answered_service, talk_per_min, avg_min, missed_deduct, voicemail_deduct`
+
+## Account Status & Access
+| Status | Dashboard | Uploads | Notes |
+|--------|-----------|---------|-------|
+| `trial` | Full | ✓ | 21-day trial from signup — auto-checked on login |
+| `paid` | Full | ✓ | |
+| `deferred` | Full | ✓ | Grace period |
+| `past_due` | Read-only | ✗ | Banner shown, uploads hidden |
+| `cancelled` | Read-only | ✗ | Banner shown, uploads hidden |
+
+Trial expiry is checked client-side: if `status=trial` and `trial_ends_at < now()`, treated as `past_due`.
+
+## Auth Screens
+1. **Login** — email + password + links to forgot password / sign up
+2. **Sign Up** — company name, contact, phone, agent count, plan, referral source, password → 21-day trial
+3. **Forgot Password** — sends Supabase reset link to email
+4. **Password Recovery** — shown when user clicks reset link in email (`PASSWORD_RECOVERY` event)
+5. **App** — full dashboard with Account tab (password change, account info, column map) and Admin tab (is_admin only)
+
+## Sales Upload — Format Flexibility
+- Auto-detects columns via synonym lists (see `SALES_COL_SYNONYMS` in upload.js)
+- If detection fails → returns `{needsMapping: true, headers: [...]}` → browser shows column mapper modal
+- User's mapping saved to `accounts.sales_column_map` (JSONB) and reused on future uploads
+- Sales uploads are **month-scoped replace**: all sales_log rows for that user+month are deleted then re-inserted — automatically handles removed sales
 
 ## Scoring Formula (frontend `calcScore`)
 ```javascript
@@ -78,58 +106,36 @@ gross       = round(polPts + placedPts + answeredPts + talkPts)
 deduct      = round(raceWideMissed*SCORING.missed_deduct + raceWideVoicemail*SCORING.voicemail_deduct)
 total       = max(0, gross + deduct)
 ```
-**Deductions are race-wide** — applied equally to all agents.
-**Default values** (loaded from `scoring_config`, fallback if table empty):
-WL=100, UL=75, Term=50, Health=30, Auto=15, Fire=10 | Placed sales=1, service=0.25 | Answered sales=1, service=5 | Talk/min=0.1, AvgMin=2 | Missed=-3, VM=-2
+Deductions are race-wide — applied equally to all agents.
 
-## Agents
-| ID | Name | Team |
-|----|------|------|
-| ashley | Ashley McEniry | service |
-| fiona | Fiona Rodriguez | service |
-| jocelyn | Jocelyn Hernandez | service |
-| joseph | Joseph Underwood | sales |
-| peyton | Peyton Tooze | sales |
-| susan | Susan Navarro | sales |
-| tiffany | Tiffany Dabe | sales |
-| tracy | Tracy Ankrah | service |
-| amin | Amin Kalas | sales |
-| andy | Andy Rose | service |
-| russel | Russel Williams | service |
+## Agents (hardcoded in upload.js + perf.js)
+ashley, fiona, jocelyn, joseph, peyton, susan, tiffany, tracy, amin, andy, russel
 
-Team is stored in `race_data.team` (source of truth). Admin tab Team Assignment writes directly to Supabase.
-
-## Call Classification (`classifyCalls` in api/upload.js)
-- **INBOUND VM, external** → `voicemail` → race-wide voicemail count
-- **OUTBOUND VM, external** → `placed` → counts as placed call for agent
-- **VM with Internal / Voice Mail Access** → `internal` → skipped
-- **Abandon** → `missed` → race-wide missed count
-- **Internal** → `internal` → skipped
-- **OUTBOUND non-VM** → `placed` for agent
-- **INBOUND Handled** → `answered` for agent
-
-### Dedup Logic
-- **Answered/Placed:** SHA-256 of `[dt, ext, dir, dur, disp]`
-- **Voicemail/Missed:** SHA-256 of `[dt, dir, dur, disp]` — no ext, prevents hunt-group N-counting
-
-### Month Upload Logic
-- **Future month:** rejected
-- **New month:** archives current race → `historical_wins`, resets logs, starts new month
-- **Same month:** dedup + append
-- **Old month:** archives call stats for that month; current race untouched
-
-## Frontend Auth Flow
-1. `initSupabase()` — fetches `/api/config`, creates Supabase client
-2. `getSession()` — if session exists → `showDashboard()`, else → `showLogin()`
-3. `onAuthStateChange` — keeps login/dashboard in sync
-4. `showDashboard()` — calls `loadScoring()` + `fetchRaceData()` + starts refresh timer
-5. Users managed in **Supabase → Authentication → Users**
-6. Email confirmation must be **disabled** (Supabase → Auth → Providers → Email → Confirm email OFF)
+Team is stored in `race_data.team` (source of truth).
 
 ## Common Tasks
 
-### Add a new user
-Supabase → Authentication → Users → Add user → Create new user (email + password)
+### First-time setup
+1. Run `setup.sql` in Supabase SQL Editor
+2. Ensure `russelsaiassistant@gmail.com` exists in Supabase Auth before running the seed
+3. Disable email confirmation: Supabase → Auth → Providers → Email → Confirm email **OFF**
+4. Set Vercel env vars: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY`
+
+### Add admin to an account
+```sql
+UPDATE accounts SET is_admin = true WHERE email = 'admin@example.com';
+```
+
+### Reset race for a specific user
+```sql
+UPDATE race_data SET wl=0,ul=0,term=0,health=0,auto=0,fire=0,
+  placed=0,answered=0,missed=0,voicemail=0,talk_min=0,avg_min=0,
+  race_wide_missed=0,race_wide_voicemail=0
+WHERE user_id = '<uuid>';
+DELETE FROM call_log  WHERE user_id = '<uuid>';
+DELETE FROM sales_log WHERE user_id = '<uuid>';
+UPDATE race_config SET value='' WHERE key='current_month' AND user_id='<uuid>';
+```
 
 ### Redeploy after code changes
 ```bash
@@ -138,20 +144,8 @@ git commit -m "message"
 git push   # Vercel auto-deploys from main
 ```
 
-### Reset the race manually
-In Supabase SQL Editor:
-```sql
-UPDATE race_data SET wl=0,ul=0,term=0,health=0,auto=0,fire=0,
-  placed=0,answered=0,missed=0,voicemail=0,talk_min=0,avg_min=0,
-  race_wide_missed=0,race_wide_voicemail=0;
-DELETE FROM call_log;
-DELETE FROM sales_log;
-UPDATE race_config SET value='' WHERE key='current_month';
-```
-
-### Re-populate heatmap after adding call_slot column
-Re-upload the current month's call report from the Admin tab — dedup will skip all existing rows (no race data change) but the new `call_slot` column will be populated for voicemail calls.
-
-### Update scoring values
-Admin tab → Scoring Configuration panel → edit values → Save Scoring.
-Changes take effect immediately and persist in `scoring_config` table.
+### Wire Stripe billing later
+1. Create Supabase Edge Function to handle Stripe webhooks
+2. On `invoice.payment_succeeded` → set `accounts.status = 'paid'`, update `paid_through`
+3. On `invoice.payment_failed` → set `accounts.status = 'past_due'`
+4. Store `stripe_customer_id` in `accounts` table (column already exists)

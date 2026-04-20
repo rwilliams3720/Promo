@@ -24,10 +24,16 @@ const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct',
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
+  if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
+
   try {
     const { data: logs, error } = await supabase
       .from('call_log')
       .select('agent_id,disposition,talk_secs,call_dt,call_slot')
+      .eq('user_id', user.id)
       .not('disposition', 'in', '("internal","other","skip")');
 
     if (error) return res.status(500).json({ error: error.message });
@@ -42,7 +48,6 @@ export default async function handler(req, res) {
       const { agent_id, disposition, talk_secs, call_dt, call_slot } = row;
       if (!call_dt) continue;
 
-      // Parse as UTC date to avoid timezone-shifted day boundaries
       const d = new Date(call_dt + 'T12:00:00Z');
       if (isNaN(d.getTime())) continue;
 
@@ -57,14 +62,12 @@ export default async function handler(req, res) {
       const isVm       = disposition === 'voicemail';
       const isMissed   = disposition === 'missed';
 
-      // Heatmap: voicemail by date × half-hour slot
       if (isVm && call_slot != null) {
         if (!vmMap[dayKey]) vmMap[dayKey] = new Array(48).fill(0);
         const slot = Math.max(0, Math.min(47, call_slot));
         vmMap[dayKey][slot]++;
       }
 
-      // Race-wide voicemail/missed — attach to each period under __race key
       if (isVm || isMissed) {
         for (const [map, key] of [[daily,dayKey],[weekly,weekKey],[monthly,monKey],[yearly,yearKey]]) {
           if (!map[key]) map[key] = {};
@@ -90,8 +93,6 @@ export default async function handler(req, res) {
       }
     }
 
-    // Row format: [period, agentName, team, placed, answered, voicemail, missed, talkMin, avgMin, maxCall]
-    // "— TEAM TOTAL —" row: [period, '— TEAM TOTAL —', '', 0, 0, raceVm, raceMissed, 0, 0, 0]
     function mapToRows(periodMap) {
       const rows = [];
       for (const [period, agents] of Object.entries(periodMap)) {

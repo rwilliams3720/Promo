@@ -1,55 +1,19 @@
 {
   "version": 2,
   "builds": [
-    {
-      "src": "api/sheet.js",
-      "use": "@vercel/node"
-    },
-    {
-      "src": "api/upload.js",
-      "use": "@vercel/node"
-    },
-    {
-      "src": "api/history.js",
-      "use": "@vercel/node"
-    },
-    {
-      "src": "api/perf.js",
-      "use": "@vercel/node"
-    },
-    {
-      "src": "api/config.js",
-      "use": "@vercel/node"
-    },
-    {
-      "src": "index.html",
-      "use": "@vercel/static"
-    }
+    { "src": "api/upload.js",  "use": "@vercel/node" },
+    { "src": "api/history.js", "use": "@vercel/node" },
+    { "src": "api/perf.js",    "use": "@vercel/node" },
+    { "src": "api/config.js",  "use": "@vercel/node" },
+    { "src": "api/admin.js",   "use": "@vercel/node" },
+    { "src": "index.html",     "use": "@vercel/static" }
   ],
   "routes": [
-    {
-      "src": "/api/sheet",
-      "dest": "/api/sheet.js"
-    },
-    {
-      "src": "/api/upload",
-      "dest": "/api/upload.js"
-    },
-    {
-      "src": "/api/history",
-      "dest": "/api/history.js"
-    },
-    {
-      "src": "/api/perf",
-      "dest": "/api/perf.js"
-    },
-    {
-      "src": "/api/config",
-      "dest": "/api/config.js"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
-    }
+    { "src": "/api/upload",  "dest": "/api/upload.js"  },
+    { "src": "/api/history", "dest": "/api/history.js" },
+    { "src": "/api/perf",    "dest": "/api/perf.js"    },
+    { "src": "/api/config",  "dest": "/api/config.js"  },
+    { "src": "/api/admin",   "dest": "/api/admin.js"   },
+    { "src": "/(.*)",        "dest": "/index.html"     }
   ]
 }

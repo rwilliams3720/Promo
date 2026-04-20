@@ -12,7 +12,21 @@ const supabase = createClient(
 const MONTH_NAMES = ['January','February','March','April','May','June',
                      'July','August','September','October','November','December'];
 
-const ALL_AGENT_IDS = ['ashley','fiona','jocelyn','joseph','peyton','susan','tiffany','tracy','amin','andy','russel'];
+const AGENT_INFO = {
+  ashley:  { name:'Ashley McEniry',    team:'service' },
+  fiona:   { name:'Fiona Rodriguez',   team:'service' },
+  jocelyn: { name:'Jocelyn Hernandez', team:'service' },
+  joseph:  { name:'Joseph Underwood',  team:'sales'   },
+  peyton:  { name:'Peyton Tooze',      team:'sales'   },
+  susan:   { name:'Susan Navarro',     team:'sales'   },
+  tiffany: { name:'Tiffany Dabe',      team:'sales'   },
+  tracy:   { name:'Tracy Ankrah',      team:'service' },
+  amin:    { name:'Amin Kalas',        team:'sales'   },
+  andy:    { name:'Andy Rose',         team:'service' },
+  russel:  { name:'Russel Williams',   team:'service' },
+};
+
+const ALL_AGENT_IDS = Object.keys(AGENT_INFO);
 
 const CALL_AGENT_MAP = {
   'Ashley Foreman':    { id:'ashley',  name:'Ashley McEniry',    team:'service' },
@@ -23,8 +37,8 @@ const CALL_AGENT_MAP = {
   'Susan Navarro':     { id:'susan',   name:'Susan Navarro',     team:'sales'   },
   'Tiffany Dabe':      { id:'tiffany', name:'Tiffany Dabe',      team:'sales'   },
   'Tracy Ankrah':      { id:'tracy',   name:'Tracy Ankrah',      team:'service' },
-  'Amin Kalas':        { id:'amin',    name:'Amin Kalas',         team:'sales'   },
-  'Andy Rose':         { id:'andy',    name:'Andy Rose',          team:'service' },
+  'Amin Kalas':        { id:'amin',    name:'Amin Kalas',        team:'sales'   },
+  'Andy Rose':         { id:'andy',    name:'Andy Rose',         team:'service' },
   'Russel Williams':   { id:'russel',  name:'Russel Williams',   team:'service' },
 };
 
@@ -45,16 +59,32 @@ const SALES_AGENT_MAP = {
   'Russel Williams':   { id:'russel',  team:'service' },
 };
 
+// Synonyms for sales report column detection — ordered by priority
+const SALES_COL_SYNONYMS = {
+  product:     ['Product','Line of Business','LOB','Coverage','Policy Line','Insurance Type','Product Type'],
+  written_by:  ['Written By','Agent','Producer','Rep','Sold By','CSR','Agent Name','Producer Name','Writing Agent','Advisor'],
+  written_date:['Written Date','Sale Date','Effective Date','Policy Date','Issue Date','Date Written','Bind Date','Close Date'],
+  policy_name: ['Policy Name','Insured','Insured Name','Client Name','Customer','Policy #','Policy Number','Client','Member Name'],
+  policy_type: ['Policy Type','Sub Type','Plan Type','Coverage Type','Product Category','Type','Sub-Type'],
+};
+
 
 // ─── HANDLER ────────────────────────────────────────────────────
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
+  if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  try {
-    const { fileType, fileBase64, fileName, mimeType } = req.body;
+  // Resolve user from JWT
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
+  if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
+  const userId = user.id;
 
-    // Team updates handled client-side via Supabase — no-op here
+  try {
+    const { fileType, fileBase64, fileName, mimeType, columnMap } = req.body;
+
     if (fileType === 'setteam') return res.json({ success: true });
 
     if (!fileBase64) return res.status(400).json({ error: 'No file data provided.' });
@@ -67,8 +97,8 @@ export default async function handler(req, res) {
     }
 
     const result = fileType === 'sales'
-      ? await processSalesUpload(rows)
-      : await processCallUpload(rows);
+      ? await processSalesUpload(rows, userId, columnMap || null)
+      : await processCallUpload(rows, userId);
 
     return res.json(result);
   } catch (err) {
@@ -97,7 +127,7 @@ function parseFile(buffer) {
 
 
 // ─── CALL UPLOAD ────────────────────────────────────────────────
-async function processCallUpload(rows) {
+async function processCallUpload(rows, userId) {
   let hasHeader = false;
   for (let r = 0; r < Math.min(rows.length, 20); r++) {
     if (rows[r].join('|').includes('Call Direction')) { hasHeader = true; break; }
@@ -111,70 +141,83 @@ async function processCallUpload(rows) {
     return { success: false, error: `File is for ${dataMonth} which hasn't started yet.` };
   }
 
-  const { data: cfgRow } = await supabase.from('race_config').select('value').eq('key','current_month').single();
+  const { data: cfgRow } = await supabase.from('race_config')
+    .select('value').eq('user_id', userId).eq('key', 'current_month').single();
   const storedMonth = cfgRow?.value || '';
 
   if (dataMonth && storedMonth) {
     const cmp = compareMonths(dataMonth, storedMonth);
     if (cmp > 0) {
-      await archiveToHistorical(storedMonth);
-      await resetRaceScores();
-      await supabase.from('race_config').upsert({ key:'current_month', value:dataMonth });
+      await archiveToHistorical(storedMonth, userId);
+      await resetRaceScores(userId);
+      await supabase.from('race_config').upsert(
+        { user_id: userId, key: 'current_month', value: dataMonth },
+        { onConflict: 'user_id,key' }
+      );
     } else if (cmp < 0) {
-      const { data: hashes } = await supabase.from('call_log').select('hash');
-      const known = Object.fromEntries((hashes||[]).map(r=>[r.hash,true]));
+      const { data: hashes } = await supabase.from('call_log')
+        .select('hash').eq('user_id', userId);
+      const known = Object.fromEntries((hashes || []).map(r => [r.hash, true]));
       const classified = classifyCalls(rows, known);
       if (!classified.newLogRows.length) {
-        return { success:true, message:`No calls found in ${dataMonth}.`, new:0, skipped:classified.duplicatesSkipped };
+        return { success: true, message: `No calls found in ${dataMonth}.`, new: 0, skipped: classified.duplicatesSkipped };
       }
       const totals = aggregateFromLog(classified.newLogRows);
-      await archiveCallStatsToHistorical(dataMonth, totals);
-      return { success:true, message:`${dataMonth} call data archived. Current race (${storedMonth}) unchanged.`, archived:true };
+      await archiveCallStatsToHistorical(dataMonth, totals, userId);
+      return { success: true, message: `${dataMonth} call data archived. Current race (${storedMonth}) unchanged.`, archived: true };
     }
   } else if (dataMonth && !storedMonth) {
-    await supabase.from('race_config').upsert({ key:'current_month', value:dataMonth });
+    await supabase.from('race_config').upsert(
+      { user_id: userId, key: 'current_month', value: dataMonth },
+      { onConflict: 'user_id,key' }
+    );
   }
 
-  const { data: hashes } = await supabase.from('call_log').select('hash');
-  const knownHashes = Object.fromEntries((hashes||[]).map(r=>[r.hash,true]));
+  const { data: hashes } = await supabase.from('call_log')
+    .select('hash').eq('user_id', userId);
+  const knownHashes = Object.fromEntries((hashes || []).map(r => [r.hash, true]));
 
   const classified = classifyCalls(rows, knownHashes);
   if (!classified.newLogRows.length) {
-    return { success:true, message:'No new calls found — all already logged.', new:0, skipped:classified.duplicatesSkipped };
+    return { success: true, message: 'No new calls found — all already logged.', new: 0, skipped: classified.duplicatesSkipped };
   }
 
   const logInserts = classified.newLogRows.map(r => ({
-    hash:       r[0],
-    agent_id:   r[1] || null,
-    disposition:r[2],
-    talk_secs:  r[3] ? Math.round(r[3]*60) : null,
-    call_dt:    r[4] || null,
-    call_slot:  r[5] != null ? r[5] : null,
+    user_id:     userId,
+    hash:        r[0],
+    agent_id:    r[1] || null,
+    disposition: r[2],
+    talk_secs:   r[3] ? Math.round(r[3] * 60) : null,
+    call_dt:     r[4] || null,
+    call_slot:   r[5] != null ? r[5] : null,
   }));
-  await supabase.from('call_log').upsert(logInserts, { onConflict:'hash', ignoreDuplicates:true });
+  await supabase.from('call_log').upsert(logInserts, { onConflict: 'user_id,hash', ignoreDuplicates: true });
 
-  const { data: allLog } = await supabase.from('call_log').select('agent_id,disposition,talk_secs,call_dt');
-  const allLogRows = (allLog||[]).map(r=>[
-    '', r.agent_id||'', r.disposition, r.talk_secs ? r.talk_secs/60 : 0, r.call_dt||'', ''
+  const { data: allLog } = await supabase.from('call_log')
+    .select('agent_id,disposition,talk_secs,call_dt').eq('user_id', userId);
+  const allLogRows = (allLog || []).map(r => [
+    '', r.agent_id || '', r.disposition, r.talk_secs ? r.talk_secs / 60 : 0, r.call_dt || '', ''
   ]);
   const totals = aggregateFromLog(allLogRows);
+
+  await ensureRaceDataRows(userId);
 
   const now = new Date().toISOString();
   for (const id in totals.agents) {
     const s = totals.agents[id];
     await supabase.from('race_data').update({
-      placed:   s.placed,
-      answered: s.answered,
-      talk_min: s.talkMin,
-      avg_min:  s.avgMin,
+      placed:       s.placed,
+      answered:     s.answered,
+      talk_min:     s.talkMin,
+      avg_min:      s.avgMin,
       last_updated: now,
-    }).eq('agent_id', id);
+    }).eq('user_id', userId).eq('agent_id', id);
   }
   await supabase.from('race_data').update({
-    race_wide_missed:     totals.raceWide.missed,
-    race_wide_voicemail:  totals.raceWide.voicemails,
-    last_updated:         now,
-  }).in('agent_id', ALL_AGENT_IDS);
+    race_wide_missed:    totals.raceWide.missed,
+    race_wide_voicemail: totals.raceWide.voicemails,
+    last_updated:        now,
+  }).eq('user_id', userId).in('agent_id', ALL_AGENT_IDS);
 
   return {
     success:  true,
@@ -187,48 +230,99 @@ async function processCallUpload(rows) {
 
 
 // ─── SALES UPLOAD ───────────────────────────────────────────────
-async function processSalesUpload(rows) {
-  let hasHeader = false;
+async function processSalesUpload(rows, userId, columnMap) {
+  // Auto-detect header row
+  let headerIdx = -1;
   for (let r = 0; r < Math.min(rows.length, 20); r++) {
     const s = rows[r].join('|');
-    if (s.includes('Product') && s.includes('Written By')) { hasHeader = true; break; }
+    if (s.includes('Product') || s.includes('Written By') || s.includes('Agent') ||
+        s.includes('Producer') || s.includes('Line of Business')) {
+      headerIdx = r; break;
+    }
   }
-  if (!hasHeader) return { success:false, error:'No sales report header found. Upload the Admin All Product Sales report.' };
+  if (headerIdx === -1) return { success: false, error: 'No recognisable sales report header found.' };
 
-  const { data: hashes } = await supabase.from('sales_log').select('hash');
-  const knownHashes = Object.fromEntries((hashes||[]).map(r=>[r.hash,true]));
+  const headers = rows[headerIdx].map(h => String(h).trim());
 
-  const classified = classifySales(rows, knownHashes);
+  // Resolve column indices: use provided columnMap first, then auto-detect
+  const colIdx = {};
+  if (columnMap) {
+    // columnMap: { product: 'Line of Business', written_by: 'Producer', ... }
+    for (const [field, headerName] of Object.entries(columnMap)) {
+      const idx = headers.findIndex(h => h.toLowerCase() === String(headerName).toLowerCase());
+      if (idx !== -1) colIdx[field] = idx;
+    }
+  }
+  // Fill in any missing fields via synonym auto-detect
+  for (const [field, synonyms] of Object.entries(SALES_COL_SYNONYMS)) {
+    if (colIdx[field] !== undefined) continue;
+    for (const syn of synonyms) {
+      const idx = headers.findIndex(h => h.toLowerCase().includes(syn.toLowerCase()));
+      if (idx !== -1) { colIdx[field] = idx; break; }
+    }
+  }
+
+  // If required columns still missing, ask frontend for mapping
+  const required = ['product', 'written_by', 'written_date'];
+  const missing  = required.filter(f => colIdx[f] === undefined);
+  if (missing.length > 0) {
+    return { needsMapping: true, headers, missing };
+  }
+
+  // Detect month from data dates for scoped replace
+  const salesMonth = detectSalesMonth(rows, headerIdx, colIdx.written_date);
+
+  // Month-scoped replace: delete all rows for this user+month, then re-insert
+  if (salesMonth) {
+    const [monthName, yearStr] = salesMonth.split(' ');
+    const monthIdx = MONTH_NAMES.indexOf(monthName);
+    if (monthIdx !== -1) {
+      const year = parseInt(yearStr);
+      const from = `${year}-${String(monthIdx + 1).padStart(2, '0')}-01`;
+      const to   = monthIdx === 11
+        ? `${year + 1}-01-01`
+        : `${year}-${String(monthIdx + 2).padStart(2, '0')}-01`;
+      await supabase.from('sales_log')
+        .delete()
+        .eq('user_id', userId)
+        .gte('sale_date', from)
+        .lt('sale_date', to);
+    }
+  }
+
+  const classified = classifySales(rows, headerIdx, colIdx, {});  // fresh — deleted old rows
 
   if (classified.newLogRows.length > 0) {
     const logInserts = classified.newLogRows.map(r => ({
+      user_id:   userId,
       hash:      r[0],
       agent_id:  r[1] !== 'skip' ? r[1] : null,
       product:   r[2],
       sale_date: r[3] || null,
     }));
-    await supabase.from('sales_log').upsert(logInserts, { onConflict:'hash', ignoreDuplicates:true });
+    await supabase.from('sales_log').upsert(logInserts, { onConflict: 'user_id,hash', ignoreDuplicates: true });
   }
 
-  const { data: allSales } = await supabase.from('sales_log').select('agent_id,product');
-  const allSalesRows = (allSales||[]).map(r=>[
-    '', r.agent_id||'skip', r.product||'other', '', ''
-  ]);
-  const agentTotals = aggregateSalesFromLog(allSalesRows);
+  const { data: allSales } = await supabase.from('sales_log')
+    .select('agent_id,product').eq('user_id', userId);
+  const allSalesRows  = (allSales || []).map(r => ['', r.agent_id || 'skip', r.product || 'other', '', '']);
+  const agentTotals   = aggregateSalesFromLog(allSalesRows);
+
+  await ensureRaceDataRows(userId);
 
   const now = new Date().toISOString();
   for (const id in agentTotals) {
     const s = agentTotals[id];
     await supabase.from('race_data').update({
-      wl:s.wl, ul:s.ul, term:s.term, health:s.health, auto:s.auto, fire:s.fire,
+      wl: s.wl, ul: s.ul, term: s.term, health: s.health, auto: s.auto, fire: s.fire,
       last_updated: now,
-    }).eq('agent_id', id);
+    }).eq('user_id', userId).eq('agent_id', id);
   }
 
   return {
     success: true,
     message: classified.newLogRows.length === 0
-      ? 'No new sales found — all already logged. Totals refreshed.'
+      ? 'Sales processed — totals refreshed.'
       : 'Sales report processed successfully.',
     new:     classified.newLogRows.length,
     skipped: classified.duplicatesSkipped,
@@ -236,65 +330,84 @@ async function processSalesUpload(rows) {
 }
 
 
+// ─── RACE DATA SEED ─────────────────────────────────────────────
+async function ensureRaceDataRows(userId) {
+  const rows = ALL_AGENT_IDS.map(id => ({
+    user_id:             userId,
+    agent_id:            id,
+    name:                AGENT_INFO[id].name,
+    team:                AGENT_INFO[id].team,
+    wl: 0, ul: 0, term: 0, health: 0, auto: 0, fire: 0,
+    placed: 0, answered: 0, missed: 0, voicemail: 0,
+    talk_min: 0, avg_min: 0,
+    race_wide_missed: 0, race_wide_voicemail: 0,
+  }));
+  await supabase.from('race_data').upsert(rows, { onConflict: 'user_id,agent_id', ignoreDuplicates: true });
+}
+
+
 // ─── MONTH MANAGEMENT ───────────────────────────────────────────
-async function archiveToHistorical(month) {
-  const { data: raceRows } = await supabase.from('race_data').select('*');
+async function archiveToHistorical(month, userId) {
+  const { data: raceRows } = await supabase.from('race_data').select('*').eq('user_id', userId);
   if (!raceRows?.length) return;
 
   const rwMissed = raceRows[0]?.race_wide_missed    || 0;
   const rwVm     = raceRows[0]?.race_wide_voicemail || 0;
 
   const scored = raceRows.map(r => {
-    const svc     = r.team === 'service';
-    const polPts  = (r.wl||0)*100+(r.ul||0)*75+(r.term||0)*50+(r.health||0)*30+(r.auto||0)*15+(r.fire||0)*10;
+    const svc    = r.team === 'service';
+    const polPts = (r.wl||0)*100+(r.ul||0)*75+(r.term||0)*50+(r.health||0)*30+(r.auto||0)*15+(r.fire||0)*10;
     const callPts = (r.placed||0)*(svc?.25:1)+(r.answered||0)*(svc?5:1)+(+r.talk_min||0)*.1+(+r.avg_min||0)*2;
-    const gross   = Math.round(polPts+callPts);
-    const deduct  = Math.round(rwMissed*(-3)+rwVm*(-2));
-    return { ...r, gross, deduct, total: Math.max(0, gross+deduct) };
-  }).sort((a,b)=>b.total-a.total);
+    const gross  = Math.round(polPts + callPts);
+    const deduct = Math.round(rwMissed*(-3) + rwVm*(-2));
+    return { ...r, gross, deduct, total: Math.max(0, gross + deduct) };
+  }).sort((a, b) => b.total - a.total);
 
-  await supabase.from('historical_wins').delete().eq('month', month);
-  await supabase.from('historical_wins').insert(scored.map((s,i)=>({
-    month, rank:i+1, agent_id:s.agent_id, name:s.name, team:s.team,
-    total_score:s.total, gross_score:s.gross, deductions:s.deduct,
-    wl:s.wl||0, ul:s.ul||0, term:s.term||0, health:s.health||0, auto:s.auto||0, fire:s.fire||0,
-    placed:s.placed||0, answered:s.answered||0, missed:s.missed||0, voicemail:s.voicemail||0,
-    talk_min:s.talk_min||0, avg_min:s.avg_min||0,
-    race_wide_missed:rwMissed, race_wide_voicemail:rwVm,
+  await supabase.from('historical_wins').delete().eq('user_id', userId).eq('month', month);
+  await supabase.from('historical_wins').insert(scored.map((s, i) => ({
+    user_id: userId,
+    month, rank: i+1, agent_id: s.agent_id, name: s.name, team: s.team,
+    total_score: s.total, gross_score: s.gross, deductions: s.deduct,
+    wl: s.wl||0, ul: s.ul||0, term: s.term||0, health: s.health||0,
+    auto: s.auto||0, fire: s.fire||0,
+    placed: s.placed||0, answered: s.answered||0, missed: s.missed||0,
+    voicemail: s.voicemail||0, talk_min: s.talk_min||0, avg_min: s.avg_min||0,
+    race_wide_missed: rwMissed, race_wide_voicemail: rwVm,
   })));
 }
 
-async function archiveCallStatsToHistorical(month, totals) {
+async function archiveCallStatsToHistorical(month, totals, userId) {
   const rwMissed = totals.raceWide.missed;
   const rwVm     = totals.raceWide.voicemails;
 
   const scored = Object.values(totals.agents).map(s => {
-    const svc     = s.team === 'service';
+    const svc    = s.team === 'service';
     const callPts = s.placed*(svc?.25:1)+s.answered*(svc?5:1)+s.talkMin*.1+s.avgMin*2;
-    const gross   = Math.round(callPts);
-    const deduct  = Math.round(rwMissed*(-3)+rwVm*(-2));
-    return { ...s, gross, deduct, total: Math.max(0, gross+deduct) };
-  }).sort((a,b)=>b.total-a.total);
+    const gross  = Math.round(callPts);
+    const deduct = Math.round(rwMissed*(-3) + rwVm*(-2));
+    return { ...s, gross, deduct, total: Math.max(0, gross + deduct) };
+  }).sort((a, b) => b.total - a.total);
 
-  await supabase.from('historical_wins').delete().eq('month', month);
-  await supabase.from('historical_wins').insert(scored.map((s,i)=>({
-    month, rank:i+1, agent_id:s.id, name:s.name, team:s.team,
-    total_score:s.total, gross_score:s.gross, deductions:s.deduct,
+  await supabase.from('historical_wins').delete().eq('user_id', userId).eq('month', month);
+  await supabase.from('historical_wins').insert(scored.map((s, i) => ({
+    user_id: userId,
+    month, rank: i+1, agent_id: s.id, name: s.name, team: s.team,
+    total_score: s.total, gross_score: s.gross, deductions: s.deduct,
     wl:0, ul:0, term:0, health:0, auto:0, fire:0,
-    placed:s.placed, answered:s.answered, missed:0, voicemail:0,
-    talk_min:s.talkMin, avg_min:s.avgMin,
-    race_wide_missed:rwMissed, race_wide_voicemail:rwVm,
+    placed: s.placed, answered: s.answered, missed: 0, voicemail: 0,
+    talk_min: s.talkMin, avg_min: s.avgMin,
+    race_wide_missed: rwMissed, race_wide_voicemail: rwVm,
   })));
 }
 
-async function resetRaceScores() {
+async function resetRaceScores(userId) {
   await supabase.from('race_data').update({
     wl:0, ul:0, term:0, health:0, auto:0, fire:0,
     placed:0, answered:0, missed:0, voicemail:0,
     talk_min:0, avg_min:0, race_wide_missed:0, race_wide_voicemail:0,
-  }).in('agent_id', ALL_AGENT_IDS);
-  await supabase.from('call_log').delete().in('disposition', ['placed','answered','voicemail','missed','internal','other','skip']);
-  await supabase.from('sales_log').delete().in('agent_id', [...ALL_AGENT_IDS, null]);
+  }).eq('user_id', userId).in('agent_id', ALL_AGENT_IDS);
+  await supabase.from('call_log').delete().eq('user_id', userId);
+  await supabase.from('sales_log').delete().eq('user_id', userId);
 }
 
 
@@ -307,7 +420,7 @@ function classifyCalls(data, knownHashes) {
   for (let i = 0; i < data.length; i++) {
     if (data[i].join('|').includes('Call Direction')) { headerIdx = i; break; }
   }
-  if (headerIdx === -1) return { newLogRows:[], duplicatesSkipped:0 };
+  if (headerIdx === -1) return { newLogRows: [], duplicatesSkipped: 0 };
 
   const headers = data[headerIdx].map(h => String(h).trim());
   const dtCol   = findCol(headers, ['Origination Date']);
@@ -333,9 +446,9 @@ function classifyCalls(data, knownHashes) {
 
     if (isVm) {
       const isInternal = disp.includes('Internal') || disp.includes('Voice Mail Access');
-      if (isInternal)          category = 'internal';
-      else if (dir==='INBOUND')category = 'voicemail';
-      else                     category = 'placed';
+      if (isInternal)           category = 'internal';
+      else if (dir === 'INBOUND') category = 'voicemail';
+      else                      category = 'placed';
     } else if (disp.includes('Abandon')) {
       category = 'missed';
     } else if (disp.includes('Internal')) {
@@ -348,20 +461,20 @@ function classifyCalls(data, knownHashes) {
       category = 'other';
     }
 
-    const hashInput = (category==='voicemail'||category==='missed')
+    const hashInput = (category === 'voicemail' || category === 'missed')
       ? [dt, dir, dur, disp].join('|')
       : [dt, ext, dir, dur, disp].join('|');
     const hash = sha256Short(hashInput);
 
     if (knownHashes[hash]) { duplicatesSkipped++; continue; }
 
-    if (category==='internal'||category==='other') {
-      newLogRows.push([hash,'skip',category,0,dateOnly(dt),null]);
+    if (category === 'internal' || category === 'other') {
+      newLogRows.push([hash, 'skip', category, 0, dateOnly(dt), null]);
       continue;
     }
 
     let agentId = '';
-    if (category==='placed'||category==='answered') {
+    if (category === 'placed' || category === 'answered') {
       const cleanName = cleanExtName(ext);
       if (!cleanName) continue;
       const agentInfo = CALL_AGENT_MAP[cleanName];
@@ -369,8 +482,8 @@ function classifyCalls(data, knownHashes) {
       agentId = agentInfo.id;
     }
 
-    const talkMin = Math.round((talkSecs/60)*10)/10;
-    const slot = category === 'voicemail' ? timeSlot(dt) : null;
+    const talkMin = Math.round((talkSecs / 60) * 10) / 10;
+    const slot    = category === 'voicemail' ? timeSlot(dt) : null;
     newLogRows.push([hash, agentId, category, talkMin, dateOnly(dt), slot]);
   }
 
@@ -381,38 +494,38 @@ function classifyCalls(data, knownHashes) {
 // ─── CALL AGGREGATION ───────────────────────────────────────────
 function aggregateFromLog(logRows) {
   const agents   = {};
-  const raceWide = { missed:0, voicemails:0 };
+  const raceWide = { missed: 0, voicemails: 0 };
 
   for (const name in CALL_AGENT_MAP) {
     const info = CALL_AGENT_MAP[name];
     if (!agents[info.id]) agents[info.id] = {
-      id:info.id, name:info.name, team:info.team,
-      placed:0, answered:0, talkMin:0, talkCalls:0,
+      id: info.id, name: info.name, team: info.team,
+      placed: 0, answered: 0, talkMin: 0, talkCalls: 0,
     };
   }
 
   for (const row of logRows) {
     const agentId  = row[1];
     const category = row[2];
-    const talkMin  = parseFloat(row[3])||0;
+    const talkMin  = parseFloat(row[3]) || 0;
 
-    if (category==='voicemail') { raceWide.voicemails++; continue; }
-    if (category==='missed')    { raceWide.missed++;     continue; }
-    if (category==='skip'||category==='internal'||category==='other') continue;
+    if (category === 'voicemail') { raceWide.voicemails++; continue; }
+    if (category === 'missed')    { raceWide.missed++;     continue; }
+    if (category === 'skip' || category === 'internal' || category === 'other') continue;
 
     const s = agents[agentId];
     if (!s) continue;
 
-    if (category==='placed') s.placed++;
-    else if (category==='answered') s.answered++;
-    s.talkMin += talkMin;
-    if (talkMin*60 >= 10) s.talkCalls++;
+    if (category === 'placed')   s.placed++;
+    else if (category === 'answered') s.answered++;
+    s.talkMin  += talkMin;
+    if (talkMin * 60 >= 10) s.talkCalls++;
   }
 
   for (const id in agents) {
-    const s = agents[id];
-    s.talkMin = Math.round(s.talkMin*10)/10;
-    s.avgMin  = s.talkCalls>0 ? Math.round((s.talkMin/s.talkCalls)*100)/100 : 0;
+    const s   = agents[id];
+    s.talkMin = Math.round(s.talkMin * 10) / 10;
+    s.avgMin  = s.talkCalls > 0 ? Math.round((s.talkMin / s.talkCalls) * 100) / 100 : 0;
   }
 
   return { agents, raceWide };
@@ -420,40 +533,32 @@ function aggregateFromLog(logRows) {
 
 
 // ─── SALES CLASSIFICATION ───────────────────────────────────────
-function classifySales(data, knownHashes) {
+function classifySales(data, headerIdx, colIdx, knownHashes) {
   const newLogRows = [];
   let duplicatesSkipped = 0;
 
-  let headerIdx = -1;
-  for (let i = 0; i < data.length; i++) {
-    const s = data[i].join('|');
-    if (s.includes('Product') && s.includes('Written By')) { headerIdx = i; break; }
-  }
-  if (headerIdx === -1) return { newLogRows:[], duplicatesSkipped:0 };
-
-  const headers    = data[headerIdx].map(h => String(h).trim());
-  const productCol = findCol(headers, ['Product']);
-  const nameCol    = findCol(headers, ['Policy Name']);
-  const agentCol   = findCol(headers, ['Written By']);
-  const dateCol    = findCol(headers, ['Written Date']);
-  const typeCol    = findCol(headers, ['Policy Type']);
+  const productCol  = colIdx.product      ?? -1;
+  const nameCol     = colIdx.policy_name  ?? -1;
+  const agentCol    = colIdx.written_by   ?? -1;
+  const dateCol     = colIdx.written_date ?? -1;
+  const typeCol     = colIdx.policy_type  ?? -1;
 
   for (let i = headerIdx + 1; i < data.length; i++) {
     const row     = data[i];
-    const product = String(row[productCol]||'').trim();
-    const polName = String(row[nameCol]   ||'').trim();
-    const agent   = String(row[agentCol]  ||'').trim();
-    const date    = String(row[dateCol]   ||'').trim();
-    const polType = String(row[typeCol]   ||'').trim();
+    const product = String(row[productCol] || '').trim();
+    const polName = nameCol !== -1 ? String(row[nameCol] || '').trim() : '';
+    const agent   = String(row[agentCol]   || '').trim();
+    const date    = String(row[dateCol]    || '').trim();
+    const polType = typeCol !== -1 ? String(row[typeCol] || '').trim() : '';
 
-    if (!product||!agent||!date) continue;
+    if (!product || !agent || !date) continue;
 
-    const hash = sha256Short([agent,polName,product,date].join('|'));
+    const hash = sha256Short([agent, polName, product, date].join('|'));
     if (knownHashes[hash]) { duplicatesSkipped++; continue; }
 
     const category = mapPolicyCategory(product, polType);
-    if (category==='other') {
-      newLogRows.push([hash,'skip','other',dateOnly(date),'']);
+    if (category === 'other') {
+      newLogRows.push([hash, 'skip', 'other', dateOnly(date), '']);
       continue;
     }
 
@@ -461,7 +566,7 @@ function classifySales(data, knownHashes) {
     if (!agentInfo) {
       const lower = agent.toLowerCase();
       for (const key in SALES_AGENT_MAP) {
-        if (key.toLowerCase()===lower) { agentInfo=SALES_AGENT_MAP[key]; break; }
+        if (key.toLowerCase() === lower) { agentInfo = SALES_AGENT_MAP[key]; break; }
       }
     }
     if (!agentInfo) continue;
@@ -478,14 +583,14 @@ function aggregateSalesFromLog(logRows) {
   const agents = {};
   for (const name in SALES_AGENT_MAP) {
     const info = SALES_AGENT_MAP[name];
-    if (!agents[info.id]) agents[info.id] = { id:info.id, wl:0,ul:0,term:0,health:0,auto:0,fire:0 };
+    if (!agents[info.id]) agents[info.id] = { id: info.id, wl:0,ul:0,term:0,health:0,auto:0,fire:0 };
   }
   for (const row of logRows) {
     const agentId  = String(row[1]);
     const category = String(row[2]);
-    if (category==='other'||category==='skip'||agentId==='skip') continue;
+    if (category === 'other' || category === 'skip' || agentId === 'skip') continue;
     const s = agents[agentId];
-    if (s&&s[category]!==undefined) s[category]++;
+    if (s && s[category] !== undefined) s[category]++;
   }
   return agents;
 }
@@ -493,14 +598,14 @@ function aggregateSalesFromLog(logRows) {
 
 // ─── HELPERS ────────────────────────────────────────────────────
 function sha256Short(input) {
-  return crypto.createHash('sha256').update(input,'utf8').digest('hex').slice(0,16);
+  return crypto.createHash('sha256').update(input, 'utf8').digest('hex').slice(0, 16);
 }
 
 function secsFromStr(val) {
-  const s = String(val).trim();
+  const s     = String(val).trim();
   const parts = s.split(':');
-  if (parts.length===3) return parseInt(parts[0])*3600+parseInt(parts[1])*60+parseInt(parts[2]);
-  return parseFloat(s)||0;
+  if (parts.length === 3) return parseInt(parts[0])*3600 + parseInt(parts[1])*60 + parseInt(parts[2]);
+  return parseFloat(s) || 0;
 }
 
 function timeSlot(dtStr) {
@@ -514,58 +619,71 @@ function timeSlot(dtStr) {
 function dateOnly(dtStr) {
   try {
     const d = new Date(dtStr);
-    if (isNaN(d.getTime())) return String(dtStr).split(' ')[0]||dtStr;
+    if (isNaN(d.getTime())) return String(dtStr).split(' ')[0] || dtStr;
     return d.toISOString().split('T')[0];
-  } catch(e) { return String(dtStr).split(' ')[0]||dtStr; }
+  } catch(e) { return String(dtStr).split(' ')[0] || dtStr; }
 }
 
 function cleanExtName(ext) {
-  if (!ext||ext==='Not Applicable'||ext==='Extension Description'||ext==='Office Voicemail') return null;
-  return ext.replace(/_[A-Za-z0-9]{3,}$/i,'').replace(/_/g,' ').trim();
+  if (!ext || ext === 'Not Applicable' || ext === 'Extension Description' || ext === 'Office Voicemail') return null;
+  return ext.replace(/_[A-Za-z0-9]{3,}$/i, '').replace(/_/g, ' ').trim();
 }
 
 function findCol(headers, keywords) {
-  for (let i=0; i<headers.length; i++)
+  for (let i = 0; i < headers.length; i++)
     for (const kw of keywords)
       if (headers[i].includes(kw)) return i;
   return -1;
 }
 
 function mapPolicyCategory(product, policyType) {
-  const p = String(product   ||'').toLowerCase().trim();
-  const t = String(policyType||'').toLowerCase().trim();
-  if (p.includes('whole')||p==='wl')                                         return 'wl';
-  if (p.includes('universal')||p==='ul')                                      return 'ul';
-  if (p.includes('term'))                                                      return 'term';
-  if (p.includes('health')||p.includes('med'))                                return 'health';
-  if (p.includes('auto')||p.includes('vehicle')||p.includes('car'))          return 'auto';
-  if (p.includes('fire')||p.includes('home')||p.includes('property'))        return 'fire';
-  if (t.includes('whole')||t==='wl')                                         return 'wl';
-  if (t.includes('universal')||t==='ul')                                      return 'ul';
-  if (t.includes('term'))                                                      return 'term';
-  if (t.includes('health')||t.includes('med'))                                return 'health';
-  if (t.includes('auto')||t.includes('vehicle'))                              return 'auto';
-  if (t.includes('fire')||t.includes('home')||t.includes('property'))        return 'fire';
+  const p = String(product    || '').toLowerCase().trim();
+  const t = String(policyType || '').toLowerCase().trim();
+  if (p.includes('whole') || p === 'wl')                                        return 'wl';
+  if (p.includes('universal') || p === 'ul')                                    return 'ul';
+  if (p.includes('term'))                                                        return 'term';
+  if (p.includes('health') || p.includes('med'))                                return 'health';
+  if (p.includes('auto') || p.includes('vehicle') || p.includes('car'))        return 'auto';
+  if (p.includes('fire') || p.includes('home') || p.includes('property'))      return 'fire';
+  if (t.includes('whole') || t === 'wl')                                        return 'wl';
+  if (t.includes('universal') || t === 'ul')                                    return 'ul';
+  if (t.includes('term'))                                                        return 'term';
+  if (t.includes('health') || t.includes('med'))                                return 'health';
+  if (t.includes('auto') || t.includes('vehicle'))                              return 'auto';
+  if (t.includes('fire') || t.includes('home') || t.includes('property'))      return 'fire';
   return 'other';
 }
 
 function detectMonth(rows) {
-  for (let r=0; r<Math.min(rows.length,30); r++) {
-    for (let c=0; c<rows[r].length; c++) {
+  for (let r = 0; r < Math.min(rows.length, 30); r++) {
+    for (let c = 0; c < rows[r].length; c++) {
       const val = rows[r][c];
       if (!val) continue;
       let d = val instanceof Date ? val : new Date(val);
-      if (!isNaN(d.getTime()) && d.getFullYear()>2020) {
-        return MONTH_NAMES[d.getMonth()]+' '+d.getFullYear();
+      if (!isNaN(d.getTime()) && d.getFullYear() > 2020) {
+        return MONTH_NAMES[d.getMonth()] + ' ' + d.getFullYear();
       }
     }
   }
-  return MONTH_NAMES[new Date().getMonth()]+' '+new Date().getFullYear();
+  return MONTH_NAMES[new Date().getMonth()] + ' ' + new Date().getFullYear();
+}
+
+function detectSalesMonth(rows, headerIdx, dateColIdx) {
+  if (dateColIdx === undefined || dateColIdx === -1) return null;
+  for (let r = headerIdx + 1; r < Math.min(rows.length, headerIdx + 50); r++) {
+    const val = rows[r][dateColIdx];
+    if (!val) continue;
+    const d = new Date(val);
+    if (!isNaN(d.getTime()) && d.getFullYear() > 2020) {
+      return MONTH_NAMES[d.getMonth()] + ' ' + d.getFullYear();
+    }
+  }
+  return null;
 }
 
 function compareMonths(a, b) {
-  const idx = s => { const sl=String(s).toLowerCase(); return MONTH_NAMES.findIndex(m=>sl.includes(m.toLowerCase())); };
-  const yr  = s => { const m=String(s).match(/\d{4}/); return m?+m[0]:0; };
-  const dy  = yr(a)-yr(b);
-  return dy!==0 ? dy : idx(a)-idx(b);
+  const idx = s => { const sl = String(s).toLowerCase(); return MONTH_NAMES.findIndex(m => sl.includes(m.toLowerCase())); };
+  const yr  = s => { const m = String(s).match(/\d{4}/); return m ? +m[0] : 0; };
+  const dy  = yr(a) - yr(b);
+  return dy !== 0 ? dy : idx(a) - idx(b);
 }
