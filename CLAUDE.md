@@ -162,6 +162,32 @@ git commit -m "message"
 git push   # Vercel auto-deploys from main
 ```
 
+## Upload API — Request Format
+
+The frontend (`handleFile`, `submitColMapper`) sends **JSON** to `/api/upload`:
+```javascript
+fetch('/api/upload', {
+  method: 'POST',
+  headers: { Authorization: 'Bearer <jwt>', 'Content-Type': 'application/json' },
+  body: JSON.stringify({ type: 'calls'|'sales', data: rows[], columnMap?: {...} })
+})
+```
+- `data` is the pre-parsed 2D array from XLSX.js (rows × columns)
+- `api/upload.js` reads `body.type` / `body.data` (with fallback to legacy `fileType`/`fileBase64`)
+- Do **not** revert to FormData — `@vercel/node` does not auto-parse multipart bodies
+
+## Concurrency Guards
+
+Supabase throws **"Lock broken by another request with the 'steal' option"** when two concurrent requests hit the same auth or DB operation. Guards in place:
+
+| Location | Guard |
+|----------|-------|
+| `handleLogin()` | button disabled during `signInWithPassword`, re-enabled in `finally` |
+| `handleSignup()` | button disabled during `signUp`, re-enabled in `finally` |
+| `handleFile()` | `_uploadInProgress` flag + both file inputs disabled; reset in `finally` |
+
+If this error resurfaces, look for a new async path that lacks a disable/finally guard.
+
 ### Wire Stripe billing later
 1. Create Supabase Edge Function to handle Stripe webhooks
 2. On `invoice.payment_succeeded` → set `accounts.status = 'paid'`, update `paid_through`
