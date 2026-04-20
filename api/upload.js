@@ -365,7 +365,7 @@ async function archiveToHistorical(month, userId) {
   const scored = raceRows.map(r => {
     const svc    = r.team === 'service';
     const polPts = (r.wl||0)*100+(r.ul||0)*75+(r.term||0)*50+(r.health||0)*30+(r.auto||0)*15+(r.fire||0)*10;
-    const callPts = (r.placed||0)*(svc?.25:1)+(r.answered||0)*(svc?5:1)+(+r.talk_min||0)*.1+(+r.avg_min||0)*2;
+    const callPts = (r.placed||0)*(svc?0.25:1)+(r.answered||0)*(svc?5:1)+(+r.talk_min||0)*.1+(+r.avg_min||0)*2;
     const gross  = Math.round(polPts + callPts);
     const deduct = Math.round(rwMissed*(-3) + rwVm*(-2));
     return { ...r, gross, deduct, total: Math.max(0, gross + deduct) };
@@ -390,7 +390,7 @@ async function archiveCallStatsToHistorical(month, totals, userId) {
 
   const scored = Object.values(totals.agents).map(s => {
     const svc    = s.team === 'service';
-    const callPts = s.placed*(svc?.25:1)+s.answered*(svc?5:1)+s.talkMin*.1+s.avgMin*2;
+    const callPts = s.placed*(svc?0.25:1)+s.answered*(svc?5:1)+s.talkMin*.1+s.avgMin*2;
     const gross  = Math.round(callPts);
     const deduct = Math.round(rwMissed*(-3) + rwVm*(-2));
     return { ...s, gross, deduct, total: Math.max(0, gross + deduct) };

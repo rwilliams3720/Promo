@@ -937,7 +937,7 @@ async function saveScoring() {
   const msg = document.getElementById('scoring-msg');
   msg.style.display = 'block';
   if (error) { msg.style.color='var(--danger)'; msg.textContent='Error: '+error.message; }
-  else { msg.style.color='var(--accent2)'; msg.textContent='Scoring saved.'; renderRace([]); loadRaceData(); }
+  else { msg.style.color='var(--accent2)'; msg.textContent='Scoring saved.'; loadRaceData(); }
   setTimeout(() => { msg.style.display='none'; }, 3000);
 }
 
