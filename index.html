@@ -554,7 +554,7 @@ async function init() {
   try {
     const r = await fetch('/api/config');
     const cfg = await r.json();
-    _supabase = window.supabase.createClient(cfg.url, cfg.anonKey);
+    _supabase = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey);
 
     _supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
