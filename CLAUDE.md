@@ -90,6 +90,36 @@ Trial expiry is checked client-side: if `status=trial` and `trial_ends_at < now(
 4. **Password Recovery** — shown when user clicks reset link in email (`PASSWORD_RECOVERY` event)
 5. **App** — full dashboard with Account tab (password change, account info, column map) and Admin tab (is_admin only)
 
+## Auth Flow (index.html)
+
+The auth flow uses `onAuthStateChange` as the sole source of truth — **do not add `getSession()` calls**; they cause duplicate `checkAccountAndShow` execution.
+
+### Init sequence
+1. `init()` runs on `DOMContentLoaded`
+2. Before `createClient`, expired/expiring stored sessions are cleared from `localStorage` (any `sb-*-auth-token` key with `expires_at < now + 60s`) — this prevents Supabase's startup token refresh from holding the auth lock and blocking `signInWithPassword`
+3. `createClient` is called
+4. `onAuthStateChange` is registered; events drive all screen transitions
+
+### onAuthStateChange handler rules
+- `PASSWORD_RECOVERY` → show recovery screen, return
+- `TOKEN_REFRESHED` → update `_session`, return (no screen change)
+- Session present: dedup by `_processingToken` (the access token currently being processed) — if the incoming token matches `_processingToken`, skip; otherwise set `_processingToken` and call `checkAccountAndShow`
+- No session: clear `_processingToken`, call `showScreen('login')`
+
+### `_processingToken` (not a boolean flag)
+Stores the `access_token` of the session currently being processed. Prevents duplicate `checkAccountAndShow` calls for the same session (e.g. `SIGNED_IN` firing twice for a page-load restore). A new explicit sign-in creates a **new** token, so it always passes through even if a stale page-load restore is pending. Reset to `null` on sign-out and when processing completes.
+
+Do **not** revert to a boolean `_checkingAccount` flag — it caused permanent deadlocks when the page-load session restore hung, blocking `handleLogin` indefinitely.
+
+### `checkAccountAndShow(session)`
+- Auth + account setup is wrapped in `try/catch` — errors show `'Sign-in error: …'` on the login screen
+- `showScreen('app')` is called inside the try block (before data loading)
+- `loadRaceData`, `loadHistory`, `loadPerf` run **outside** the try block with `.catch()` — data load errors are logged but never redirect to login
+- `authHeaders()` is sync (reads cached `_session`) — do NOT make it async
+
+### `handleLogin` sign-in timeout
+`signInWithPassword` is wrapped in a 15-second `Promise.race` timeout. On timeout, all `sb-*` localStorage keys are cleared (removes stale session) and the user is shown a retry message. Second click succeeds because no stored session means no lock contention.
+
 ## Sales Upload — Format Flexibility
 - Auto-detects columns via synonym lists (see `SALES_COL_SYNONYMS` in upload.js)
 - If detection fails → returns `{needsMapping: true, headers: [...]}` → browser shows column mapper modal
@@ -108,7 +138,7 @@ total       = max(0, gross + deduct)
 ```
 Deductions are race-wide — applied equally to all agents.
 
-**Note:** `archiveToHistorical` in upload.js uses hard-coded scoring multipliers (not scoring_config). Archived scores may not match displayed scores if scoring config has been customized. Known issue — not yet fixed.
+**Note:** `archiveToHistorical` and `archiveCallStatsToHistorical` in upload.js use hard-coded scoring multipliers (not scoring_config). Archived scores may not match displayed scores if scoring config has been customized. Known issue — not yet fixed.
 
 ## Agents (hardcoded in upload.js + perf.js)
 ashley, fiona, jocelyn, joseph, peyton, susan, tiffany, tracy, amin, andy, russel
@@ -230,11 +260,16 @@ Supabase throws **"Lock broken by another request with the 'steal' option"** whe
 
 | Location | Guard |
 |----------|-------|
-| `handleLogin()` | button disabled during `signInWithPassword`, re-enabled in `finally` |
+| `handleLogin()` | button disabled during `signInWithPassword`, re-enabled in `finally`; 15s timeout clears localStorage on hang |
 | `handleSignup()` | button disabled during `signUp`, re-enabled in `finally` |
 | `handleFile()` | `_uploadInProgress` flag + both file inputs disabled; reset in `finally` |
+| `onAuthStateChange` | `_processingToken` deduplicates concurrent session events |
 
 If this error resurfaces, look for a new async path that lacks a disable/finally guard.
+
+## confirmArchive (index.html)
+
+Deletes existing `historical_wins` rows for the month **before** inserting new ones — prevents silent PK constraint failures if the function is called twice for the same month. The delete-before-insert pattern matches `archiveToHistorical` in upload.js. History tab is also reloaded after archive completes.
 
 ### Wire Stripe billing later
 1. Create Supabase Edge Function to handle Stripe webhooks
