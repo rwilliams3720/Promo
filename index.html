@@ -562,52 +562,70 @@ const DEFAULT_SCORING = {
 let SCORING = {...DEFAULT_SCORING};
 
 // ── INIT ─────────────────────────────────────────────────────────────────────
+function _ssGet(k)    { try { return sessionStorage.getItem(k); }    catch(_) { return null; } }
+function _ssSet(k, v) { try { sessionStorage.setItem(k, v); }        catch(_) {} }
+function _ssRemove(k) { try { sessionStorage.removeItem(k); }        catch(_) {} }
+
 async function init() {
   try {
     const r = await fetch('/api/config');
     const cfg = await r.json();
-    if (!r.ok || !cfg.supabaseUrl || !cfg.supabaseKey) {
+    if (!r.ok || !cfg.supabaseUrl || !cfg.supabaseKey)
       throw new Error(cfg.error || 'Config unavailable — check Vercel env vars');
+
+    // Enforce 8-hour session limit before restoring
+    const sessionStart = _ssGet('br-session-start');
+    if (sessionStart && Date.now() - parseInt(sessionStart) > 8 * 3600 * 1000) {
+      _ssRemove('br-session');
+      _ssRemove('br-session-start');
     }
-    // Enforce 8-hour session limit
-    try {
-      const start = localStorage.getItem('br-session-start');
-      if (start && Date.now() - parseInt(start) > 8 * 3600 * 1000) {
-        Object.keys(localStorage).filter(k => k.startsWith('sb-')).forEach(k => localStorage.removeItem(k));
-        localStorage.removeItem('br-session-start');
-      }
-    } catch(_) {}
 
-    // Clear stored sessions that are expired or expiring within 60s (prevents auth lock contention)
-    try {
-      const entry = Object.entries(localStorage).find(([k]) => k.startsWith('sb-') && k.endsWith('-auth-token'));
-      if (entry) {
-        const stored = JSON.parse(entry[1]);
-        if (stored?.expires_at && stored.expires_at * 1000 < Date.now() + 60000) {
-          localStorage.removeItem(entry[0]);
-        }
-      }
-    } catch(_) {}
-
-    _supabase = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey);
+    // persistSession:false — Supabase never touches localStorage, eliminating
+    // startup token-refresh lock contention that caused signInWithPassword to hang
+    _supabase = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey, {
+      auth: { persistSession: false }
+    });
 
     _supabase.auth.onAuthStateChange(async (event, session) => {
       _session = session;
       if (event === 'PASSWORD_RECOVERY') { showScreen('recovery'); return; }
-      if (event === 'TOKEN_REFRESHED') return;
-      if (session) {
-        if (_processingToken === session.access_token) return;
-        _processingToken = session.access_token;
-        try {
-          await checkAccountAndShow(session);
-        } finally {
-          if (_processingToken === session.access_token) _processingToken = null;
-        }
-      } else {
+
+      if (!session) {
+        _ssRemove('br-session');
         _processingToken = null;
         showScreen('login');
+        return;
+      }
+
+      // Keep sessionStorage current so page-refresh restore works
+      _ssSet('br-session', JSON.stringify({
+        access_token:  session.access_token,
+        refresh_token: session.refresh_token,
+      }));
+
+      if (event === 'TOKEN_REFRESHED') return;
+
+      if (_processingToken === session.access_token) return;
+      _processingToken = session.access_token;
+      try {
+        await checkAccountAndShow(session);
+      } finally {
+        if (_processingToken === session.access_token) _processingToken = null;
       }
     });
+
+    // Restore session from sessionStorage on page refresh
+    const saved = (() => { try { return JSON.parse(_ssGet('br-session') || 'null'); } catch(_) { return null; } })();
+    if (saved?.access_token && saved?.refresh_token) {
+      const { error } = await _supabase.auth.setSession({
+        access_token:  saved.access_token,
+        refresh_token: saved.refresh_token,
+      });
+      if (error) { _ssRemove('br-session'); showScreen('login'); }
+      // On success, setSession fires SIGNED_IN → onAuthStateChange → checkAccountAndShow
+    } else {
+      showScreen('login');
+    }
   } catch(e) {
     showScreen('login');
     showMsg('li-msg', 'Init error: ' + e.message);
@@ -686,15 +704,11 @@ async function checkAccountAndShow(session) {
     return;
   }
 
-  // 8-hour auto-logout — outside the try block so storage errors never block access
-  try {
-    if (!localStorage.getItem('br-session-start')) {
-      localStorage.setItem('br-session-start', Date.now().toString());
-    }
-    const elapsed   = Date.now() - parseInt(localStorage.getItem('br-session-start'));
-    const remaining = Math.max(0, 8 * 3600 * 1000 - elapsed);
-    if (remaining > 0) setTimeout(handleSignOut, remaining);
-  } catch(_) {}
+  // 8-hour auto-logout
+  if (!_ssGet('br-session-start')) _ssSet('br-session-start', Date.now().toString());
+  const _elapsed   = Date.now() - parseInt(_ssGet('br-session-start') || '0');
+  const _remaining = Math.max(0, 8 * 3600 * 1000 - _elapsed);
+  if (_remaining > 0) setTimeout(handleSignOut, _remaining);
 
   await loadRaceData().catch(e => console.error('loadRaceData:', e));
   await loadHistory().catch(e => console.error('loadHistory:', e));
@@ -722,9 +736,7 @@ async function handleLogin() {
     else showMsg('li-msg', 'Authenticated — loading your dashboard…', 'ok');
   } catch(e) {
     if (e.message === '__timeout__') {
-      // Auth lock likely held by a stale stored session — clear it so next attempt works
-      Object.keys(localStorage).filter(k => k.startsWith('sb-')).forEach(k => localStorage.removeItem(k));
-      showMsg('li-msg', 'Sign-in timed out. Please click Sign In again.');
+      showMsg('li-msg', 'Sign-in timed out — please try again.');
     } else {
       showMsg('li-msg', 'Connection error: ' + e.message);
     }
@@ -783,7 +795,8 @@ async function handlePasswordReset() {
 
 async function handleSignOut() {
   try { await _supabase.auth.signOut(); } catch(e) { console.warn('signOut error:', e); }
-  localStorage.removeItem('br-session-start');
+  _ssRemove('br-session');
+  _ssRemove('br-session-start');
   _userId = _userEmail = null;
   _isAdmin = false;
   _processingToken = null;
