@@ -611,6 +611,10 @@ function showScreen(name) {
     const el = document.getElementById('screen-' + s);
     if (el) el.style.display = (s === name) ? (s === 'app' ? 'block' : 'flex') : 'none';
   });
+  if (name === 'login') {
+    const msg = document.getElementById('li-msg');
+    if (msg) msg.style.display = 'none';
+  }
 }
 
 function showMsg(id, text, type='err') {
