@@ -45,20 +45,121 @@ CREATE POLICY "accounts_own"   ON accounts FOR ALL USING (user_id = auth.uid());
 CREATE POLICY "accounts_admin" ON accounts FOR ALL USING (is_admin());
 
 
--- ─── 3. CLEAR ORPHANED SINGLE-TENANT DATA ───────────────────────
--- Existing rows have no user_id — safe to remove before schema change.
--- Race data will be re-seeded on first upload; scoring defaults are hardcoded.
-DELETE FROM scoring_config;
-DELETE FROM race_config;
-DELETE FROM race_data;
-DELETE FROM call_log;
-DELETE FROM sales_log;
-DELETE FROM historical_wins;
-DELETE FROM vm_slot_log         WHERE TRUE;
-DELETE FROM call_performance_log WHERE TRUE;
+-- ─── 3. CREATE DATA TABLES (safe to re-run) ────────────────────
+
+CREATE TABLE IF NOT EXISTS race_data (
+  user_id             uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  agent_id            text NOT NULL,
+  name                text NOT NULL DEFAULT '',
+  team                text NOT NULL DEFAULT 'sales',
+  wl                  int  NOT NULL DEFAULT 0,
+  ul                  int  NOT NULL DEFAULT 0,
+  term                int  NOT NULL DEFAULT 0,
+  health              int  NOT NULL DEFAULT 0,
+  auto                int  NOT NULL DEFAULT 0,
+  fire                int  NOT NULL DEFAULT 0,
+  placed              int  NOT NULL DEFAULT 0,
+  answered            int  NOT NULL DEFAULT 0,
+  missed              int  NOT NULL DEFAULT 0,
+  voicemail           int  NOT NULL DEFAULT 0,
+  talk_min            numeric NOT NULL DEFAULT 0,
+  avg_min             numeric NOT NULL DEFAULT 0,
+  race_wide_missed    int  NOT NULL DEFAULT 0,
+  race_wide_voicemail int  NOT NULL DEFAULT 0,
+  last_updated        timestamptz,
+  PRIMARY KEY (user_id, agent_id)
+);
+
+CREATE TABLE IF NOT EXISTS call_log (
+  user_id     uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  hash        text NOT NULL,
+  agent_id    text,
+  disposition text,
+  talk_secs   int,
+  call_dt     date,
+  call_slot   smallint,
+  PRIMARY KEY (user_id, hash)
+);
+
+CREATE TABLE IF NOT EXISTS sales_log (
+  user_id   uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  hash      text NOT NULL,
+  agent_id  text,
+  product   text,
+  sale_date date,
+  PRIMARY KEY (user_id, hash)
+);
+
+CREATE TABLE IF NOT EXISTS historical_wins (
+  user_id             uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  month               text NOT NULL,
+  rank                int,
+  agent_id            text,
+  name                text,
+  team                text,
+  total_score         int,
+  gross_score         int,
+  deductions          int,
+  wl                  int NOT NULL DEFAULT 0,
+  ul                  int NOT NULL DEFAULT 0,
+  term                int NOT NULL DEFAULT 0,
+  health              int NOT NULL DEFAULT 0,
+  auto                int NOT NULL DEFAULT 0,
+  fire                int NOT NULL DEFAULT 0,
+  placed              int NOT NULL DEFAULT 0,
+  answered            int NOT NULL DEFAULT 0,
+  missed              int NOT NULL DEFAULT 0,
+  voicemail           int NOT NULL DEFAULT 0,
+  talk_min            numeric NOT NULL DEFAULT 0,
+  avg_min             numeric NOT NULL DEFAULT 0,
+  race_wide_missed    int NOT NULL DEFAULT 0,
+  race_wide_voicemail int NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS race_config (
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  key     text NOT NULL,
+  value   text NOT NULL DEFAULT '',
+  PRIMARY KEY (user_id, key)
+);
+
+CREATE TABLE IF NOT EXISTS scoring_config (
+  user_id      uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  config_key   text NOT NULL,
+  config_value text NOT NULL DEFAULT '0',
+  PRIMARY KEY (user_id, config_key)
+);
+
+CREATE TABLE IF NOT EXISTS vm_slot_log (
+  user_id   uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+  id        bigserial PRIMARY KEY,
+  agent_id  text,
+  call_slot smallint,
+  call_dt   date
+);
+
+CREATE TABLE IF NOT EXISTS call_performance_log (
+  user_id    uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+  id         bigserial PRIMARY KEY,
+  agent_id   text,
+  period     text,
+  metric     text,
+  value      numeric
+);
+
+ALTER TABLE race_data           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE call_log            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sales_log           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE historical_wins     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE race_config         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE scoring_config      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE vm_slot_log         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE call_performance_log ENABLE ROW LEVEL SECURITY;
+
+CREATE INDEX IF NOT EXISTS historical_wins_user_month ON historical_wins (user_id, month);
 
 
--- ─── 4. ADD user_id TO DATA TABLES ──────────────────────────────
+-- ─── 4. ADD user_id TO DATA TABLES (no-op if already created above) ──────────────────────────────
 
 -- call_log  (hash was PK → composite PK with user_id)
 ALTER TABLE call_log ADD COLUMN IF NOT EXISTS user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE;
@@ -130,17 +231,15 @@ END $$;
 ALTER TABLE race_config ADD CONSTRAINT race_config_pkey PRIMARY KEY (user_id, key)
   DEFERRABLE INITIALLY DEFERRED;
 
--- historical_wins (no PK change, just add user_id + index)
+-- historical_wins (no PK change, just add user_id)
 ALTER TABLE historical_wins ADD COLUMN IF NOT EXISTS user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE;
-CREATE INDEX IF NOT EXISTS historical_wins_user_month ON historical_wins (user_id, month);
 
 -- vm_slot_log + call_performance_log
 ALTER TABLE vm_slot_log           ADD COLUMN IF NOT EXISTS user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE;
 ALTER TABLE call_performance_log  ADD COLUMN IF NOT EXISTS user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE;
 
 
--- ─── 4. RLS ON DATA TABLES ──────────────────────────────────────
--- (already enabled per your confirmation; dropping + recreating policies)
+-- ─── 5b. RLS POLICIES ON DATA TABLES ───────────────────────────
 
 DROP POLICY IF EXISTS "user_isolation" ON race_data;
 DROP POLICY IF EXISTS "user_isolation" ON scoring_config;

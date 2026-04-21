@@ -147,7 +147,7 @@
   .drop-icon{font-size:2.5rem;margin-bottom:12px;}
   .drop-label{font-size:15px;font-weight:500;}
   .drop-sub{font-size:12px;color:var(--muted);margin-top:6px;}
-  .drop-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;}
+  .drop-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;}
   .upload-log{margin-top:16px;font-size:12px;font-family:'DM Mono',monospace;color:var(--muted);line-height:1.8;max-height:200px;overflow-y:auto;}
   .upload-log .ok{color:var(--accent2);}
   .upload-log .err{color:var(--danger);}
@@ -373,8 +373,12 @@
   <div id="tab-manage" style="display:none">
     <div class="panel" id="upload-panel-calls">
       <div class="panel-title">Upload Call Log</div>
-      <div class="drop-zone" id="dz-calls" onclick="document.getElementById('fi-calls').click()">
-        <input type="file" id="fi-calls" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleFile('calls',this)">
+      <div class="drop-zone" id="dz-calls"
+           onclick="document.getElementById('fi-calls').click()"
+           ondragover="dzDragOver(event,'dz-calls')"
+           ondragleave="dzDragLeave('dz-calls')"
+           ondrop="dzDrop(event,'calls')">
+        <input type="file" id="fi-calls" accept=".xlsx,.xls,.csv" onchange="handleFile('calls',this)">
         <div class="drop-icon">📞</div>
         <div class="drop-label">Drop call log here or click to browse</div>
         <div class="drop-sub">XLSX, XLS, CSV — call disposition data</div>
@@ -383,8 +387,12 @@
     </div>
     <div class="panel" id="upload-panel-sales">
       <div class="panel-title">Upload Sales Log</div>
-      <div class="drop-zone" id="dz-sales" onclick="document.getElementById('fi-sales').click()">
-        <input type="file" id="fi-sales" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleFile('sales',this)">
+      <div class="drop-zone" id="dz-sales"
+           onclick="document.getElementById('fi-sales').click()"
+           ondragover="dzDragOver(event,'dz-sales')"
+           ondragleave="dzDragLeave('dz-sales')"
+           ondrop="dzDrop(event,'sales')">
+        <input type="file" id="fi-sales" accept=".xlsx,.xls,.csv" onchange="handleFile('sales',this)">
         <div class="drop-icon">📈</div>
         <div class="drop-label">Drop sales log here or click to browse</div>
         <div class="drop-sub">XLSX, XLS, CSV — replaces current month's sales</div>
@@ -751,6 +759,10 @@ async function loadRaceData() {
     _supabase.from('race_config').select('key,value').eq('user_id', _userId),
   ]);
 
+  if (rdRes.error) console.error('race_data read error:', rdRes.error);
+  if (scRes.error) console.error('scoring_config read error:', scRes.error);
+  if (rcRes.error) console.error('race_config read error:', rcRes.error);
+
   if (scRes.data && scRes.data.length) {
     scRes.data.forEach(r => {
       if (r.config_key in SCORING) SCORING[r.config_key] = parseFloat(r.config_value) || 0;
@@ -950,6 +962,26 @@ async function saveScoring() {
 }
 
 // ── FILE UPLOAD ───────────────────────────────────────────────────────────────
+function dzDragOver(e, id) {
+  e.preventDefault();
+  document.getElementById(id).classList.add('drag-over');
+}
+function dzDragLeave(id) {
+  document.getElementById(id).classList.remove('drag-over');
+}
+function dzDrop(e, type) {
+  e.preventDefault();
+  const id = 'dz-' + type;
+  document.getElementById(id).classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  const input = document.getElementById('fi-' + type);
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  input.files = dt.files;
+  handleFile(type, input);
+}
+
 function handleFile(type, input) {
   if (_acctStatus === 'past_due' || _acctStatus === 'cancelled') return;
   if (_uploadInProgress) return;
