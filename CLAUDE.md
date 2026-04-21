@@ -32,7 +32,7 @@ Browser (index.html, served by Vercel)
 | `api/history.js` | JWT-scoped historical_wins query |
 | `api/perf.js` | JWT-scoped call_log aggregation → daily/weekly/monthly/yearly + heatmap |
 | `api/admin.js` | Admin-only: list + update all accounts |
-| `api/config.js` | Serves public Supabase keys to the browser |
+| `api/config.js` | Serves public Supabase keys to the browser; returns 500 if env vars missing |
 | `setup.sql` | Full migration — run once in Supabase SQL Editor |
 | `vercel.json` | Builds + routes |
 | `package.json` | Dependencies: `@supabase/supabase-js`, `xlsx` |
@@ -108,6 +108,8 @@ total       = max(0, gross + deduct)
 ```
 Deductions are race-wide — applied equally to all agents.
 
+**Note:** `archiveToHistorical` in upload.js uses hard-coded scoring multipliers (not scoring_config). Archived scores may not match displayed scores if scoring config has been customized. Known issue — not yet fixed.
+
 ## Agents (hardcoded in upload.js + perf.js)
 ashley, fiona, jocelyn, joseph, peyton, susan, tiffany, tracy, amin, andy, russel
 
@@ -125,19 +127,57 @@ Scripts in `index.html` must load in this order — Supabase **before** app code
 
 ## /api/config Response Shape
 
-`config.js` returns `{ supabaseUrl, supabaseKey }`. The frontend reads those exact keys:
-```javascript
-_supabase = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey);
-```
-Do not rename these fields without updating both files.
+`config.js` returns `{ supabaseUrl, supabaseKey }`. Returns HTTP 500 if either env var is missing. The frontend checks `r.ok` before using the response. Do not rename these fields without updating both files.
+
+## Admin Account
+
+- `russelsaiassistant@gmail.com` is the designated admin — `is_admin=true`, `status='paid'`, `trial_ends_at=NULL`
+- Admin account was seeded via the SQL in `setup.sql` section 5
+- Admin sees an extra **Admin** tab with full account management (view all users, change status, add notes)
+- To grant admin to another account: `UPDATE accounts SET is_admin = true WHERE email = 'user@example.com';`
+- To revoke admin: `UPDATE accounts SET is_admin = false WHERE email = 'user@example.com';`
 
 ## Common Tasks
 
 ### First-time setup
 1. Run `setup.sql` in Supabase SQL Editor
-2. Ensure `russelsaiassistant@gmail.com` exists in Supabase Auth before running the seed
+2. Ensure `russelsaiassistant@gmail.com` exists in Supabase Auth **before** running the seed
 3. Disable email confirmation: Supabase → Auth → Providers → Email → Confirm email **OFF**
 4. Set Vercel env vars: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY`
+
+### If accounts table is missing columns (signup trigger fails)
+The `CREATE TABLE IF NOT EXISTS` in setup.sql won't add columns to an existing table. Run this to patch:
+```sql
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS phone              text NOT NULL DEFAULT '';
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS plan               text NOT NULL DEFAULT 'basic';
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS agent_count        int  NOT NULL DEFAULT 1;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS referral_source    text NOT NULL DEFAULT '';
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS notes              text NOT NULL DEFAULT '';
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS trial_ends_at      timestamptz;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS paid_through       timestamptz;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS stripe_customer_id text;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS sales_column_map   jsonb;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS last_login         timestamptz;
+```
+
+### If a signed-up user has no accounts row (trigger fired but failed silently)
+```sql
+INSERT INTO accounts (user_id, email, company_name, contact_name, phone, plan, agent_count, referral_source, status, trial_ends_at)
+SELECT
+  u.id, u.email,
+  COALESCE(u.raw_user_meta_data->>'company_name', ''),
+  COALESCE(u.raw_user_meta_data->>'contact_name', ''),
+  COALESCE(u.raw_user_meta_data->>'phone', ''),
+  COALESCE(u.raw_user_meta_data->>'plan', 'basic'),
+  COALESCE((u.raw_user_meta_data->>'agent_count')::int, 1),
+  COALESCE(u.raw_user_meta_data->>'referral_source', ''),
+  'trial',
+  now() + interval '21 days'
+FROM auth.users u
+LEFT JOIN accounts a ON a.user_id = u.id
+WHERE a.user_id IS NULL
+ON CONFLICT (user_id) DO NOTHING;
+```
 
 ### Add admin to an account
 ```sql
@@ -175,6 +215,14 @@ fetch('/api/upload', {
 - `data` is the pre-parsed 2D array from XLSX.js (rows × columns)
 - `api/upload.js` reads `body.type` / `body.data` (with fallback to legacy `fileType`/`fileBase64`)
 - Do **not** revert to FormData — `@vercel/node` does not auto-parse multipart bodies
+
+## Admin API — Request Format
+
+`PATCH /api/admin` expects `userId` (camelCase) in the request body — not `user_id`:
+```javascript
+{ userId: '<uuid>', status: 'paid' }   // correct
+{ user_id: '<uuid>', status: 'paid' }  // wrong — server ignores it
+```
 
 ## Concurrency Guards
 
