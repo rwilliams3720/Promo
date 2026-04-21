@@ -576,7 +576,7 @@ async function init() {
         showScreen('recovery');
         return;
       }
-      if (event === 'INITIAL_SESSION') return;
+      if (event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') return;
       if (session) {
         try {
           await checkAccountAndShow(session);
@@ -738,6 +738,14 @@ async function handleSignOut() {
   await _supabase.auth.signOut();
   _userId = _userEmail = null;
   _isAdmin = false;
+  _acctStatus = 'trial';
+  _columnMap = {};
+  _perfData = null;
+  _adminRows = [];
+  _uploadInProgress = false;
+  document.getElementById('ul-calls').innerHTML = '';
+  document.getElementById('ul-sales').innerHTML = '';
+  document.getElementById('last-upload-time').textContent = '—';
   showScreen('login');
 }
 
