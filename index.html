@@ -764,6 +764,7 @@ function showTab(name, btn) {
   if (name === 'adminpanel') loadAdminPanel();
   if (name === 'perf') loadPerf();
   if (name === 'history') loadHistory();
+  if (name === 'history') loadHistory();
 }
 
 // ── LOAD RACE DATA ────────────────────────────────────────────────────────────
@@ -1362,6 +1363,7 @@ async function confirmArchive() {
       race_wide_voicemail: ag.race_wide_voicemail||0,
     }));
 
+    await _supabase.from('historical_wins').delete().eq('user_id', _userId).eq('month', month);
     await _supabase.from('historical_wins').insert(histRows);
   }
 
@@ -1376,7 +1378,7 @@ async function confirmArchive() {
   await _supabase.from('race_config').update({ value: '' }).eq('user_id', _userId).eq('key','current_month');
 
   await loadRaceData();
-  loadHistory();
+  await loadHistory();
   alert('Month archived and race reset.');
 }
 
