@@ -199,16 +199,19 @@ async function processCallUpload(rows, userId) {
     call_dt:     r[4] || null,
     call_slot:   r[5] != null ? r[5] : null,
   }));
-  await supabase.from('call_log').upsert(logInserts, { onConflict: 'user_id,hash', ignoreDuplicates: true });
+  const { error: logErr } = await supabase.from('call_log').upsert(logInserts, { onConflict: 'user_id,hash', ignoreDuplicates: true });
+  if (logErr) return { success: false, error: 'call_log write failed: ' + logErr.message };
 
-  const { data: allLog } = await supabase.from('call_log')
+  const { data: allLog, error: readErr } = await supabase.from('call_log')
     .select('agent_id,disposition,talk_secs,call_dt').eq('user_id', userId);
+  if (readErr) return { success: false, error: 'call_log read failed: ' + readErr.message };
   const allLogRows = (allLog || []).map(r => [
     '', r.agent_id || '', r.disposition, r.talk_secs ? r.talk_secs / 60 : 0, r.call_dt || '', ''
   ]);
   const totals = aggregateFromLog(allLogRows);
 
-  await ensureRaceDataRows(userId);
+  const { error: seedErr } = await ensureRaceDataRows(userId);
+  if (seedErr) return { success: false, error: 'race_data seed failed: ' + seedErr.message };
 
   const now = new Date().toISOString();
   for (const id in totals.agents) {
@@ -308,15 +311,18 @@ async function processSalesUpload(rows, userId, columnMap) {
       product:   r[2],
       sale_date: r[3] || null,
     }));
-    await supabase.from('sales_log').upsert(logInserts, { onConflict: 'user_id,hash', ignoreDuplicates: true });
+    const { error: sLogErr } = await supabase.from('sales_log').upsert(logInserts, { onConflict: 'user_id,hash', ignoreDuplicates: true });
+    if (sLogErr) return { success: false, error: 'sales_log write failed: ' + sLogErr.message };
   }
 
-  const { data: allSales } = await supabase.from('sales_log')
+  const { data: allSales, error: sReadErr } = await supabase.from('sales_log')
     .select('agent_id,product').eq('user_id', userId);
+  if (sReadErr) return { success: false, error: 'sales_log read failed: ' + sReadErr.message };
   const allSalesRows  = (allSales || []).map(r => ['', r.agent_id || 'skip', r.product || 'other', '', '']);
   const agentTotals   = aggregateSalesFromLog(allSalesRows);
 
-  await ensureRaceDataRows(userId);
+  const { error: sSeedErr } = await ensureRaceDataRows(userId);
+  if (sSeedErr) return { success: false, error: 'race_data seed failed: ' + sSeedErr.message };
 
   const now = new Date().toISOString();
   for (const id in agentTotals) {
@@ -350,7 +356,7 @@ async function ensureRaceDataRows(userId) {
     talk_min: 0, avg_min: 0,
     race_wide_missed: 0, race_wide_voicemail: 0,
   }));
-  await supabase.from('race_data').upsert(rows, { onConflict: 'user_id,agent_id', ignoreDuplicates: true });
+  return supabase.from('race_data').upsert(rows, { onConflict: 'user_id,agent_id', ignoreDuplicates: true });
 }
 
 
