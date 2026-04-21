@@ -538,6 +538,7 @@ let _pendingUploadData = null;
 let _pendingUploadType = null;
 let _uploadInProgress  = false;
 let _perfData = null;
+let _session  = null;
 let _adminRows = [];
 
 const COL_FIELDS = ['product','written_by','written_date','policy_name','policy_type'];
@@ -570,10 +571,12 @@ async function init() {
     _supabase = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey);
 
     _supabase.auth.onAuthStateChange(async (event, session) => {
+      _session = session;
       if (event === 'PASSWORD_RECOVERY') {
         showScreen('recovery');
         return;
       }
+      if (event === 'INITIAL_SESSION') return;
       if (session) {
         try {
           await checkAccountAndShow(session);
@@ -587,6 +590,7 @@ async function init() {
     });
 
     const { data: { session } } = await _supabase.auth.getSession();
+    _session = session;
     if (session) {
       await checkAccountAndShow(session);
     } else {
@@ -614,10 +618,9 @@ function showMsg(id, text, type='err') {
   el.style.display = 'block';
 }
 
-async function authHeaders() {
-  const { data: { session } } = await _supabase.auth.getSession();
-  if (!session) return {};
-  return { 'Authorization': 'Bearer ' + session.access_token };
+function authHeaders() {
+  if (!_session) return {};
+  return { 'Authorization': 'Bearer ' + _session.access_token };
 }
 
 async function checkAccountAndShow(session) {
@@ -661,8 +664,8 @@ async function checkAccountAndShow(session) {
 
   buildColumnMapUI();
   await loadRaceData();
-  loadHistory();
-  loadPerf();
+  await loadHistory();
+  await loadPerf();
 }
 
 // ── LOGIN / SIGNUP / AUTH ────────────────────────────────────────────────────
@@ -1004,7 +1007,7 @@ function handleFile(type, input) {
       const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
       logEl.innerHTML = `<span class="ok">Parsed ${raw.length - 1} rows. Uploading…</span>`;
 
-      const hdrs    = await authHeaders();
+      const hdrs    = authHeaders();
       const payload = { type, data: raw };
       if (_columnMap && Object.keys(_columnMap).length) payload.columnMap = _columnMap;
 
@@ -1082,7 +1085,7 @@ async function submitColMapper() {
   if (_pendingUploadData && _pendingUploadType) {
     const logEl = document.getElementById('ul-' + _pendingUploadType);
     try {
-      const hdrs = await authHeaders();
+      const hdrs = authHeaders();
       const res  = await fetch('/api/upload', {
         method: 'POST',
         headers: { ...hdrs, 'Content-Type': 'application/json' },
@@ -1103,7 +1106,7 @@ async function loadPerf() {
   document.getElementById('perf-body').innerHTML =
     '<tr><td colspan="9" style="color:var(--muted);text-align:center;padding:20px">Loading…</td></tr>';
   try {
-    const hdrs = await authHeaders();
+    const hdrs = authHeaders();
     const res  = await fetch('/api/perf', { headers: hdrs });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -1177,7 +1180,7 @@ function renderVmHeatmap() {
 
 // ── HISTORY TAB ───────────────────────────────────────────────────────────────
 async function loadHistory() {
-  const hdrs = await authHeaders();
+  const hdrs = authHeaders();
   const res  = await fetch('/api/history', { headers: hdrs });
   if (!res.ok) return;
   const data = await res.json();
@@ -1263,7 +1266,7 @@ async function saveColumnMap() {
 // ── ADMIN PANEL ───────────────────────────────────────────────────────────────
 async function loadAdminPanel() {
   if (!_isAdmin) return;
-  const hdrs = await authHeaders();
+  const hdrs = authHeaders();
   const res  = await fetch('/api/admin', { headers: hdrs });
   if (!res.ok) return;
   _adminRows = await res.json();
@@ -1304,7 +1307,7 @@ function filterAdminTable() {
 
 async function adminSave(uid, field, value) {
   if (!_isAdmin) return;
-  const hdrs = await authHeaders();
+  const hdrs = authHeaders();
   await fetch('/api/admin', {
     method: 'PATCH',
     headers: { ...hdrs, 'Content-Type': 'application/json' },
