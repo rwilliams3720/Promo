@@ -562,6 +562,7 @@ async function init() {
     _supabase = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey);
 
     _supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('[auth] onAuthStateChange event=', event, 'session=', !!session);
       if (event === 'PASSWORD_RECOVERY') {
         showScreen('recovery');
         return;
@@ -570,6 +571,7 @@ async function init() {
         try {
           await checkAccountAndShow(session);
         } catch(e) {
+          console.error('[auth] checkAccountAndShow threw:', e);
           showScreen('login');
           showMsg('li-msg', 'Sign-in error: ' + e.message);
         }
@@ -613,6 +615,7 @@ async function authHeaders() {
 }
 
 async function checkAccountAndShow(session) {
+  console.log('[auth] checkAccountAndShow for', session.user.email);
   _userId    = session.user.id;
   _userEmail = session.user.email;
 
@@ -659,6 +662,7 @@ async function checkAccountAndShow(session) {
 
 // ── LOGIN / SIGNUP / AUTH ────────────────────────────────────────────────────
 async function handleLogin() {
+  console.log('[login] handleLogin called, _supabase=', !!_supabase);
   if (!_supabase) return showMsg('li-msg', 'Still connecting — please try again in a moment.');
   const email = document.getElementById('li-email').value.trim();
   const pass  = document.getElementById('li-pass').value;
@@ -666,7 +670,9 @@ async function handleLogin() {
   const btn = document.querySelector('#screen-login .auth-btn');
   if (btn) btn.disabled = true;
   try {
+    console.log('[login] calling signInWithPassword...');
     const { error } = await _supabase.auth.signInWithPassword({ email, password: pass });
+    console.log('[login] signInWithPassword result — error:', error);
     if (error) showMsg('li-msg', error.message);
   } catch(e) {
     showMsg('li-msg', 'Connection error: ' + e.message);
