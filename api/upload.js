@@ -503,8 +503,8 @@ function classifyCalls(data, knownHashes) {
   }
 
   const colsFound = { dtCol, extCol, dirCol, talkCol, durCol, dispCol,
-    dtHeader:  dtCol  != null ? headers[dtCol]  : null,
-    extHeader: extCol != null ? headers[extCol] : null };
+    dtHeader:  dtCol  !== -1 ? headers[dtCol]  : null,
+    extHeader: extCol !== -1 ? headers[extCol] : null };
   return { newLogRows, duplicatesSkipped, colsFound };
 }
 
@@ -648,9 +648,10 @@ function cleanExtName(ext) {
 }
 
 function findCol(headers, keywords) {
-  for (let i = 0; i < headers.length; i++)
+  const lowers = headers.map(h => String(h).toLowerCase());
+  for (let i = 0; i < lowers.length; i++)
     for (const kw of keywords)
-      if (headers[i].includes(kw)) return i;
+      if (lowers[i].includes(kw.toLowerCase())) return i;
   return -1;
 }
 

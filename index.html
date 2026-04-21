@@ -1340,6 +1340,13 @@ async function confirmArchive() {
       total_score: ag.total,
       gross_score: ag.gross,
       deductions: ag.deduct,
+      wl: ag.wl||0, ul: ag.ul||0, term: ag.term||0,
+      health: ag.health||0, auto: ag.auto||0, fire: ag.fire||0,
+      placed: ag.placed||0, answered: ag.answered||0,
+      missed: ag.missed||0, voicemail: ag.voicemail||0,
+      talk_min: ag.talk_min||0, avg_min: ag.avg_min||0,
+      race_wide_missed: ag.race_wide_missed||0,
+      race_wide_voicemail: ag.race_wide_voicemail||0,
     }));
 
     await _supabase.from('historical_wins').insert(histRows);
