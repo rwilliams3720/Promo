@@ -569,6 +569,17 @@ async function init() {
     if (!r.ok || !cfg.supabaseUrl || !cfg.supabaseKey) {
       throw new Error(cfg.error || 'Config unavailable — check Vercel env vars');
     }
+    // Clear expired/expiring stored sessions before client init to prevent auth lock contention
+    try {
+      const entry = Object.entries(localStorage).find(([k]) => k.startsWith('sb-') && k.endsWith('-auth-token'));
+      if (entry) {
+        const stored = JSON.parse(entry[1]);
+        if (!stored?.expires_at || stored.expires_at * 1000 < Date.now() + 60000) {
+          localStorage.removeItem(entry[0]);
+        }
+      }
+    } catch(_) {}
+
     _supabase = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey);
 
     _supabase.auth.onAuthStateChange(async (event, session) => {
