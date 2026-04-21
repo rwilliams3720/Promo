@@ -173,7 +173,7 @@ DO $$ BEGIN
   END IF;
 END $$;
 ALTER TABLE call_log ADD CONSTRAINT call_log_pkey PRIMARY KEY (user_id, hash)
-  DEFERRABLE INITIALLY DEFERRED;
+;
 
 -- sales_log (hash was PK → composite PK with user_id)
 ALTER TABLE sales_log ADD COLUMN IF NOT EXISTS user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE;
@@ -187,7 +187,7 @@ DO $$ BEGIN
   END IF;
 END $$;
 ALTER TABLE sales_log ADD CONSTRAINT sales_log_pkey PRIMARY KEY (user_id, hash)
-  DEFERRABLE INITIALLY DEFERRED;
+;
 
 -- race_data (agent_id was PK → composite PK)
 ALTER TABLE race_data ADD COLUMN IF NOT EXISTS user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE;
@@ -201,7 +201,7 @@ DO $$ BEGIN
   END IF;
 END $$;
 ALTER TABLE race_data ADD CONSTRAINT race_data_pkey PRIMARY KEY (user_id, agent_id)
-  DEFERRABLE INITIALLY DEFERRED;
+;
 
 -- scoring_config (config_key was PK → composite PK)
 ALTER TABLE scoring_config ADD COLUMN IF NOT EXISTS user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE;
@@ -215,7 +215,7 @@ DO $$ BEGIN
   END IF;
 END $$;
 ALTER TABLE scoring_config ADD CONSTRAINT scoring_config_pkey PRIMARY KEY (user_id, config_key)
-  DEFERRABLE INITIALLY DEFERRED;
+;
 
 -- race_config (key was PK → composite PK)
 ALTER TABLE race_config ADD COLUMN IF NOT EXISTS user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE;
@@ -229,7 +229,7 @@ DO $$ BEGIN
   END IF;
 END $$;
 ALTER TABLE race_config ADD CONSTRAINT race_config_pkey PRIMARY KEY (user_id, key)
-  DEFERRABLE INITIALLY DEFERRED;
+;
 
 -- historical_wins (no PK change, just add user_id)
 ALTER TABLE historical_wins ADD COLUMN IF NOT EXISTS user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE;
