@@ -236,6 +236,7 @@ async function processCallUpload(rows, userId) {
     new:      classified.newLogRows.length,
     skipped:  classified.duplicatesSkipped,
     raceWide: totals.raceWide,
+    _cols:    classified.colsFound,
   };
 }
 
@@ -437,12 +438,12 @@ function classifyCalls(data, knownHashes) {
   if (headerIdx === -1) return { newLogRows: [], duplicatesSkipped: 0 };
 
   const headers = data[headerIdx].map(h => String(h).trim());
-  const dtCol   = findCol(headers, ['Origination Date']);
-  const extCol  = findCol(headers, ['Extension Description']);
-  const dirCol  = findCol(headers, ['Call Direction']);
-  const talkCol = findCol(headers, ['Talk Time']);
-  const durCol  = findCol(headers, ['Duration']);
-  const dispCol = findCol(headers, ['Call Disposition']);
+  const dtCol   = findCol(headers, ['Origination Date','Start Time','Start Date','Call Date','Date/Time','Date Time','Timestamp','Date']);
+  const extCol  = findCol(headers, ['Extension Description','Extension','Ext Description','Agent','User']);
+  const dirCol  = findCol(headers, ['Call Direction','Direction']);
+  const talkCol = findCol(headers, ['Talk Time','Talk','Connected Time','Connected']);
+  const durCol  = findCol(headers, ['Duration','Total Duration']);
+  const dispCol = findCol(headers, ['Call Disposition','Disposition','Result','Status']);
 
   for (let i = headerIdx + 1; i < data.length; i++) {
     const row  = data[i];
@@ -501,7 +502,10 @@ function classifyCalls(data, knownHashes) {
     newLogRows.push([hash, agentId, category, talkMin, dateOnly(dt), slot]);
   }
 
-  return { newLogRows, duplicatesSkipped };
+  const colsFound = { dtCol, extCol, dirCol, talkCol, durCol, dispCol,
+    dtHeader:  dtCol  != null ? headers[dtCol]  : null,
+    extHeader: extCol != null ? headers[extCol] : null };
+  return { newLogRows, duplicatesSkipped, colsFound };
 }
 
 
