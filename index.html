@@ -562,7 +562,6 @@ let SCORING = {...DEFAULT_SCORING};
 
 // ── INIT ─────────────────────────────────────────────────────────────────────
 async function init() {
-  console.log('[init] start');
   try {
     const r = await fetch('/api/config');
     const cfg = await r.json();
@@ -571,18 +570,18 @@ async function init() {
     }
     _supabase = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey);
 
-    console.log('[init] supabase ready, registering auth listener');
+    let _checkingAccount = false;
     _supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('[auth]', event, session?.user?.email ?? 'no-session');
       _session = session;
       if (event === 'PASSWORD_RECOVERY') { showScreen('recovery'); return; }
       if (event === 'TOKEN_REFRESHED') return;
       if (session) {
+        if (_checkingAccount) return;
+        _checkingAccount = true;
         try {
           await checkAccountAndShow(session);
-        } catch(e) {
-          showScreen('login');
-          showMsg('li-msg', 'Sign-in error: ' + e.message);
+        } finally {
+          _checkingAccount = false;
         }
       } else {
         showScreen('login');
@@ -616,53 +615,59 @@ function authHeaders() {
 }
 
 async function checkAccountAndShow(session) {
-  _userId    = session.user.id;
-  _userEmail = session.user.email;
+  try {
+    _userId    = session.user.id;
+    _userEmail = session.user.email;
 
-  const { data: acct } = await _supabase
-    .from('accounts')
-    .select('*')
-    .eq('user_id', _userId)
-    .single();
+    const { data: acct } = await _supabase
+      .from('accounts')
+      .select('*')
+      .eq('user_id', _userId)
+      .single();
 
-  if (acct) {
-    _isAdmin     = acct.is_admin || false;
-    _acctStatus  = acct.status   || 'trial';
-    _columnMap   = acct.sales_column_map || {};
+    if (acct) {
+      _isAdmin     = acct.is_admin || false;
+      _acctStatus  = acct.status   || 'trial';
+      _columnMap   = acct.sales_column_map || {};
 
-    if (_acctStatus === 'trial' && acct.trial_ends_at) {
-      if (new Date(acct.trial_ends_at) < new Date()) {
-        _acctStatus = 'past_due';
+      if (_acctStatus === 'trial' && acct.trial_ends_at) {
+        if (new Date(acct.trial_ends_at) < new Date()) {
+          _acctStatus = 'past_due';
+        }
       }
     }
+
+    showScreen('app');
+    document.getElementById('user-info').textContent = _userEmail;
+
+    const restricted = (_acctStatus === 'past_due' || _acctStatus === 'cancelled');
+    const banner = document.getElementById('restrict-banner');
+    const msg    = document.getElementById('restrict-msg');
+    if (restricted) {
+      banner.style.display = 'flex';
+      msg.textContent = _acctStatus === 'cancelled'
+        ? 'Your account has been cancelled. Uploads are disabled.'
+        : 'Your account has a past-due balance. Uploads are disabled. Please update your payment information.';
+      document.getElementById('upload-panel-calls').style.display = 'none';
+      document.getElementById('upload-panel-sales').style.display = 'none';
+    }
+
+    if (_isAdmin) document.getElementById('adminTab').style.display = '';
+
+    buildColumnMapUI();
+  } catch(e) {
+    showScreen('login');
+    showMsg('li-msg', 'Sign-in error: ' + e.message);
+    return;
   }
 
-  showScreen('app');
-  document.getElementById('user-info').textContent = _userEmail;
-
-  const restricted = (_acctStatus === 'past_due' || _acctStatus === 'cancelled');
-  const banner = document.getElementById('restrict-banner');
-  const msg    = document.getElementById('restrict-msg');
-  if (restricted) {
-    banner.style.display = 'flex';
-    msg.textContent = _acctStatus === 'cancelled'
-      ? 'Your account has been cancelled. Uploads are disabled.'
-      : 'Your account has a past-due balance. Uploads are disabled. Please update your payment information.';
-    document.getElementById('upload-panel-calls').style.display = 'none';
-    document.getElementById('upload-panel-sales').style.display = 'none';
-  }
-
-  if (_isAdmin) document.getElementById('adminTab').style.display = '';
-
-  buildColumnMapUI();
-  await loadRaceData();
-  await loadHistory();
+  await loadRaceData().catch(e => console.error('loadRaceData:', e));
+  await loadHistory().catch(e => console.error('loadHistory:', e));
   await loadPerf();
 }
 
 // ── LOGIN / SIGNUP / AUTH ────────────────────────────────────────────────────
 async function handleLogin() {
-  console.log('[login] clicked, _supabase=', !!_supabase);
   if (!_supabase) return showMsg('li-msg', 'Still connecting — please try again in a moment.');
   const email = document.getElementById('li-email').value.trim();
   const pass  = document.getElementById('li-pass').value;
@@ -1116,7 +1121,6 @@ async function loadPerf() {
       return;
     }
     _perfData = await res.json();
-    console.log('perf data:', _perfData);
     populatePerfDates();
     renderPerf();
     populateVmDates();
@@ -1181,11 +1185,12 @@ function renderVmHeatmap() {
 
 // ── HISTORY TAB ───────────────────────────────────────────────────────────────
 async function loadHistory() {
+  try {
   const hdrs = authHeaders();
   const res  = await fetch('/api/history', { headers: hdrs });
   if (!res.ok) return;
   const data = await res.json();
-  const rows = data.slice(1);
+  const rows = Array.isArray(data) ? data.slice(1) : [];
   const rankCls = ['hist-rank-1','hist-rank-2','hist-rank-3'];
   document.getElementById('hist-body').innerHTML = rows.map(r =>
     `<tr>
@@ -1195,6 +1200,7 @@ async function loadHistory() {
       <td>${r[5]}</td><td>${r[6]}</td><td>${r[7]}</td>
     </tr>`
   ).join('') || '<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:20px">No history yet</td></tr>';
+  } catch(e) { console.error('loadHistory:', e); }
 }
 
 // ── ACCOUNT TAB ───────────────────────────────────────────────────────────────
