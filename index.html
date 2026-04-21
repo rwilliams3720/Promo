@@ -580,8 +580,7 @@ async function init() {
       _session = session;
       if (event === 'PASSWORD_RECOVERY') { showScreen('recovery'); return; }
       if (event === 'TOKEN_REFRESHED') return;
-      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-        if (!session) { showScreen('login'); return; }
+      if (session) {
         if (_checkingAccount) return;
         _checkingAccount = true;
         try {
@@ -589,9 +588,9 @@ async function init() {
         } finally {
           _checkingAccount = false;
         }
-        return;
+      } else {
+        showScreen('login');
       }
-      if (!session) showScreen('login');
     });
   } catch(e) {
     showScreen('login');
