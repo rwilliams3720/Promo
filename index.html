@@ -1260,7 +1260,7 @@ async function adminSave(uid, field, value) {
   await fetch('/api/admin', {
     method: 'PATCH',
     headers: { ...hdrs, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_id: uid, [field]: value })
+    body: JSON.stringify({ userId: uid, [field]: value })
   });
   await loadAdminPanel();
 }
