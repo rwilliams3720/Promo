@@ -224,8 +224,13 @@
 </head>
 <body>
 
+<!-- ── LOADING ── -->
+<div id="screen-loading" style="display:flex;align-items:center;justify-content:center;min-height:100vh;color:var(--muted);font-family:'DM Mono',monospace;font-size:14px;letter-spacing:.08em;">
+  LOADING…
+</div>
+
 <!-- ── AUTH: LOGIN ── -->
-<div id="screen-login" class="auth-wrap">
+<div id="screen-login" class="auth-wrap" style="display:none">
   <div class="auth-box">
     <div class="auth-logo">BOAT <span>RACE</span></div>
     <p class="auth-subtitle">Sales Competition Dashboard</p>
@@ -540,6 +545,7 @@ let _uploadInProgress  = false;
 let _perfData = null;
 let _session  = null;
 let _adminRows = [];
+let _checkingAccount = false;
 
 const COL_FIELDS = ['product','written_by','written_date','policy_name','policy_type'];
 const FIELD_LABELS = {
@@ -570,12 +576,12 @@ async function init() {
     }
     _supabase = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey);
 
-    let _checkingAccount = false;
     _supabase.auth.onAuthStateChange(async (event, session) => {
       _session = session;
       if (event === 'PASSWORD_RECOVERY') { showScreen('recovery'); return; }
       if (event === 'TOKEN_REFRESHED') return;
-      if (session) {
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        if (!session) { showScreen('login'); return; }
         if (_checkingAccount) return;
         _checkingAccount = true;
         try {
@@ -583,9 +589,9 @@ async function init() {
         } finally {
           _checkingAccount = false;
         }
-      } else {
-        showScreen('login');
+        return;
       }
+      if (!session) showScreen('login');
     });
   } catch(e) {
     showScreen('login');
@@ -595,7 +601,7 @@ async function init() {
 
 // ── AUTH HELPERS ─────────────────────────────────────────────────────────────
 function showScreen(name) {
-  ['login','signup','forgot','recovery','app'].forEach(s => {
+  ['loading','login','signup','forgot','recovery','app'].forEach(s => {
     const el = document.getElementById('screen-' + s);
     if (el) el.style.display = (s === name) ? (s === 'app' ? 'block' : 'flex') : 'none';
   });
@@ -668,7 +674,7 @@ async function checkAccountAndShow(session) {
 
 // ── LOGIN / SIGNUP / AUTH ────────────────────────────────────────────────────
 async function handleLogin() {
-  if (!_supabase) return showMsg('li-msg', 'Still connecting — please try again in a moment.');
+  if (!_supabase || _checkingAccount) return showMsg('li-msg', 'Still connecting — please try again in a moment.');
   const email = document.getElementById('li-email').value.trim();
   const pass  = document.getElementById('li-pass').value;
   if (!email || !pass) return showMsg('li-msg', 'Email and password are required.');
@@ -736,6 +742,7 @@ async function handleSignOut() {
   try { await _supabase.auth.signOut(); } catch(e) { console.warn('signOut error:', e); }
   _userId = _userEmail = null;
   _isAdmin = false;
+  _checkingAccount = false;
   _acctStatus = 'trial';
   _columnMap = {};
   _perfData = null;
