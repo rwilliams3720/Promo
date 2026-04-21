@@ -540,6 +540,7 @@ let _uploadInProgress  = false;
 let _perfData = null;
 let _session  = null;
 let _adminRows = [];
+let _checkingAccount = false;
 
 const COL_FIELDS = ['product','written_by','written_date','policy_name','policy_type'];
 const FIELD_LABELS = {
@@ -576,7 +577,7 @@ async function init() {
         showScreen('recovery');
         return;
       }
-      if (event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') return;
+      if (event === 'INITIAL_SESSION') return;
       if (session) {
         try {
           await checkAccountAndShow(session);
@@ -624,6 +625,9 @@ function authHeaders() {
 }
 
 async function checkAccountAndShow(session) {
+  if (_checkingAccount) return;
+  _checkingAccount = true;
+  try {
   _userId    = session.user.id;
   _userEmail = session.user.email;
 
@@ -666,6 +670,9 @@ async function checkAccountAndShow(session) {
   await loadRaceData();
   await loadHistory();
   await loadPerf();
+  } finally {
+    _checkingAccount = false;
+  }
 }
 
 // ── LOGIN / SIGNUP / AUTH ────────────────────────────────────────────────────
@@ -735,7 +742,7 @@ async function handlePasswordReset() {
 }
 
 async function handleSignOut() {
-  await _supabase.auth.signOut();
+  try { await _supabase.auth.signOut(); } catch(e) { console.warn('signOut error:', e); }
   _userId = _userEmail = null;
   _isAdmin = false;
   _acctStatus = 'trial';
@@ -743,6 +750,7 @@ async function handleSignOut() {
   _perfData = null;
   _adminRows = [];
   _uploadInProgress = false;
+  _checkingAccount = false;
   document.getElementById('ul-calls').innerHTML = '';
   document.getElementById('ul-sales').innerHTML = '';
   document.getElementById('last-upload-time').textContent = '—';
