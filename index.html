@@ -540,7 +540,7 @@ let _uploadInProgress  = false;
 let _perfData = null;
 let _session  = null;
 let _adminRows = [];
-let _checkingAccount = false;
+let _processingToken = null;
 
 const COL_FIELDS = ['product','written_by','written_date','policy_name','policy_type'];
 const FIELD_LABELS = {
@@ -576,14 +576,15 @@ async function init() {
       if (event === 'PASSWORD_RECOVERY') { showScreen('recovery'); return; }
       if (event === 'TOKEN_REFRESHED') return;
       if (session) {
-        if (_checkingAccount) return;
-        _checkingAccount = true;
+        if (_processingToken === session.access_token) return;
+        _processingToken = session.access_token;
         try {
           await checkAccountAndShow(session);
         } finally {
-          _checkingAccount = false;
+          if (_processingToken === session.access_token) _processingToken = null;
         }
       } else {
+        _processingToken = null;
         showScreen('login');
       }
     });
@@ -668,7 +669,7 @@ async function checkAccountAndShow(session) {
 
 // ── LOGIN / SIGNUP / AUTH ────────────────────────────────────────────────────
 async function handleLogin() {
-  if (!_supabase || _checkingAccount) return showMsg('li-msg', 'Still connecting — please try again in a moment.');
+  if (!_supabase) return showMsg('li-msg', 'Still connecting — please try again in a moment.');
   const email = document.getElementById('li-email').value.trim();
   const pass  = document.getElementById('li-pass').value;
   if (!email || !pass) return showMsg('li-msg', 'Email and password are required.');
@@ -736,7 +737,7 @@ async function handleSignOut() {
   try { await _supabase.auth.signOut(); } catch(e) { console.warn('signOut error:', e); }
   _userId = _userEmail = null;
   _isAdmin = false;
-  _checkingAccount = false;
+  _processingToken = null;
   _acctStatus = 'trial';
   _columnMap = {};
   _perfData = null;
