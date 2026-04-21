@@ -224,13 +224,8 @@
 </head>
 <body>
 
-<!-- ── LOADING ── -->
-<div id="screen-loading" style="display:flex;align-items:center;justify-content:center;min-height:100vh;color:var(--muted);font-family:'DM Mono',monospace;font-size:14px;letter-spacing:.08em;">
-  LOADING…
-</div>
-
 <!-- ── AUTH: LOGIN ── -->
-<div id="screen-login" class="auth-wrap" style="display:none">
+<div id="screen-login" class="auth-wrap">
   <div class="auth-box">
     <div class="auth-logo">BOAT <span>RACE</span></div>
     <p class="auth-subtitle">Sales Competition Dashboard</p>
@@ -600,7 +595,7 @@ async function init() {
 
 // ── AUTH HELPERS ─────────────────────────────────────────────────────────────
 function showScreen(name) {
-  ['loading','login','signup','forgot','recovery','app'].forEach(s => {
+  ['login','signup','forgot','recovery','app'].forEach(s => {
     const el = document.getElementById('screen-' + s);
     if (el) el.style.display = (s === name) ? (s === 'app' ? 'block' : 'flex') : 'none';
   });
