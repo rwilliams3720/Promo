@@ -562,6 +562,7 @@ let SCORING = {...DEFAULT_SCORING};
 
 // ── INIT ─────────────────────────────────────────────────────────────────────
 async function init() {
+  console.log('[init] start');
   try {
     const r = await fetch('/api/config');
     const cfg = await r.json();
@@ -570,7 +571,9 @@ async function init() {
     }
     _supabase = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey);
 
+    console.log('[init] supabase ready, registering auth listener');
     _supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('[auth]', event, session?.user?.email ?? 'no-session');
       _session = session;
       if (event === 'PASSWORD_RECOVERY') { showScreen('recovery'); return; }
       if (event === 'TOKEN_REFRESHED') return;
@@ -659,6 +662,7 @@ async function checkAccountAndShow(session) {
 
 // ── LOGIN / SIGNUP / AUTH ────────────────────────────────────────────────────
 async function handleLogin() {
+  console.log('[login] clicked, _supabase=', !!_supabase);
   if (!_supabase) return showMsg('li-msg', 'Still connecting — please try again in a moment.');
   const email = document.getElementById('li-email').value.trim();
   const pass  = document.getElementById('li-pass').value;
