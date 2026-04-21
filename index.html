@@ -556,6 +556,9 @@ async function init() {
   try {
     const r = await fetch('/api/config');
     const cfg = await r.json();
+    if (!r.ok || !cfg.supabaseUrl || !cfg.supabaseKey) {
+      throw new Error(cfg.error || 'Config unavailable — check Vercel env vars');
+    }
     _supabase = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey);
 
     _supabase.auth.onAuthStateChange(async (event, session) => {
@@ -564,7 +567,12 @@ async function init() {
         return;
       }
       if (session) {
-        await checkAccountAndShow(session);
+        try {
+          await checkAccountAndShow(session);
+        } catch(e) {
+          showScreen('login');
+          showMsg('li-msg', 'Sign-in error: ' + e.message);
+        }
       } else {
         showScreen('login');
       }
