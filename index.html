@@ -675,11 +675,25 @@ async function handleLogin() {
   if (!email || !pass) return showMsg('li-msg', 'Email and password are required.');
   const btn = document.querySelector('#screen-login .auth-btn');
   if (btn) btn.disabled = true;
+  showMsg('li-msg', 'Signing in…', 'ok');
   try {
-    const { error } = await _supabase.auth.signInWithPassword({ email, password: pass });
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('__timeout__')), 15000)
+    );
+    const { error } = await Promise.race([
+      _supabase.auth.signInWithPassword({ email, password: pass }),
+      timeout,
+    ]);
     if (error) showMsg('li-msg', error.message);
+    else showMsg('li-msg', 'Authenticated — loading your dashboard…', 'ok');
   } catch(e) {
-    showMsg('li-msg', 'Connection error: ' + e.message);
+    if (e.message === '__timeout__') {
+      // Auth lock likely held by a stale stored session — clear it so next attempt works
+      Object.keys(localStorage).filter(k => k.startsWith('sb-')).forEach(k => localStorage.removeItem(k));
+      showMsg('li-msg', 'Sign-in timed out. Please click Sign In again.');
+    } else {
+      showMsg('li-msg', 'Connection error: ' + e.message);
+    }
   } finally {
     if (btn) btn.disabled = false;
   }
