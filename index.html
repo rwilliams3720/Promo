@@ -571,18 +571,13 @@ async function init() {
     _supabase = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey);
 
     _supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('[auth]', event, session?.user?.email ?? 'no-session');
       _session = session;
-      if (event === 'PASSWORD_RECOVERY') {
-        showScreen('recovery');
-        return;
-      }
-      if (event === 'INITIAL_SESSION') return;
+      if (event === 'PASSWORD_RECOVERY') { showScreen('recovery'); return; }
+      if (event === 'TOKEN_REFRESHED') return;
       if (session) {
         try {
           await checkAccountAndShow(session);
         } catch(e) {
-          console.error('[auth] checkAccountAndShow threw:', e);
           showScreen('login');
           showMsg('li-msg', 'Sign-in error: ' + e.message);
         }
@@ -590,14 +585,6 @@ async function init() {
         showScreen('login');
       }
     });
-
-    const { data: { session } } = await _supabase.auth.getSession();
-    _session = session;
-    if (session) {
-      await checkAccountAndShow(session);
-    } else {
-      showScreen('login');
-    }
   } catch(e) {
     showScreen('login');
     showMsg('li-msg', 'Init error: ' + e.message);
@@ -626,7 +613,6 @@ function authHeaders() {
 }
 
 async function checkAccountAndShow(session) {
-  console.log('[checkAccountAndShow] start', session?.user?.email);
   _userId    = session.user.id;
   _userEmail = session.user.email;
 
@@ -680,12 +666,9 @@ async function handleLogin() {
   const btn = document.querySelector('#screen-login .auth-btn');
   if (btn) btn.disabled = true;
   try {
-    console.log('[login] calling signInWithPassword');
     const { error } = await _supabase.auth.signInWithPassword({ email, password: pass });
-    console.log('[login] signInWithPassword done, error:', error);
     if (error) showMsg('li-msg', error.message);
   } catch(e) {
-    console.error('[login] signInWithPassword threw:', e);
     showMsg('li-msg', 'Connection error: ' + e.message);
   } finally {
     if (btn) btn.disabled = false;
