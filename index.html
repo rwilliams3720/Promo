@@ -680,19 +680,21 @@ async function checkAccountAndShow(session) {
     if (_isAdmin) document.getElementById('adminTab').style.display = '';
 
     buildColumnMapUI();
-
-    // Record session start (first sign-in only) and schedule auto-logout at 8-hour mark
-    if (!localStorage.getItem('br-session-start')) {
-      localStorage.setItem('br-session-start', Date.now().toString());
-    }
-    const elapsed  = Date.now() - parseInt(localStorage.getItem('br-session-start'));
-    const remaining = Math.max(0, 8 * 3600 * 1000 - elapsed);
-    if (remaining > 0) setTimeout(handleSignOut, remaining);
   } catch(e) {
     showScreen('login');
     showMsg('li-msg', 'Sign-in error: ' + e.message);
     return;
   }
+
+  // 8-hour auto-logout — outside the try block so storage errors never block access
+  try {
+    if (!localStorage.getItem('br-session-start')) {
+      localStorage.setItem('br-session-start', Date.now().toString());
+    }
+    const elapsed   = Date.now() - parseInt(localStorage.getItem('br-session-start'));
+    const remaining = Math.max(0, 8 * 3600 * 1000 - elapsed);
+    if (remaining > 0) setTimeout(handleSignOut, remaining);
+  } catch(_) {}
 
   await loadRaceData().catch(e => console.error('loadRaceData:', e));
   await loadHistory().catch(e => console.error('loadHistory:', e));
