@@ -41,10 +41,8 @@ export default async function handler(req, res) {
   // Admins can always access analysis regardless of plan (for testing)
   if (!acct.is_admin) {
     if (acct.plan !== 'premium') return res.status(403).json({ error: 'Premium plan required' });
-    if (acct.status === 'trial' && acct.trial_ends_at && new Date(acct.trial_ends_at) < new Date()) {
-      return res.status(403).json({ error: 'Trial expired' });
-    }
-    if (!['paid','deferred','trial'].includes(acct.status)) {
+    if (acct.status === 'trial') return res.status(403).json({ error: 'Premium plan required' });
+    if (!['paid','deferred'].includes(acct.status)) {
       return res.status(403).json({ error: 'Account inactive' });
     }
   }

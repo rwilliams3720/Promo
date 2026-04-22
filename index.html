@@ -917,7 +917,7 @@ async function checkAccountAndShow(session) {
     }
 
     if (_isAdmin) document.getElementById('adminTab').style.display = '';
-    const isPremium = acct.plan === 'premium' && !isLocked;
+    const isPremium = acct.plan === 'premium' && !isLocked && _acctStatus !== 'trial';
     document.getElementById('analysisTab').style.display = (isPremium || _isAdmin) ? '' : 'none';
 
     buildColumnMapUI();
@@ -1829,7 +1829,7 @@ async function loadAccountTab() {
   document.getElementById('ac-phone').value   = acct.phone || '';
 
   // Report delivery section (pro/premium only)
-  const isPaid = ['pro','premium'].includes(acct.plan) && !_trialExpired;
+  const isPaid = ['pro','premium'].includes(acct.plan) && !_trialExpired && _acctStatus !== 'trial';
   document.getElementById('report-delivery-section').style.display = isPaid ? '' : 'none';
   if (isPaid) {
     const tzSel = document.getElementById('ac-timezone');

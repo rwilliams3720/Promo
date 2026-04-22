@@ -75,7 +75,7 @@ export default async function handler(req, res) {
     .from('accounts')
     .select('user_id,email,company_name,plan,status,trial_ends_at,timezone,report_hour,last_report_date')
     .in('plan', ['pro','premium'])
-    .in('status', ['paid','deferred','trial']);
+    .in('status', ['paid','deferred']);
   if (acctErr) return res.status(500).json({ error: acctErr.message });
 
   const results = [];

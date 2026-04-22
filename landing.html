@@ -185,6 +185,17 @@
     .mock-bar { height: 6px; border-radius: 4px; }
     .mock-score { width: 48px; text-align: right; font-size: 14px; font-weight: 700; flex-shrink: 0; }
 
+    /* ── FAQ ── */
+    .faq-list { margin-top: 48px; max-width: 720px; display: flex; flex-direction: column; gap: 12px; }
+    .faq-item { background: var(--card2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; transition: border-color .2s; }
+    .faq-item.open { border-color: rgba(0,212,255,.35); }
+    .faq-q { width: 100%; background: none; border: none; color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 15px; font-weight: 600; text-align: left; padding: 20px 24px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+    .faq-q:hover { color: var(--accent); }
+    .faq-chevron { font-size: 18px; color: var(--muted); transition: transform .25s; flex-shrink: 0; }
+    .faq-item.open .faq-chevron { transform: rotate(180deg); color: var(--accent); }
+    .faq-a { font-size: 14px; color: var(--muted); line-height: 1.7; padding: 0 24px; max-height: 0; overflow: hidden; transition: max-height .3s ease, padding .3s ease; }
+    .faq-item.open .faq-a { max-height: 300px; padding: 0 24px 20px; }
+
     @media (max-width: 600px) {
       .nav-links { gap: 12px; }
       .mock-bar-wrap { display: none; }
@@ -199,6 +210,7 @@
   <div class="nav-logo">BOAT <span>RACE</span></div>
   <div class="nav-links">
     <a href="#features">Features</a>
+    <a href="#faq">FAQ</a>
     <a href="#pricing">Pricing</a>
     <a href="/app" class="btn btn-outline">Sign In</a>
     <a href="/app?signup=true" class="btn btn-primary">Get Started</a>
@@ -382,6 +394,67 @@
   </div>
 </section>
 
+<!-- ── FAQ ── -->
+<section id="faq">
+  <div class="section-label">FAQ</div>
+  <h2 class="section-title">Common Questions</h2>
+  <div class="faq-list">
+
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggleFaq(this)">
+        How do I get the data into Boat Race?
+        <span class="faq-chevron">▾</span>
+      </button>
+      <div class="faq-a">
+        Upload your existing call log and sales report files directly from the Manage tab — drag and drop or click to browse. Boat Race accepts Excel (.xlsx, .xls) and CSV formats. It auto-detects columns on upload and deduplicates records automatically, so you can re-upload at any time without double-counting. If your file uses non-standard column names, a one-time column mapping saves your preferences for future uploads.
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggleFaq(this)">
+        How do I assign points?
+        <span class="faq-chevron">▾</span>
+      </button>
+      <div class="faq-a">
+        Point values are fully configurable from the Scoring tab. Set multipliers for each policy type (Whole Life, Universal Life, Term, Health, Auto, Home/Fire) as well as call activity (calls placed, calls answered, talk time per minute, average call length). Sales and service teams can have different call point values. Changes take effect immediately on the live leaderboard — no redeploy needed.
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggleFaq(this)">
+        What data is stored?
+        <span class="faq-chevron">▾</span>
+      </button>
+      <div class="faq-a">
+        Boat Race stores performance metrics only: call logs (agent, disposition, talk time, date) and sales records (agent, product type, sale date). No customer names, phone numbers, policy details, or any personally identifiable information from your calls or sales is ever stored or processed.<br><br>
+        For deduplication — so re-uploading the same file never double-counts records — each row is fingerprinted using a SHA-256 cryptographic hash. This hash is a one-way mathematical signature generated from the record's data. The original data cannot be recovered from it, and no customer information is saved in the process. It is used solely to detect whether a record has already been imported.<br><br>
+        Account information (company name, contact name, email) is stored for billing and login purposes only. All data is fully isolated per account and automatically purged after 12 months.
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggleFaq(this)">
+        Why would I want a tool like this?
+        <span class="faq-chevron">▾</span>
+      </button>
+      <div class="faq-a">
+        Most sales floors track performance in spreadsheets that nobody looks at until a 1-on-1. Boat Race turns that same data into a live competition — agents can see exactly where they stand, managers can spot momentum shifts in real time, and the AI analysis surfaces coaching opportunities before small problems become big ones. Competition drives activity, activity drives results.
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggleFaq(this)">
+        What can it be used for?
+        <span class="faq-chevron">▾</span>
+      </button>
+      <div class="faq-a">
+        Boat Race is built for insurance and financial services offices — any team where agents are making outbound calls and selling policies. It works equally well for pure sales teams, service teams that cross-sell, or mixed offices running both. If your team has call activity and policy production goals, Boat Race can score it.
+      </div>
+    </div>
+
+  </div>
+</section>
+
 <!-- ── PRICING ── -->
 <section class="pricing" id="pricing">
   <div class="section-label">Pricing</div>
@@ -462,5 +535,13 @@
   </div>
 </footer>
 
+<script>
+function toggleFaq(btn) {
+  const item = btn.closest('.faq-item');
+  const isOpen = item.classList.contains('open');
+  document.querySelectorAll('.faq-item.open').forEach(el => el.classList.remove('open'));
+  if (!isOpen) item.classList.add('open');
+}
+</script>
 </body>
 </html>
