@@ -918,7 +918,8 @@ async function checkAccountAndShow(session) {
 
     if (_isAdmin) document.getElementById('adminTab').style.display = '';
     const isPremium = acct.plan === 'premium' && !isLocked && _acctStatus !== 'trial';
-    document.getElementById('analysisTab').style.display = (isPremium || _isAdmin) ? '' : 'none';
+    const showAnalysis = isPremium || _isAdmin || _acctStatus === 'trial';
+    document.getElementById('analysisTab').style.display = showAnalysis ? '' : 'none';
 
     buildColumnMapUI();
   } catch(e) {
@@ -1055,7 +1056,11 @@ function showTab(name, btn) {
   if (name === 'adminpanel') loadAdminPanel();
   if (name === 'perf') loadPerf();
   if (name === 'history') loadHistory();
-  if (name === 'analysis') { updateAnalysisBtn(); loadAnalysis(); }
+  if (name === 'analysis') {
+    if (_acctStatus === 'trial' && !_isAdmin) { renderAnalysisTrialTeaser(); return; }
+    document.getElementById('analysis-refresh-btn').style.display = '';
+    updateAnalysisBtn(); loadAnalysis();
+  }
 }
 
 // ── LOAD RACE DATA ────────────────────────────────────────────────────────────
@@ -1675,6 +1680,24 @@ function updateAnalysisBtn() {
     btn.disabled = false;
     btn.textContent = 'Refresh Analysis';
   }
+}
+
+function renderAnalysisTrialTeaser() {
+  document.getElementById('analysis-refresh-btn').style.display = 'none';
+  document.getElementById('analysis-body').innerHTML = `
+    <div style="text-align:center;padding:2rem 1rem;">
+      <div style="font-size:2rem;margin-bottom:1rem;">🤖</div>
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:1.6rem;letter-spacing:.04em;margin-bottom:.75rem;">AI Coaching Insights</div>
+      <p style="font-size:14px;color:var(--muted);max-width:480px;margin:0 auto 1.5rem;line-height:1.7;">
+        Premium subscribers get a full AI-powered analysis of their team's last 90 days — including monthly call trends,
+        top performer breakdowns, agents who need coaching, and specific actions your manager can take this week.
+        Powered by Claude AI and updated every 4 hours.
+      </p>
+      <button class="btn btn-primary" onclick="showTab('account', document.querySelector('.tab[onclick*=\'account\']'))">
+        Upgrade to Premium
+      </button>
+    </div>`;
+  document.getElementById('analysis-msg').style.display = 'none';
 }
 
 async function loadAnalysis() {
