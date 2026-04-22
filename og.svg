@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#060e1c"/>
+      <stop offset="100%" stop-color="#0d2144"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+
+  <!-- Subtle checkered decoration — bottom-right corner -->
+  <g opacity="0.07">
+    <rect x="900" y="420" width="60" height="60" fill="white"/>
+    <rect x="960" y="420" width="60" height="60" fill="white" opacity="0"/>
+    <rect x="1020" y="420" width="60" height="60" fill="white"/>
+    <rect x="1080" y="420" width="60" height="60" fill="white" opacity="0"/>
+    <rect x="1140" y="420" width="60" height="60" fill="white"/>
+    <rect x="900" y="480" width="60" height="60" fill="white" opacity="0"/>
+    <rect x="960" y="480" width="60" height="60" fill="white"/>
+    <rect x="1020" y="480" width="60" height="60" fill="white" opacity="0"/>
+    <rect x="1080" y="480" width="60" height="60" fill="white"/>
+    <rect x="1140" y="480" width="60" height="60" fill="white" opacity="0"/>
+    <rect x="900" y="540" width="60" height="60" fill="white"/>
+    <rect x="960" y="540" width="60" height="60" fill="white" opacity="0"/>
+    <rect x="1020" y="540" width="60" height="60" fill="white"/>
+    <rect x="1080" y="540" width="60" height="60" fill="white" opacity="0"/>
+    <rect x="1140" y="540" width="60" height="60" fill="white"/>
+  </g>
+
+  <!-- Left cyan accent bar -->
+  <rect x="0" y="0" width="8" height="630" fill="#00d4ff"/>
+
+  <!-- "THE" label -->
+  <text x="80" y="178"
+        font-family="Impact, 'Arial Narrow', Arial, sans-serif"
+        font-size="38" fill="#00d4ff" letter-spacing="14">THE</text>
+
+  <!-- "BOAT RACE" — main headline -->
+  <text x="76" y="345"
+        font-family="Impact, 'Arial Narrow', Arial, sans-serif"
+        font-size="190" fill="white" letter-spacing="6">BOAT RACE</text>
+
+  <!-- Cyan underline -->
+  <rect x="80" y="364" width="260" height="6" rx="3" fill="#00d4ff"/>
+
+  <!-- Tagline -->
+  <text x="80" y="422"
+        font-family="Arial, Helvetica, sans-serif"
+        font-size="28" fill="#6a88aa" letter-spacing="0.5">Turn your sales floor into a live competition.</text>
+
+  <!-- Feature chips -->
+  <text x="80" y="480"
+        font-family="Arial, Helvetica, sans-serif"
+        font-size="22" fill="#2a4a6a" letter-spacing="1">Live Scoring  ·  AI Coaching  ·  Automated Reports</text>
+
+  <!-- Domain -->
+  <text x="1120" y="598"
+        font-family="'Courier New', Courier, monospace"
+        font-size="20" fill="#1e3557" text-anchor="end">the-boat-race.com</text>
+</svg>
