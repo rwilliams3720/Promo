@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Boat Race — Sales Competition Dashboard</title>
+  <meta name="description" content="Turn your sales floor into a live competition. Boat Race tracks call performance, scores agents in real time, and delivers AI-powered coaching insights to help your team win.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --deep:    #060e1c;
+      --bg:      #0a1628;
+      --card:    #0f1e35;
+      --card2:   #132744;
+      --border:  #1a3050;
+      --accent:  #00d4ff;
+      --accent2: #00ff94;
+      --warn:    #ffd166;
+      --orange:  #ff8c42;
+      --text:    #e8f4fd;
+      --muted:   #6b8db5;
+    }
+
+    html { scroll-behavior: smooth; }
+    body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; line-height: 1.6; }
+
+    a { color: inherit; text-decoration: none; }
+
+    /* ── NAV ── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(6,14,28,.92); backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 5%;
+      display: flex; align-items: center; justify-content: space-between; height: 60px;
+    }
+    .nav-logo { font-family: 'Bebas Neue', sans-serif; font-size: 1.5rem; letter-spacing: .06em; }
+    .nav-logo span { color: var(--accent); }
+    .nav-links { display: flex; align-items: center; gap: 24px; }
+    .nav-links a { font-size: 14px; color: var(--muted); font-weight: 500; transition: color .15s; }
+    .nav-links a:hover { color: var(--text); }
+    .btn { display: inline-block; padding: 9px 22px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all .15s; border: none; font-family: 'DM Sans', sans-serif; }
+    .btn-primary { background: var(--accent); color: var(--deep); }
+    .btn-primary:hover { background: #22dcff; }
+    .btn-outline { background: transparent; color: var(--accent); border: 1px solid rgba(0,212,255,.4); }
+    .btn-outline:hover { background: rgba(0,212,255,.08); }
+
+    /* ── HERO ── */
+    .hero {
+      min-height: 90vh; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      text-align: center; padding: 80px 5% 60px;
+      background: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(0,212,255,.12), transparent);
+    }
+    .hero-eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin-bottom: 20px; }
+    .hero-title { font-family: 'Bebas Neue', sans-serif; font-size: clamp(3.5rem, 9vw, 7rem); line-height: 1; letter-spacing: .03em; margin-bottom: 24px; }
+    .hero-title span { color: var(--accent); }
+    .hero-sub { font-size: clamp(1rem, 2vw, 1.2rem); color: var(--muted); max-width: 560px; margin: 0 auto 40px; }
+    .hero-cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+    .hero-note { margin-top: 16px; font-size: 12px; color: var(--muted); }
+
+    /* ── SECTION WRAPPER ── */
+    section { padding: 90px 5%; }
+    .section-label { font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin-bottom: 14px; }
+    .section-title { font-family: 'Bebas Neue', sans-serif; font-size: clamp(2rem, 5vw, 3rem); letter-spacing: .03em; margin-bottom: 16px; }
+    .section-sub { font-size: 15px; color: var(--muted); max-width: 520px; }
+
+    /* ── FEATURES ── */
+    .features { background: var(--deep); }
+    .features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; margin-top: 52px; }
+    .feat-card {
+      background: var(--card2); border: 1px solid var(--border); border-radius: 14px; padding: 28px 24px;
+      transition: border-color .25s, transform .25s; position: relative; overflow: hidden;
+    }
+    .feat-card:hover { border-color: rgba(0,212,255,.35); transform: translateY(-2px); }
+    .feat-icon { font-size: 28px; margin-bottom: 14px; }
+    .feat-title { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+    .feat-desc { font-size: 13px; color: var(--muted); line-height: 1.6; transition: opacity .25s, transform .25s; }
+    .feat-badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; margin-top: 12px; transition: opacity .25s; }
+    .badge-pro { background: rgba(0,212,255,.12); color: var(--accent); }
+    .badge-premium { background: rgba(255,209,102,.12); color: var(--warn); }
+    /* hover preview */
+    .feat-preview { position: absolute; inset: 0; padding: 20px 20px 18px; background: var(--card2); border-radius: 14px; opacity: 0; transform: translateY(6px); transition: opacity .25s, transform .25s; pointer-events: none; display: flex; flex-direction: column; justify-content: center; }
+    .feat-card:hover .feat-desc { opacity: 0; transform: translateY(-4px); }
+    .feat-card:hover .feat-badge { opacity: 0; }
+    .feat-card:hover .feat-preview { opacity: 1; transform: translateY(0); }
+    /* preview components */
+    .fp-title { font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+    .fp-row { display: flex; align-items: center; gap: 7px; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,.04); font-size: 11px; }
+    .fp-row:last-child { border-bottom: none; }
+    .fp-rank { width: 14px; font-family: 'Bebas Neue',sans-serif; font-size: .85rem; color: var(--muted); flex-shrink: 0; }
+    .fp-name { flex: 1; font-weight: 500; font-size: 11px; }
+    .fp-tag { font-size: 9px; font-weight: 700; letter-spacing: .05em; padding: 1px 5px; border-radius: 3px; flex-shrink: 0; }
+    .fp-tag-s { background: rgba(0,212,255,.12); color: var(--accent); }
+    .fp-tag-v { background: rgba(0,255,148,.1); color: var(--accent2); }
+    .fp-bar-w { width: 52px; height: 5px; background: rgba(255,255,255,.06); border-radius: 3px; flex-shrink: 0; }
+    .fp-bar { height: 5px; border-radius: 3px; }
+    .fp-val { width: 36px; text-align: right; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+    .fp-tbl { width: 100%; border-collapse: collapse; font-size: 10px; }
+    .fp-tbl th { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; padding: 0 4px 6px; text-align: center; }
+    .fp-tbl th:first-child { text-align: left; }
+    .fp-tbl td { padding: 4px; text-align: center; border-bottom: 1px solid rgba(255,255,255,.04); }
+    .fp-tbl td:first-child { text-align: left; font-weight: 500; }
+    .fp-tbl tr:last-child td { border-bottom: none; }
+    .fp-stat-row { display: flex; gap: 6px; margin-bottom: 8px; }
+    .fp-stat { flex: 1; background: rgba(0,0,0,.2); border-radius: 6px; padding: 6px 4px; text-align: center; }
+    .fp-stat-n { font-size: 15px; font-weight: 700; }
+    .fp-stat-l { font-size: 8px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-top: 1px; }
+    .fp-ai { font-size: 11px; color: var(--muted); line-height: 1.6; }
+    .fp-ai strong { color: var(--text); }
+    .fp-policy-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,.04); font-size: 11px; }
+    .fp-policy-row:last-child { border-bottom: none; }
+    .fp-policy-pts { font-weight: 700; color: var(--accent2); font-size: 12px; }
+
+    /* ── HOW IT WORKS ── */
+    .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 32px; margin-top: 52px; }
+    .step { text-align: center; }
+    .step-num { width: 48px; height: 48px; border-radius: 50%; background: rgba(0,212,255,.1); border: 1px solid rgba(0,212,255,.3); color: var(--accent); font-family: 'Bebas Neue', sans-serif; font-size: 1.4rem; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; }
+    .step-title { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+    .step-desc { font-size: 13px; color: var(--muted); }
+
+    /* ── PRICING ── */
+    .pricing { background: var(--deep); }
+    .pricing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-top: 52px; max-width: 900px; }
+    .plan-card {
+      background: var(--card2); border: 1px solid var(--border); border-radius: 16px; padding: 32px 28px;
+      display: flex; flex-direction: column;
+    }
+    .plan-card.featured { border-color: var(--accent); background: linear-gradient(160deg, #0f2340, var(--card2)); }
+    .plan-badge { font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); margin-bottom: 10px; }
+    .plan-name { font-family: 'Bebas Neue', sans-serif; font-size: 2rem; letter-spacing: .04em; margin-bottom: 4px; }
+    .plan-price { font-size: 2.4rem; font-weight: 700; color: var(--accent); line-height: 1; }
+    .plan-price span { font-size: 14px; font-weight: 400; color: var(--muted); }
+    .plan-desc { font-size: 13px; color: var(--muted); margin: 14px 0 24px; }
+    .plan-features { list-style: none; display: flex; flex-direction: column; gap: 10px; margin-bottom: 32px; flex: 1; }
+    .plan-features li { font-size: 13px; display: flex; align-items: flex-start; gap: 8px; }
+    .plan-features li::before { content: '✓'; color: var(--accent2); font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+    .plan-features li.dim { color: var(--muted); }
+    .plan-features li.dim::before { color: var(--border); }
+
+    /* ── SOCIAL PROOF / STATS ── */
+    .stats { display: flex; gap: 48px; flex-wrap: wrap; justify-content: center; padding: 60px 5%; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    .stat { text-align: center; }
+    .stat-num { font-family: 'Bebas Neue', sans-serif; font-size: 2.8rem; color: var(--accent); letter-spacing: .04em; }
+    .stat-lbl { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-top: 2px; }
+
+    /* ── CTA BAND ── */
+    .cta-band {
+      text-align: center; padding: 90px 5%;
+      background: radial-gradient(ellipse 60% 60% at 50% 100%, rgba(0,212,255,.1), transparent);
+    }
+    .cta-band h2 { font-family: 'Bebas Neue', sans-serif; font-size: clamp(2rem, 5vw, 3.2rem); letter-spacing: .03em; margin-bottom: 16px; }
+    .cta-band p { color: var(--muted); font-size: 15px; margin-bottom: 36px; }
+
+    /* ── FOOTER ── */
+    footer {
+      background: var(--deep); border-top: 1px solid var(--border);
+      padding: 36px 5%; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;
+    }
+    .footer-logo { font-family: 'Bebas Neue', sans-serif; font-size: 1.2rem; letter-spacing: .06em; }
+    .footer-logo span { color: var(--accent); }
+    footer p { font-size: 12px; color: var(--muted); }
+
+    /* ── MOCK SCOREBOARD ── */
+    .mockup { margin-top: 64px; max-width: 640px; width: 100%; }
+    .mock-card { background: var(--card2); border: 1px solid var(--border); border-radius: 16px; padding: 24px; }
+    .mock-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+    .mock-title { font-family: 'Bebas Neue', sans-serif; font-size: 1.2rem; letter-spacing: .05em; }
+    .mock-live { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--accent2); font-weight: 600; }
+    .mock-live::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--accent2); display: inline-block; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.3} }
+    .mock-row { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,.04); }
+    .mock-row:last-child { border-bottom: none; }
+    .mock-rank { width: 24px; font-family: 'Bebas Neue', sans-serif; font-size: 1rem; color: var(--muted); flex-shrink: 0; }
+    .mock-rank.gold { color: #ffd700; }
+    .mock-rank.silver { color: #c0c0c0; }
+    .mock-rank.bronze { color: #cd7f32; }
+    .mock-name { flex: 1; font-size: 13px; font-weight: 500; }
+    .mock-team { font-size: 10px; font-weight: 700; letter-spacing: .06em; padding: 2px 6px; border-radius: 4px; }
+    .mock-team.sales { background: rgba(0,212,255,.12); color: var(--accent); }
+    .mock-team.service { background: rgba(0,255,148,.1); color: var(--accent2); }
+    .mock-bar-wrap { width: 120px; background: rgba(255,255,255,.05); border-radius: 4px; height: 6px; flex-shrink: 0; }
+    .mock-bar { height: 6px; border-radius: 4px; }
+    .mock-score { width: 48px; text-align: right; font-size: 14px; font-weight: 700; flex-shrink: 0; }
+
+    @media (max-width: 600px) {
+      .nav-links { gap: 12px; }
+      .mock-bar-wrap { display: none; }
+      footer { flex-direction: column; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── NAV ── -->
+<nav>
+  <div class="nav-logo">BOAT <span>RACE</span></div>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#pricing">Pricing</a>
+    <a href="/app" class="btn btn-outline">Sign In</a>
+    <a href="/app?signup=true" class="btn btn-primary">Get Started</a>
+  </div>
+</nav>
+
+<!-- ── HERO ── -->
+<section class="hero">
+  <div class="hero-eyebrow">Sales Competition Platform</div>
+  <h1 class="hero-title">Make Every<br>Call Count.<br><span>Race to Win.</span></h1>
+  <p class="hero-sub">Boat Race turns your sales floor into a live competition — tracking calls, scoring agents, and surfacing the insights managers need to build a winning team.</p>
+  <div class="hero-cta">
+    <a href="/app?signup=true" class="btn btn-primary" style="font-size:15px;padding:12px 30px;">Start Free Trial</a>
+    <a href="#features" class="btn btn-outline" style="font-size:15px;padding:12px 30px;">See How It Works</a>
+  </div>
+  <p class="hero-note">21-day free trial · No credit card required</p>
+</section>
+
+<!-- ── STATS ── -->
+<div class="stats">
+  <div class="stat"><div class="stat-num">11</div><div class="stat-lbl">Agents Tracked</div></div>
+  <div class="stat"><div class="stat-num">3,200+</div><div class="stat-lbl">Calls Logged Daily</div></div>
+  <div class="stat"><div class="stat-num">6</div><div class="stat-lbl">Policy Types Scored</div></div>
+  <div class="stat"><div class="stat-num">Real‑time</div><div class="stat-lbl">Leaderboard Updates</div></div>
+</div>
+
+<!-- ── FEATURES ── -->
+<section class="features" id="features">
+  <div class="section-label">Features</div>
+  <h2 class="section-title">Everything Your Team Needs to Compete</h2>
+  <p class="section-sub">From live scoreboards to AI coaching — built for insurance and financial services sales teams.</p>
+  <div class="features-grid">
+    <div class="feat-card">
+      <div class="feat-icon">🏁</div>
+      <div class="feat-title">Live Race Board</div>
+      <div class="feat-desc">Real-time leaderboard scores every agent on calls placed, answered, talk time, and policies sold. Sales and service teams tracked separately.</div>
+      <div class="feat-preview">
+        <div class="fp-title">Live Standings</div>
+        <div class="fp-row">
+          <div class="fp-rank" style="color:#ffd700">1</div>
+          <div class="fp-name">Susan N.</div>
+          <div class="fp-tag fp-tag-v">Sales</div>
+          <div class="fp-bar-w"><div class="fp-bar" style="width:100%;background:var(--accent2)"></div></div>
+          <div class="fp-val" style="color:var(--accent2)">412</div>
+        </div>
+        <div class="fp-row">
+          <div class="fp-rank" style="color:#c0c0c0">2</div>
+          <div class="fp-name">Ashley M.</div>
+          <div class="fp-tag fp-tag-s">Service</div>
+          <div class="fp-bar-w"><div class="fp-bar" style="width:82%;background:var(--accent)"></div></div>
+          <div class="fp-val" style="color:var(--accent)">338</div>
+        </div>
+        <div class="fp-row">
+          <div class="fp-rank" style="color:#cd7f32">3</div>
+          <div class="fp-name">Joseph U.</div>
+          <div class="fp-tag fp-tag-v">Sales</div>
+          <div class="fp-bar-w"><div class="fp-bar" style="width:68%;background:var(--warn)"></div></div>
+          <div class="fp-val" style="color:var(--warn)">280</div>
+        </div>
+        <div class="fp-row">
+          <div class="fp-rank" style="color:var(--muted)">4</div>
+          <div class="fp-name">Tiffany D.</div>
+          <div class="fp-tag fp-tag-v">Sales</div>
+          <div class="fp-bar-w"><div class="fp-bar" style="width:54%;background:var(--muted)"></div></div>
+          <div class="fp-val" style="color:var(--muted)">224</div>
+        </div>
+      </div>
+    </div>
+    <div class="feat-card">
+      <div class="feat-icon">📞</div>
+      <div class="feat-title">Call Performance Tracking</div>
+      <div class="feat-desc">Upload your call logs and get instant breakdowns by agent — placed, answered, voicemail, missed, and talk time trends by day, week, or month.</div>
+      <div class="feat-preview">
+        <div class="fp-title">This Week · All Agents</div>
+        <table class="fp-tbl">
+          <thead><tr><th>Agent</th><th>Placed</th><th>Ans%</th><th>Talk</th></tr></thead>
+          <tbody>
+            <tr><td>Tracy A.</td><td>84</td><td style="color:var(--accent2)">73%</td><td>3.2h</td></tr>
+            <tr><td>Fiona R.</td><td>76</td><td style="color:var(--accent)">68%</td><td>2.8h</td></tr>
+            <tr><td>Russel W.</td><td>71</td><td style="color:var(--accent)">68%</td><td>2.5h</td></tr>
+            <tr><td>Andy R.</td><td>58</td><td style="color:var(--warn)">55%</td><td>1.9h</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="feat-card">
+      <div class="feat-icon">📋</div>
+      <div class="feat-title">Policy Sales Scoring</div>
+      <div class="feat-desc">Track Whole Life, Universal Life, Term, Health, Auto, and Home/Fire sales. Fully configurable point values for each product type.</div>
+      <div class="feat-preview">
+        <div class="fp-title">Point Values (configurable)</div>
+        <div class="fp-policy-row"><span>Whole Life</span><span class="fp-policy-pts">×12 pts</span></div>
+        <div class="fp-policy-row"><span>Universal Life</span><span class="fp-policy-pts">×10 pts</span></div>
+        <div class="fp-policy-row"><span>Term Life</span><span class="fp-policy-pts">×8 pts</span></div>
+        <div class="fp-policy-row"><span>Health</span><span class="fp-policy-pts">×6 pts</span></div>
+        <div class="fp-policy-row"><span>Auto</span><span class="fp-policy-pts">×4 pts</span></div>
+        <div class="fp-policy-row"><span>Home / Fire</span><span class="fp-policy-pts">×4 pts</span></div>
+      </div>
+    </div>
+    <div class="feat-card">
+      <div class="feat-icon">📧</div>
+      <div class="feat-title">Daily Email Reports</div>
+      <div class="feat-desc">Automated performance summaries delivered to your inbox every morning. Set your timezone and preferred delivery time.</div>
+      <span class="feat-badge badge-pro">Pro</span>
+      <div class="feat-preview">
+        <div class="fp-title">Yesterday's Summary · Apr 20</div>
+        <div class="fp-stat-row">
+          <div class="fp-stat">
+            <div class="fp-stat-n" style="color:var(--accent)">187</div>
+            <div class="fp-stat-l">Placed</div>
+          </div>
+          <div class="fp-stat">
+            <div class="fp-stat-n" style="color:var(--accent2)">134</div>
+            <div class="fp-stat-l">Answered</div>
+          </div>
+          <div class="fp-stat">
+            <div class="fp-stat-n" style="color:var(--warn)">9.4h</div>
+            <div class="fp-stat-l">Talk</div>
+          </div>
+          <div class="fp-stat">
+            <div class="fp-stat-n" style="color:var(--orange)">14</div>
+            <div class="fp-stat-l">Policies</div>
+          </div>
+        </div>
+        <div style="font-size:9px;color:var(--muted);text-align:center;margin-top:4px;">✉&nbsp; Delivered 7:00 AM PT · Your inbox</div>
+      </div>
+    </div>
+    <div class="feat-card">
+      <div class="feat-icon">🤖</div>
+      <div class="feat-title">AI Coaching Insights</div>
+      <div class="feat-desc">Claude AI analyzes your team's 90-day performance and delivers specific, actionable coaching recommendations for every agent.</div>
+      <span class="feat-badge badge-premium">Premium</span>
+      <div class="feat-preview">
+        <div class="fp-title">AI Analysis · Last 90 Days</div>
+        <div class="fp-ai"><strong>Susan</strong> leads with an 84% answer rate — well above team average. <strong>Joseph</strong> has strong call volume but a 61% answer rate; focus this week on opening-line consistency. Consider pairing <strong>Andy</strong> with a top performer for live call shadowing.</div>
+      </div>
+    </div>
+    <div class="feat-card">
+      <div class="feat-icon">📊</div>
+      <div class="feat-title">Trend Charts</div>
+      <div class="feat-desc">Visual line charts for calls, talk time, and policies over time — so you can spot momentum shifts before they become problems.</div>
+      <span class="feat-badge badge-premium">Premium</span>
+      <div class="feat-preview">
+        <div class="fp-title">Calls Placed · Last 90 Days</div>
+        <svg width="100%" height="52" viewBox="0 0 200 52" preserveAspectRatio="none" style="display:block;margin-bottom:6px;">
+          <polyline points="0,48 30,42 60,36 90,30 110,22 140,14 170,9 200,4" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <polyline points="0,50 30,47 60,44 90,40 110,35 140,28 170,22 200,18" fill="none" stroke="var(--accent2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3,2"/>
+          <polyline points="0,50 30,50 60,49 90,47 110,46 140,44 170,41 200,38" fill="none" stroke="var(--orange)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5,3"/>
+        </svg>
+        <div style="display:flex;gap:10px;">
+          <div style="display:flex;align-items:center;gap:3px;font-size:9px;color:var(--muted)"><div style="width:10px;height:2px;background:var(--accent);border-radius:1px"></div>Placed</div>
+          <div style="display:flex;align-items:center;gap:3px;font-size:9px;color:var(--muted)"><div style="width:10px;height:0;border-top:1.5px dashed var(--accent2)"></div>Answered</div>
+          <div style="display:flex;align-items:center;gap:3px;font-size:9px;color:var(--muted)"><div style="width:10px;height:0;border-top:1.5px dashed var(--orange)"></div>Policies</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── HOW IT WORKS ── -->
+<section id="how-it-works">
+  <div class="section-label">How It Works</div>
+  <h2 class="section-title">Up and Running in Minutes</h2>
+  <p class="section-sub">No complex setup. No IT department required.</p>
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-title">Create Your Account</div>
+      <div class="step-desc">Sign up, add your team, and configure scoring weights to match how your office rewards performance.</div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-title">Upload Your Data</div>
+      <div class="step-desc">Drop in your call log and sales reports. We auto-detect columns and deduplicate on every upload — no double-counting.</div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-title">Watch the Race</div>
+      <div class="step-desc">The leaderboard updates instantly. Share it on a TV in the office or let agents check their standing anytime.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ── PRICING ── -->
+<section class="pricing" id="pricing">
+  <div class="section-label">Pricing</div>
+  <h2 class="section-title">Simple, Flat-Rate Plans</h2>
+  <p class="section-sub">One price per office. No per-seat fees. No surprises.</p>
+  <div class="pricing-grid">
+
+    <div class="plan-card">
+      <div class="plan-badge">&nbsp;</div>
+      <div class="plan-name">Basic</div>
+      <div class="plan-price">$25<span>/mo</span></div>
+      <div class="plan-desc">Everything you need to run a live sales competition.</div>
+      <ul class="plan-features">
+        <li>Live race leaderboard</li>
+        <li>Call log uploads &amp; tracking</li>
+        <li>Policy sales scoring (6 types)</li>
+        <li>Configurable point values</li>
+        <li>Historical results archive</li>
+        <li>Voicemail heatmap</li>
+        <li class="dim">Daily email reports</li>
+        <li class="dim">AI coaching insights</li>
+        <li class="dim">Trend charts</li>
+      </ul>
+      <a href="/app?signup=true&plan=basic" class="btn btn-outline" style="text-align:center;width:100%">Start Free Trial</a>
+    </div>
+
+    <div class="plan-card">
+      <div class="plan-badge">&nbsp;</div>
+      <div class="plan-name">Pro</div>
+      <div class="plan-price">$35<span>/mo</span></div>
+      <div class="plan-desc">Add automated reporting so nothing falls through the cracks.</div>
+      <ul class="plan-features">
+        <li>Everything in Basic</li>
+        <li>Daily email performance reports</li>
+        <li>Timezone &amp; delivery hour selection</li>
+        <li>Per-agent call performance table</li>
+        <li class="dim">AI coaching insights</li>
+        <li class="dim">Trend charts</li>
+      </ul>
+      <a href="/app?signup=true&plan=pro" class="btn btn-outline" style="text-align:center;width:100%">Start Free Trial</a>
+    </div>
+
+    <div class="plan-card featured">
+      <div class="plan-badge">Most Popular</div>
+      <div class="plan-name">Premium</div>
+      <div class="plan-price">$50<span>/mo</span></div>
+      <div class="plan-desc">Full analytics and AI coaching for managers who want every edge.</div>
+      <ul class="plan-features">
+        <li>Everything in Pro</li>
+        <li>AI coaching insights (Claude)</li>
+        <li>Trend charts — calls, talk time, policies</li>
+        <li>90-day performance analysis</li>
+      </ul>
+      <a href="/app?signup=true" class="btn btn-primary" style="text-align:center;width:100%">Start Free Trial</a>
+    </div>
+
+  </div>
+  <p style="margin-top:24px;font-size:12px;color:var(--muted);max-width:900px;">All plans include a 21-day free trial. No credit card required to start. Plan changes take effect at the next billing cycle upon administrator confirmation.</p>
+</section>
+
+<!-- ── CTA BAND ── -->
+<section class="cta-band">
+  <h2>Ready to Start the Race?</h2>
+  <p>Join teams already competing on Boat Race. Set up takes less than 10 minutes.</p>
+  <a href="/app?signup=true" class="btn btn-primary" style="font-size:16px;padding:14px 36px;">Start Your Free Trial</a>
+</section>
+
+<!-- ── FOOTER ── -->
+<footer>
+  <div>
+    <div class="footer-logo">BOAT <span>RACE</span></div>
+    <p style="margin-top:6px;">West Alpha LLC · 6105 West A St, Ste C, West Linn, OR 97068</p>
+  </div>
+  <div style="text-align:right;">
+    <a href="/app" style="font-size:13px;color:var(--muted);margin-right:20px;">Sign In</a>
+    <a href="mailto:support@the-boat-race.com" style="font-size:13px;color:var(--muted);">support@the-boat-race.com</a>
+    <p style="margin-top:6px;font-size:12px;color:var(--muted);">© 2026 West Alpha LLC. All rights reserved.</p>
+  </div>
+</footer>
+
+</body>
+</html>

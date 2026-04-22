@@ -30,13 +30,21 @@ export default async function handler(req, res) {
   if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
 
   try {
-    const { data: logs, error } = await supabase
-      .from('call_log')
-      .select('agent_id,disposition,talk_secs,call_dt,call_slot')
-      .eq('user_id', user.id)
-      .not('disposition', 'in', '("internal","other","skip")');
-
-    if (error) return res.status(500).json({ error: error.message });
+    const PAGE = 1000;
+    const logs = [];
+    let from = 0;
+    while (true) {
+      const { data, error } = await supabase
+        .from('call_log')
+        .select('agent_id,disposition,talk_secs,call_dt,call_slot')
+        .eq('user_id', user.id)
+        .not('disposition', 'in', '(internal,other,skip)')
+        .range(from, from + PAGE - 1);
+      if (error) return res.status(500).json({ error: error.message });
+      if (data?.length) logs.push(...data);
+      if (!data || data.length < PAGE) break;
+      from += PAGE;
+    }
 
     const daily   = {};
     const weekly  = {};
@@ -48,7 +56,8 @@ export default async function handler(req, res) {
       const { agent_id, disposition, talk_secs, call_dt, call_slot } = row;
       if (!call_dt) continue;
 
-      const d = new Date(call_dt + 'T12:00:00Z');
+      const dtStr = String(call_dt).includes('T') ? String(call_dt).split('T')[0] : String(call_dt);
+      const d = new Date(dtStr + 'T12:00:00Z');
       if (isNaN(d.getTime())) continue;
 
       const dayKey  = `${d.getUTCMonth()+1}/${d.getUTCDate()}/${d.getUTCFullYear()}`;
@@ -118,6 +127,7 @@ export default async function handler(req, res) {
       monthly: mapToRows(monthly),
       yearly:  mapToRows(yearly),
       vmSlots,
+      _debug: { rowCount: (logs || []).length },
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

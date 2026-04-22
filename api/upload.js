@@ -438,7 +438,7 @@ function classifyCalls(data, knownHashes) {
   if (headerIdx === -1) return { newLogRows: [], duplicatesSkipped: 0 };
 
   const headers = data[headerIdx].map(h => String(h).trim());
-  const dtCol   = findCol(headers, ['Origination Date','Start Time','Start Date','Call Date','Date/Time','Date Time','Timestamp','Date']);
+  const dtCol   = findCol(headers, ['Origination Date','Start Time','Start Date','Call Date','Date/Time','Date Time','Timestamp','Call Start','Ring Time','DateTime','Date']);
   const extCol  = findCol(headers, ['Extension Description','Extension','Ext Description','Agent','User']);
   const dirCol  = findCol(headers, ['Call Direction','Direction']);
   const talkCol = findCol(headers, ['Talk Time','Talk','Connected Time','Connected']);

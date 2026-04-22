@@ -29,6 +29,11 @@
   .auth-subtitle{font-size:13px;color:var(--muted);text-align:center;margin-bottom:2rem;}
   .auth-field{margin-bottom:1rem;}
   .auth-field label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px;letter-spacing:.04em;}
+  .field-label-row{display:flex;align-items:center;gap:5px;margin-bottom:6px;}
+  .field-label-row label{display:block;font-size:12px;color:var(--muted);letter-spacing:.04em;margin:0;}
+  .info-tip{position:relative;display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border-radius:50%;border:1px solid var(--muted);color:var(--muted);font-size:9px;font-weight:700;cursor:default;line-height:1;flex-shrink:0;}
+  .info-tip::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:#1a3050;color:var(--text);font-size:11px;font-weight:400;letter-spacing:0;white-space:nowrap;padding:5px 9px;border-radius:6px;border:1px solid var(--border);pointer-events:none;opacity:0;transition:opacity .15s;z-index:10;}
+  .info-tip:hover::after{opacity:1;}
   .auth-field input,.auth-field select{width:100%;padding:10px 14px;background:var(--deep);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .2s;}
   .auth-field input:focus,.auth-field select:focus{border-color:var(--accent);}
   .auth-field select option{background:var(--deep);}
@@ -171,6 +176,22 @@
   .hm-cell{height:20px;border-radius:3px;background:rgba(0,212,255,.05);transition:background .3s;}
   .hm-labels{display:grid;grid-template-columns:repeat(8,1fr);min-width:600px;margin-top:4px;}
   .hm-label{font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;text-align:center;}
+  /* analysis tab */
+  .analysis-charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-bottom:4px;}
+  .analysis-chart-box{background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:14px 16px;}
+  .analysis-chart-title{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;}
+  #analysis-body{font-size:13px;line-height:1.7;color:var(--text);white-space:pre-wrap;}
+  #analysis-body p{margin:0 0 .85em;}
+  /* multi-row heatmap (week / month) */
+  .hm-grid{min-width:660px;}
+  .hm-row{display:grid;grid-template-columns:68px 1fr;gap:4px;margin-bottom:2px;align-items:center;}
+  .hm-row-lbl{font-size:10px;color:var(--muted);text-align:right;padding-right:6px;white-space:nowrap;font-family:'DM Mono',monospace;}
+  .hm-row-cells{display:grid;grid-template-columns:repeat(48,1fr);gap:2px;}
+  .hm-row.hm-summary{margin-top:6px;padding-top:6px;border-top:1px solid var(--border);}
+  .hm-row.hm-summary .hm-row-lbl{color:var(--accent2);font-size:10px;font-weight:600;}
+  .hm-row.hm-summary .hm-cell{height:24px;}
+  .hm-time-row{display:grid;grid-template-columns:68px 1fr;gap:4px;margin-top:4px;}
+  .hm-time-cells{display:grid;grid-template-columns:repeat(8,1fr);}
 
   /* HISTORY TABLE */
   .hist-tbl{width:100%;border-collapse:collapse;font-size:12px;}
@@ -191,6 +212,15 @@
   .acct-field label{font-size:12px;color:var(--muted);}
   .acct-field input{padding:9px 12px;background:var(--deep);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;font-family:'DM Sans',sans-serif;outline:none;max-width:400px;}
   .acct-field input:focus{border-color:var(--accent);}
+  .team-assign-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:5px;}
+  .team-assign-row{display:flex;align-items:center;justify-content:space-between;background:var(--card2);border:1px solid var(--border2);border-radius:7px;padding:5px 8px;}
+  .team-assign-name{font-size:12px;font-weight:500;}
+  .team-toggle{display:flex;gap:3px;}
+  .team-btn{padding:2px 7px;border-radius:5px;border:1px solid transparent;font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;}
+  .team-btn-sales{background:rgba(0,212,255,.08);color:var(--accent);border-color:rgba(0,212,255,.2);}
+  .team-btn-sales.active{background:var(--accent);color:var(--deep);}
+  .team-btn-service{background:rgba(0,255,148,.08);color:var(--accent2);border-color:rgba(0,255,148,.2);}
+  .team-btn-service.active{background:var(--accent2);color:var(--deep);}
   .col-map-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:1rem;}
   .col-map-item{display:flex;flex-direction:column;gap:4px;}
   .col-map-item label{font-size:12px;color:var(--muted);}
@@ -220,6 +250,23 @@
   .modal-field label{font-size:12px;color:var(--muted);}
   .modal-field select{padding:9px 12px;background:var(--deep);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;font-family:'DM Sans',sans-serif;outline:none;}
   .modal-footer{display:flex;gap:10px;justify-content:flex-end;margin-top:1.5rem;}
+
+  /* PLAN TIERS */
+  .plan-tier-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:1.2rem;}
+  @media(max-width:600px){.plan-tier-grid{grid-template-columns:1fr;}}
+  .plan-tier{background:var(--card2);border:2px solid var(--border2);border-radius:12px;padding:14px 12px;cursor:pointer;transition:border-color .2s;text-align:center;}
+  .plan-tier:hover{border-color:var(--accent);}
+  .plan-tier.plan-selected{border-color:var(--accent);background:rgba(0,212,255,.06);}
+  .plan-tier.plan-current{border-color:var(--accent2);}
+  .plan-tier-name{font-family:'Bebas Neue',sans-serif;font-size:1.2rem;color:var(--text);margin-bottom:4px;}
+  .plan-tier-price{font-size:1.4rem;font-weight:700;color:var(--accent);}
+  .plan-tier-price span{font-size:12px;color:var(--muted);font-weight:400;}
+  .plan-tier-badge{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--accent2);margin-top:4px;}
+  .plan-change-arrow{text-align:center;font-size:1.5rem;color:var(--muted);margin-bottom:.75rem;}
+  /* Trial-expired lockdown */
+  .trial-expired-banner{background:rgba(255,77,109,.08);border:1px solid rgba(255,77,109,.3);border-radius:12px;padding:1.25rem 1.5rem;margin-bottom:1.5rem;}
+  .trial-expired-banner h3{color:var(--danger);font-family:'Bebas Neue',sans-serif;font-size:1.5rem;margin-bottom:.4rem;}
+  .trial-expired-banner p{font-size:13px;color:var(--muted);}
 </style>
 </head>
 <body>
@@ -229,8 +276,8 @@
   <div class="auth-box">
     <div class="auth-logo">BOAT <span>RACE</span></div>
     <p class="auth-subtitle">Sales Competition Dashboard</p>
-    <div class="auth-field"><label>EMAIL</label><input id="li-email" type="email" placeholder="you@company.com" autocomplete="email"></div>
-    <div class="auth-field"><label>PASSWORD</label><input id="li-pass" type="password" placeholder="••••••••" autocomplete="current-password"></div>
+    <div class="auth-field"><label>EMAIL</label><input id="li-email" type="email" placeholder="you@company.com" autocomplete="email" onkeydown="if(event.key==='Enter')handleLogin()"></div>
+    <div class="auth-field"><label>PASSWORD</label><input id="li-pass" type="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')handleLogin()"></div>
     <button class="auth-btn" onclick="handleLogin()">Sign In</button>
     <div id="li-msg" class="auth-msg" style="display:none"></div>
     <div class="auth-footer">
@@ -254,12 +301,18 @@
       <div class="auth-field"><label>PHONE</label><input id="su-phone" type="tel" placeholder="555-555-5555"></div>
     </div>
     <div class="auth-row">
-      <div class="auth-field"><label>NUMBER OF AGENTS</label><input id="su-agents" type="number" min="1" max="500" value="1"></div>
+      <div class="auth-field">
+        <div class="field-label-row">
+          <label>NUMBER OF TEAMS</label>
+          <span class="info-tip" data-tip="1 sales team + 1 service team = 1 team">i</span>
+        </div>
+        <input id="su-agents" type="number" min="1" max="500" value="1">
+      </div>
       <div class="auth-field"><label>PLAN</label>
         <select id="su-plan">
-          <option value="basic">Basic</option>
-          <option value="pro">Pro</option>
-          <option value="enterprise">Enterprise</option>
+          <option value="basic">Basic — $25/mo</option>
+          <option value="pro">Pro — $35/mo</option>
+          <option value="premium" selected>Premium — $50/mo</option>
         </select>
       </div>
     </div>
@@ -269,6 +322,7 @@
     <div id="su-msg" class="auth-msg" style="display:none"></div>
     <div class="auth-footer">
       <button class="auth-link" onclick="showScreen('login')">Already have an account? Sign in</button>
+      <a href="/" class="auth-link" style="display:block;margin-top:6px;">← Back to the race</a>
     </div>
   </div>
 </div>
@@ -304,7 +358,7 @@
 <main>
   <div class="header">
     <div>
-      <h1>SALES BOAT <span>RACE</span></h1>
+      <h1>BOAT <span>RACE</span></h1>
       <p id="header-month">Loading…</p>
     </div>
     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
@@ -329,6 +383,7 @@
     <button class="tab" onclick="showTab('scoring',this)">Scoring</button>
     <button class="tab" onclick="showTab('manage',this)">Manage</button>
     <button class="tab" onclick="showTab('perf',this)">Performance</button>
+    <button class="tab" id="analysisTab" style="display:none" onclick="showTab('analysis',this)">Analysis</button>
     <button class="tab" onclick="showTab('history',this)">History</button>
     <button class="tab" onclick="showTab('account',this)">Account</button>
     <button class="tab" id="adminTab" style="display:none" onclick="showTab('adminpanel',this)">Admin</button>
@@ -366,6 +421,11 @@
         <button class="btn btn-secondary" onclick="loadRaceData()">Reload</button>
       </div>
       <div id="scoring-msg" style="font-size:13px;margin-top:10px;color:var(--accent2);display:none"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Team Assignments</div>
+      <div id="team-assign-grid"></div>
+      <div id="team-assign-msg" style="font-size:12px;margin-top:6px;display:none"></div>
     </div>
   </div>
 
@@ -413,7 +473,7 @@
     <div class="panel">
       <div class="panel-title">Call Performance</div>
       <div class="perf-controls">
-        <select class="perf-select" id="perf-period" onchange="renderPerf()">
+        <select class="perf-select" id="perf-period" onchange="populatePerfDates();renderPerf()">
           <option value="daily">Daily</option>
           <option value="weekly">Weekly</option>
           <option value="monthly" selected>Monthly</option>
@@ -425,7 +485,7 @@
       <div style="overflow-x:auto;">
         <table class="tbl" id="perf-tbl">
           <thead><tr>
-            <th style="text-align:left">Agent</th><th>Team</th>
+            <th style="text-align:left">Agent</th>
             <th>Placed</th><th>Answered</th><th>VM</th><th>Missed</th>
             <th>Talk Min</th><th>Avg Min</th><th>Max Min</th>
           </tr></thead>
@@ -436,12 +496,48 @@
     <div class="panel">
       <div class="panel-title">Voicemail Heatmap</div>
       <div class="perf-controls">
+        <select class="perf-select" id="vm-period" onchange="populateVmDates();renderVmHeatmap()">
+          <option value="day">Day</option>
+          <option value="week">Week</option>
+          <option value="month">Month</option>
+        </select>
         <select class="perf-select" id="vm-date" onchange="renderVmHeatmap()"></select>
       </div>
       <div class="heatmap-wrap">
         <div class="heatmap" id="vm-heatmap"></div>
         <div class="hm-labels" id="vm-labels"></div>
       </div>
+    </div>
+  </div>
+
+  <!-- ── TAB: ANALYSIS ── -->
+  <div id="tab-analysis" style="display:none">
+    <div class="panel">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.2rem;">
+        <div class="panel-title" style="margin:0">Performance Trends</div>
+        <button class="btn btn-secondary" id="analysis-refresh-btn" onclick="loadAnalysis()">Refresh Analysis</button>
+      </div>
+      <div class="analysis-charts">
+        <div class="analysis-chart-box">
+          <div class="analysis-chart-title">Calls Placed, Answered &amp; Policies</div>
+          <canvas id="chart-calls"></canvas>
+        </div>
+        <div class="analysis-chart-box">
+          <div class="analysis-chart-title">Talk Time (min)</div>
+          <canvas id="chart-talk"></canvas>
+        </div>
+        <div class="analysis-chart-box">
+          <div class="analysis-chart-title">Voicemail &amp; Missed</div>
+          <canvas id="chart-vm"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">AI Coaching Insights</div>
+      <div id="analysis-body">
+        <div style="color:var(--muted);font-size:13px;">Click <strong>Refresh Analysis</strong> to generate insights.</div>
+      </div>
+      <div id="analysis-msg" style="font-size:12px;margin-top:8px;display:none"></div>
     </div>
   </div>
 
@@ -464,9 +560,67 @@
   <!-- ── TAB: ACCOUNT ── -->
   <div id="tab-account" style="display:none">
     <div class="panel">
+      <div id="trial-expired-notice" class="trial-expired-banner" style="display:none">
+        <h3>Trial Expired</h3>
+        <p>Your 21-day trial has ended. Select a plan below to restore full dashboard access. An administrator will activate your account upon payment confirmation.</p>
+      </div>
       <div class="acct-section">
         <h3>Account Info</h3>
         <div class="acct-info-grid" id="acct-info-grid"></div>
+      </div>
+      <div class="acct-section">
+        <h3>Contact Information</h3>
+        <div class="acct-field"><label>CONTACT NAME</label><input id="ac-contact" type="text" placeholder="Jane Smith"></div>
+        <div class="acct-field"><label>PHONE</label><input id="ac-phone" type="tel" placeholder="555-555-5555"></div>
+        <button class="btn btn-primary" onclick="saveContactInfo()">Save Contact Info</button>
+        <div id="ac-contact-msg" style="font-size:13px;margin-top:10px;display:none"></div>
+      </div>
+      <div class="acct-section" id="report-delivery-section" style="display:none">
+        <h3>Report Delivery</h3>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Daily performance reports are sent to your account email. Set your timezone and preferred delivery hour.</p>
+        <div class="acct-field">
+          <label>TIMEZONE</label>
+          <select id="ac-timezone" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;width:100%;outline:none;">
+            <optgroup label="United States">
+              <option value="America/New_York">Eastern (ET)</option>
+              <option value="America/Chicago">Central (CT)</option>
+              <option value="America/Denver">Mountain (MT)</option>
+              <option value="America/Phoenix">Mountain – no DST (AZ)</option>
+              <option value="America/Los_Angeles">Pacific (PT)</option>
+              <option value="America/Anchorage">Alaska (AKT)</option>
+              <option value="Pacific/Honolulu">Hawaii (HT)</option>
+            </optgroup>
+            <optgroup label="International">
+              <option value="UTC">UTC</option>
+              <option value="Europe/London">London (GMT/BST)</option>
+              <option value="Europe/Paris">Central Europe (CET/CEST)</option>
+              <option value="Asia/Tokyo">Tokyo (JST)</option>
+              <option value="Australia/Sydney">Sydney (AEST/AEDT)</option>
+            </optgroup>
+          </select>
+        </div>
+        <div class="acct-field">
+          <label>DELIVERY HOUR</label>
+          <select id="ac-report-hour" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;width:100%;outline:none;">
+            <option value="5">5:00 AM</option>
+            <option value="6">6:00 AM</option>
+            <option value="7">7:00 AM</option>
+            <option value="8">8:00 AM</option>
+            <option value="9">9:00 AM</option>
+            <option value="10">10:00 AM</option>
+            <option value="11">11:00 AM</option>
+            <option value="12">12:00 PM</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" onclick="saveReportPrefs()">Save Report Preferences</button>
+        <div id="ac-report-msg" style="font-size:13px;margin-top:10px;display:none"></div>
+      </div>
+      <div class="acct-section" id="plan-upgrade-section">
+        <h3>Plan &amp; Billing</h3>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Select a plan to upgrade or change your subscription.</p>
+        <div class="plan-tier-grid" id="plan-tier-grid"></div>
+        <button class="btn btn-primary" id="plan-upgrade-btn" onclick="requestPlanUpgrade()" style="display:none">Request Plan Change</button>
+        <div id="ac-plan-msg" style="font-size:13px;margin-top:10px;display:none"></div>
       </div>
       <div class="acct-section">
         <h3>Change Password</h3>
@@ -511,6 +665,18 @@
 </main>
 </div>
 
+<!-- ── PLAN UPGRADE MODAL ── -->
+<div class="modal-overlay" id="plan-upgrade-modal">
+  <div class="modal-box">
+    <div class="modal-title">Confirm Plan Change</div>
+    <div id="plan-upgrade-summary"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="document.getElementById('plan-upgrade-modal').classList.remove('open')">Cancel</button>
+      <button class="btn btn-primary" id="plan-upgrade-confirm-btn" onclick="executePlanUpgrade()">Confirm</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── COLUMN MAPPER MODAL ── -->
 <div class="modal-overlay" id="col-mapper-modal">
   <div class="modal-box">
@@ -526,6 +692,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script>
 // ── CONFIG ──────────────────────────────────────────────────────────────────
 let _supabase = null;
@@ -533,6 +700,9 @@ let _userId   = null;
 let _userEmail= null;
 let _isAdmin  = false;
 let _acctStatus = 'trial';
+let _trialExpired = false;
+let _currentPlan = 'basic';
+let _selectedPlan = null;
 let _columnMap  = {};
 let _pendingUploadData = null;
 let _pendingUploadType = null;
@@ -540,7 +710,15 @@ let _uploadInProgress  = false;
 let _perfData = null;
 let _session  = null;
 let _adminRows = [];
+let _raceData  = [];
 let _processingToken = null;
+
+const PLAN_PRICES = { basic: 25, pro: 35, premium: 50 };
+const PLAN_FEATURES = {
+  basic:   'Dashboard + Race Tracker',
+  pro:     'Dashboard + Daily Reports',
+  premium: 'Dashboard + Reports + AI Analysis',
+};
 
 const COL_FIELDS = ['product','written_by','written_date','policy_name','policy_type'];
 const FIELD_LABELS = {
@@ -562,9 +740,11 @@ const DEFAULT_SCORING = {
 let SCORING = {...DEFAULT_SCORING};
 
 // ── INIT ─────────────────────────────────────────────────────────────────────
-function _ssGet(k)    { try { return sessionStorage.getItem(k); }    catch(_) { return null; } }
-function _ssSet(k, v) { try { sessionStorage.setItem(k, v); }        catch(_) {} }
-function _ssRemove(k) { try { sessionStorage.removeItem(k); }        catch(_) {} }
+// localStorage helpers — persistSession:false means Supabase never writes its own keys,
+// so our br-* keys have no lock contention and work across tabs.
+function _lsGet(k)    { try { return localStorage.getItem(k); }    catch(_) { return null; } }
+function _lsSet(k, v) { try { localStorage.setItem(k, v); }        catch(_) {} }
+function _lsRemove(k) { try { localStorage.removeItem(k); }        catch(_) {} }
 
 async function init() {
   try {
@@ -574,10 +754,10 @@ async function init() {
       throw new Error(cfg.error || 'Config unavailable — check Vercel env vars');
 
     // Enforce 8-hour session limit before restoring
-    const sessionStart = _ssGet('br-session-start');
+    const sessionStart = _lsGet('br-session-start');
     if (sessionStart && Date.now() - parseInt(sessionStart) > 8 * 3600 * 1000) {
-      _ssRemove('br-session');
-      _ssRemove('br-session-start');
+      _lsRemove('br-session');
+      _lsRemove('br-session-start');
     }
 
     // persistSession:false — Supabase never touches localStorage, eliminating
@@ -586,48 +766,63 @@ async function init() {
       auth: { persistSession: false }
     });
 
-    _supabase.auth.onAuthStateChange(async (event, session) => {
+    // Synchronous handler only — checkAccountAndShow is deferred via setTimeout(0).
+    // Running it inline causes a deadlock: setSession/signInWithPassword hold an internal
+    // auth lock while notifying subscribers, and our Supabase queries need that same lock.
+    _supabase.auth.onAuthStateChange((event, session) => {
       _session = session;
       if (event === 'PASSWORD_RECOVERY') { showScreen('recovery'); return; }
 
       if (!session) {
-        _ssRemove('br-session');
+        // INITIAL_SESSION null fires during setSession() before session is established —
+        // don't clear br-session or we erase the token mid-restore.
+        if (event !== 'INITIAL_SESSION') {
+          _lsRemove('br-session');
+          _lsRemove('br-session-start');
+        }
         _processingToken = null;
-        showScreen('login');
+        showLoginOrSignup();
         return;
       }
 
-      // Keep sessionStorage current so page-refresh restore works
-      _ssSet('br-session', JSON.stringify({
+      _lsSet('br-session', JSON.stringify({
         access_token:  session.access_token,
         refresh_token: session.refresh_token,
       }));
-
-      if (event === 'TOKEN_REFRESHED') return;
-
+      // App already showing — just keep tokens updated, no screen change needed
+      if (document.getElementById('screen-app').style.display !== 'none') return;
       if (_processingToken === session.access_token) return;
       _processingToken = session.access_token;
-      try {
-        await checkAccountAndShow(session);
-      } finally {
-        if (_processingToken === session.access_token) _processingToken = null;
-      }
+
+      setTimeout(async () => {
+        try {
+          await checkAccountAndShow(session);
+        } finally {
+          if (_processingToken === session.access_token) _processingToken = null;
+        }
+      }, 0);
     });
 
-    // Restore session from sessionStorage on page refresh
-    const saved = (() => { try { return JSON.parse(_ssGet('br-session') || 'null'); } catch(_) { return null; } })();
+    // Restore session from localStorage (works across tabs and page refreshes)
+    const saved = (() => { try { return JSON.parse(_lsGet('br-session') || 'null'); } catch(_) { return null; } })();
     if (saved?.access_token && saved?.refresh_token) {
-      const { error } = await _supabase.auth.setSession({
+      const { data, error } = await _supabase.auth.setSession({
         access_token:  saved.access_token,
         refresh_token: saved.refresh_token,
       });
-      if (error) { _ssRemove('br-session'); showScreen('login'); }
-      // On success, setSession fires SIGNED_IN → onAuthStateChange → checkAccountAndShow
+      if (error || !data?.session) {
+        _lsRemove('br-session');
+        try { await _supabase.auth.signOut(); } catch(_) {}
+        showScreen('login');
+      }
+      // On success: SIGNED_IN or TOKEN_REFRESHED already fired above,
+      // _processingToken is set, setTimeout(0) will call checkAccountAndShow
+      // after setSession releases its lock. No direct call needed here.
     } else {
-      showScreen('login');
+      showLoginOrSignup();
     }
   } catch(e) {
-    showScreen('login');
+    showLoginOrSignup();
     showMsg('li-msg', 'Init error: ' + e.message);
   }
 }
@@ -641,6 +836,17 @@ function showScreen(name) {
   if (name === 'login') {
     const msg = document.getElementById('li-msg');
     if (msg) msg.style.display = 'none';
+  }
+}
+
+function showLoginOrSignup() {
+  const params = new URLSearchParams(window.location.search);
+  const signup = params.get('signup') === 'true';
+  showScreen(signup ? 'signup' : 'login');
+  if (signup) {
+    const plan = params.get('plan');
+    const sel  = document.getElementById('su-plan');
+    if (sel && plan && ['basic','pro','premium'].includes(plan)) sel.value = plan;
   }
 }
 
@@ -658,24 +864,26 @@ function authHeaders() {
 }
 
 async function checkAccountAndShow(session) {
+  console.log('[br] checkAccountAndShow: start, user.id=', session?.user?.id ?? 'MISSING');
   try {
     _userId    = session.user.id;
     _userEmail = session.user.email;
 
-    const { data: acct } = await _supabase
+    const { data: acct, error: acctErr } = await _supabase
       .from('accounts')
       .select('*')
       .eq('user_id', _userId)
       .single();
-
     if (acct) {
       _isAdmin     = acct.is_admin || false;
       _acctStatus  = acct.status   || 'trial';
+      _currentPlan = acct.plan     || 'basic';
       _columnMap   = acct.sales_column_map || {};
 
       if (_acctStatus === 'trial' && acct.trial_ends_at) {
         if (new Date(acct.trial_ends_at) < new Date()) {
-          _acctStatus = 'past_due';
+          _acctStatus   = 'past_due';
+          _trialExpired = true;
         }
       }
     }
@@ -683,19 +891,37 @@ async function checkAccountAndShow(session) {
     showScreen('app');
     document.getElementById('user-info').textContent = _userEmail;
 
-    const restricted = (_acctStatus === 'past_due' || _acctStatus === 'cancelled');
     const banner = document.getElementById('restrict-banner');
     const msg    = document.getElementById('restrict-msg');
-    if (restricted) {
-      banner.style.display = 'flex';
-      msg.textContent = _acctStatus === 'cancelled'
-        ? 'Your account has been cancelled. Uploads are disabled.'
-        : 'Your account has a past-due balance. Uploads are disabled. Please update your payment information.';
-      document.getElementById('upload-panel-calls').style.display = 'none';
-      document.getElementById('upload-panel-sales').style.display = 'none';
+
+    if (_trialExpired) {
+      // Lock to Account tab only — hide all other tabs
+      document.querySelectorAll('.tab').forEach(t => {
+        const isAccount = (t.getAttribute('onclick') || '').includes("'account'");
+        t.style.display = isAccount ? '' : 'none';
+      });
+      document.querySelectorAll('[id^="tab-"]').forEach(el => el.style.display = 'none');
+      const acctTab = document.getElementById('tab-account');
+      if (acctTab) acctTab.style.display = 'block';
+      const acctBtn = document.querySelector('.tab[onclick*="\'account\'"]');
+      if (acctBtn) acctBtn.classList.add('active');
+      banner.style.display = 'none';
+    } else {
+      const restricted = (_acctStatus === 'past_due' || _acctStatus === 'cancelled');
+      if (restricted) {
+        banner.style.display = 'flex';
+        msg.textContent = _acctStatus === 'cancelled'
+          ? 'Your account has been cancelled. Uploads are disabled.'
+          : 'Your account has a past-due balance. Uploads are disabled. Please update your payment information.';
+        document.getElementById('upload-panel-calls').style.display = 'none';
+        document.getElementById('upload-panel-sales').style.display = 'none';
+      }
     }
 
     if (_isAdmin) document.getElementById('adminTab').style.display = '';
+    const isPremium = acct.plan === 'premium' && ['paid','deferred','trial'].includes(acct.status)
+      && !(acct.status === 'trial' && acct.trial_ends_at && new Date(acct.trial_ends_at) < new Date());
+    document.getElementById('analysisTab').style.display = (isPremium || _isAdmin) ? '' : 'none';
 
     buildColumnMapUI();
   } catch(e) {
@@ -705,8 +931,8 @@ async function checkAccountAndShow(session) {
   }
 
   // 8-hour auto-logout
-  if (!_ssGet('br-session-start')) _ssSet('br-session-start', Date.now().toString());
-  const _elapsed   = Date.now() - parseInt(_ssGet('br-session-start') || '0');
+  if (!_lsGet('br-session-start')) _lsSet('br-session-start', Date.now().toString());
+  const _elapsed   = Date.now() - parseInt(_lsGet('br-session-start') || '0');
   const _remaining = Math.max(0, 8 * 3600 * 1000 - _elapsed);
   if (_remaining > 0) setTimeout(handleSignOut, _remaining);
 
@@ -761,12 +987,17 @@ async function handleSignup() {
   const btn = document.querySelector('#screen-signup .auth-btn');
   if (btn) btn.disabled = true;
   try {
-    const { error } = await _supabase.auth.signUp({
+    const { data, error } = await _supabase.auth.signUp({
       email, password: pass,
       options: { data: { company_name: company, contact_name: contact, phone, plan, agent_count: agents, referral_source: referral } }
     });
     if (error) return showMsg('su-msg', error.message);
-    showMsg('su-msg', 'Account created! Check your email to confirm, or sign in now if confirmation is disabled.', 'ok');
+    // Supabase returns a user with empty identities when the email already exists
+    if (data?.user?.identities?.length === 0) {
+      return showMsg('su-msg',
+        'An account with this email already exists. <button class="auth-link" onclick="showScreen(\'login\')" style="font-size:inherit;display:inline;">Sign in here</button>.');
+    }
+    showMsg('su-msg', 'Account created! Sign in now to start your 21-day trial.', 'ok');
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -795,12 +1026,15 @@ async function handlePasswordReset() {
 
 async function handleSignOut() {
   try { await _supabase.auth.signOut(); } catch(e) { console.warn('signOut error:', e); }
-  _ssRemove('br-session');
-  _ssRemove('br-session-start');
+  _lsRemove('br-session');
+  _lsRemove('br-session-start');
   _userId = _userEmail = null;
   _isAdmin = false;
   _processingToken = null;
   _acctStatus = 'trial';
+  _trialExpired = false;
+  _currentPlan = 'basic';
+  _selectedPlan = null;
   _columnMap = {};
   _perfData = null;
   _adminRows = [];
@@ -813,6 +1047,7 @@ async function handleSignOut() {
 
 // ── TABS ──────────────────────────────────────────────────────────────────────
 function showTab(name, btn) {
+  if (_trialExpired && name !== 'account') return;
   document.querySelectorAll('[id^="tab-"]').forEach(el => el.style.display = 'none');
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   const tab = document.getElementById('tab-' + name);
@@ -822,7 +1057,7 @@ function showTab(name, btn) {
   if (name === 'adminpanel') loadAdminPanel();
   if (name === 'perf') loadPerf();
   if (name === 'history') loadHistory();
-  if (name === 'history') loadHistory();
+  if (name === 'analysis') { updateAnalysisBtn(); loadAnalysis(); }
 }
 
 // ── LOAD RACE DATA ────────────────────────────────────────────────────────────
@@ -849,7 +1084,8 @@ async function loadRaceData() {
   document.getElementById('header-month').textContent = month || 'No race data uploaded';
 
   buildScoringUI();
-  renderRace(rdRes.data || []);
+  _raceData = rdRes.data || [];
+  renderRace(_raceData);
 }
 
 function calcScore(ag) {
@@ -1016,6 +1252,45 @@ function buildScoringUI() {
     `<div class="score-field"><label>${lbl}</label>
     <input type="number" id="sc-${k}" step="0.1" value="${SCORING[k]}"></div>`
   ).join('');
+  buildTeamToggleUI();
+}
+
+function buildTeamToggleUI() {
+  const grid = document.getElementById('team-assign-grid');
+  if (!grid) return;
+  if (!_raceData.length) { grid.innerHTML = '<p style="font-size:13px;color:var(--muted)">Load race data first.</p>'; return; }
+  grid.innerHTML = [..._raceData].sort((a,b) => a.name.localeCompare(b.name)).map(ag => `
+    <div class="team-assign-row">
+      <span class="team-assign-name">${ag.name}</span>
+      <div class="team-toggle">
+        <button class="team-btn team-btn-sales${ag.team==='sales'?' active':''}"
+          onclick="setAgentTeam('${ag.agent_id}','sales',this)">Sales</button>
+        <button class="team-btn team-btn-service${ag.team==='service'?' active':''}"
+          onclick="setAgentTeam('${ag.agent_id}','service',this)">Service</button>
+      </div>
+    </div>`).join('');
+}
+
+async function setAgentTeam(agentId, team, btn) {
+  const { error } = await _supabase.from('race_data')
+    .update({ team })
+    .eq('user_id', _userId)
+    .eq('agent_id', agentId);
+  const msg = document.getElementById('team-assign-msg');
+  msg.style.display = 'block';
+  if (error) {
+    msg.style.color = 'var(--danger)'; msg.textContent = 'Error: ' + error.message;
+  } else {
+    const ag = _raceData.find(r => r.agent_id === agentId);
+    if (ag) {
+      ag.team = team;
+      if (_perfData) renderPerf();
+    }
+    buildTeamToggleUI();
+    renderRace(_raceData);
+    msg.style.color = 'var(--accent2)'; msg.textContent = 'Team updated.';
+  }
+  setTimeout(() => { msg.style.display = 'none'; }, 2500);
 }
 
 async function saveScoring() {
@@ -1104,7 +1379,8 @@ function handleFile(type, input) {
 
       logEl.innerHTML = `<span class="ok">${json.message || 'Upload complete'}</span>`
         + (json.new != null ? `<br><span>${json.new} new record${json.new !== 1 ? 's' : ''} inserted</span>` : '')
-        + (json.skipped ? `<br><span class="warn">${json.skipped} duplicate${json.skipped !== 1 ? 's' : ''} skipped</span>` : '');
+        + (json.skipped ? `<br><span class="warn">${json.skipped} duplicate${json.skipped !== 1 ? 's' : ''} skipped</span>` : '')
+;
 
       document.getElementById('last-upload-time').textContent = new Date().toLocaleString();
       await loadRaceData();
@@ -1186,6 +1462,7 @@ async function loadPerf() {
       return;
     }
     _perfData = await res.json();
+    console.log('[perf] call_log rows returned:', _perfData._debug?.rowCount ?? 'unknown');
     populatePerfDates();
     renderPerf();
     populateVmDates();
@@ -1199,56 +1476,314 @@ async function loadPerf() {
 
 function populatePerfDates() {
   const period = document.getElementById('perf-period').value;
+  const sel    = document.getElementById('perf-date');
+  const prev   = sel.value;
   const rows   = _perfData?.[period] || [];
-  const periods = [...new Set(rows.map(r => r[0]))].sort().reverse();
-  const sel = document.getElementById('perf-date');
-  sel.innerHTML = periods.map(p => `<option value="${p}">${p}</option>`).join('');
+  const keys   = [...new Set(rows.map(r => r[0]))];
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  if (period === 'daily') {
+    keys.sort((a, b) => {
+      const [am,ad,ay] = a.split('/').map(Number);
+      const [bm,bd,by] = b.split('/').map(Number);
+      return new Date(Date.UTC(ay,am-1,ad)) - new Date(Date.UTC(by,bm-1,bd));
+    });
+  } else if (period === 'monthly') {
+    keys.sort((a, b) => {
+      const [amon, ayear] = [MONTHS.indexOf(a.split(' ')[0]), parseInt(a.split(' ')[1])];
+      const [bmon, byear] = [MONTHS.indexOf(b.split(' ')[0]), parseInt(b.split(' ')[1])];
+      return (ayear*12+amon) - (byear*12+bmon);
+    });
+  } else {
+    keys.sort();
+  }
+  keys.reverse();
+  sel.innerHTML = keys.map(k => `<option value="${k}">${k}</option>`).join('');
+  if (prev && keys.includes(prev)) sel.value = prev;
 }
 
 function renderPerf() {
   if (!_perfData) return;
-  populatePerfDates();
   const period   = document.getElementById('perf-period').value;
   const selected = document.getElementById('perf-date').value;
   const rows = (_perfData[period] || []).filter(r => r[0] === selected);
+  const teamMap = {};
+  (_raceData || []).forEach(ag => { teamMap[ag.name] = ag.team; });
 
   document.getElementById('perf-body').innerHTML = rows.map(r => {
     const isTotal = r[1] === '— TEAM TOTAL —';
+    const team = !isTotal ? (teamMap[r[1]] || r[2]) : '';
+    const teamBadge = team
+      ? `<span class="team-badge ${team==='sales'?'badge-sales':'badge-service'}">${team}</span>`
+      : '';
     return `<tr${isTotal?' class="total-row"':''}>
-      <td>${r[1]}</td><td>${r[2]||''}</td>
+      <td>${r[1]}${teamBadge ? ' '+teamBadge : ''}</td>
       <td>${r[3]||0}</td><td>${r[4]||0}</td>
       <td>${r[5]||0}</td><td>${r[6]||0}</td>
       <td>${r[7]||0}</td><td>${r[8]||0}</td><td>${r[9]||0}</td>
     </tr>`;
-  }).join('') || '<tr><td colspan="9" style="color:var(--muted);text-align:center;padding:20px">No data</td></tr>';
+  }).join('') || '<tr><td colspan="8" style="color:var(--muted);text-align:center;padding:20px">No data</td></tr>';
+}
+
+const VM_MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function vmWeekKey(dateStr) {
+  const [m, d, y] = String(dateStr).split('/').map(Number);
+  if (!y) return null;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + 4 - (dt.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(dt.getUTCFullYear(), 0, 1));
+  const week = Math.ceil((((dt - yearStart) / 86400000) + 1) / 7);
+  return `${dt.getUTCFullYear()} Week ${String(week).padStart(2, '0')}`;
+}
+
+function vmMonthKey(dateStr) {
+  const [m, , y] = String(dateStr).split('/').map(Number);
+  if (!y) return null;
+  return `${VM_MONTH_ABBR[m - 1]} ${y}`;
 }
 
 function populateVmDates() {
-  const dates = (_perfData?.vmSlots || []).map(r => r[0]).sort().reverse();
-  document.getElementById('vm-date').innerHTML = dates.map(d => `<option value="${d}">${d}</option>`).join('');
+  const period = document.getElementById('vm-period')?.value || 'day';
+  const slots  = _perfData?.vmSlots || [];
+  let keys;
+  if (period === 'day') {
+    keys = slots.map(r => r[0]);
+  } else if (period === 'week') {
+    keys = [...new Set(slots.map(r => vmWeekKey(r[0])).filter(Boolean))];
+  } else {
+    keys = [...new Set(slots.map(r => vmMonthKey(r[0])).filter(Boolean))];
+  }
+  keys.sort().reverse();
+  document.getElementById('vm-date').innerHTML = keys.map(k => `<option value="${k}">${k}</option>`).join('');
+}
+
+const VM_DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+function vmDayLabel(dateStr) {
+  const [m, d, y] = String(dateStr).split('/').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return VM_DAY_NAMES[dt.getUTCDay()] + ' ' + m + '/' + d;
+}
+
+function vmCell(c, maxC, extraClass) {
+  const alpha = c / maxC;
+  const bg = c === 0 ? 'rgba(0,212,255,.04)' : `rgba(255,77,109,${0.1 + alpha * 0.85})`;
+  return `<div class="hm-cell${extraClass ? ' ' + extraClass : ''}" style="background:${bg}"></div>`;
 }
 
 function renderVmHeatmap() {
   if (!_perfData) return;
+  const period   = document.getElementById('vm-period')?.value || 'day';
   const selected = document.getElementById('vm-date').value;
-  const row = (_perfData.vmSlots || []).find(r => r[0] === selected);
-  const counts = row ? row.slice(1) : new Array(48).fill(0);
-  const maxC = Math.max(...counts, 1);
+  const slots    = _perfData.vmSlots || [];
+  const heatEl   = document.getElementById('vm-heatmap');
+  const lblEl    = document.getElementById('vm-labels');
 
-  document.getElementById('vm-heatmap').innerHTML = counts.map((c, i) => {
-    const alpha = c / maxC;
-    const bg = c === 0 ? 'rgba(0,212,255,.04)' : `rgba(255,77,109,${0.1 + alpha * 0.85})`;
-    const hour = Math.floor(i / 2);
-    const half = i % 2 === 0 ? '00' : '30';
-    return `<div class="hm-cell" title="${hour}:${half} — ${c} VMs" style="background:${bg}"></div>`;
+  const timeLabelHtml = () => {
+    let h = '';
+    for (let t = 0; t < 24; t += 3) h += `<div class="hm-label">${t}:00</div>`;
+    return h;
+  };
+
+  if (period === 'day') {
+    // Single row — original behaviour
+    const row    = slots.find(r => r[0] === selected);
+    const counts = row ? row.slice(1) : new Array(48).fill(0);
+    const maxC   = Math.max(...counts, 1);
+    heatEl.className = 'heatmap';
+    heatEl.innerHTML = counts.map((c, i) => {
+      const hour = Math.floor(i / 2), half = i % 2 === 0 ? '00' : '30';
+      return `<div class="hm-cell" title="${hour}:${half} — ${c} VM${c !== 1 ? 's' : ''}" style="background:${c === 0 ? 'rgba(0,212,255,.04)' : `rgba(255,77,109,${0.1 + (c/maxC) * 0.85})`}"></div>`;
+    }).join('');
+    lblEl.className = 'hm-labels';
+    lblEl.innerHTML = timeLabelHtml();
+    return;
+  }
+
+  // Week / Month — collect matching days sorted chronologically
+  const matchingRows = slots
+    .filter(r => (period === 'week' ? vmWeekKey(r[0]) : vmMonthKey(r[0])) === selected)
+    .sort((a, b) => {
+      const parse = s => { const [m,d,y] = s.split('/').map(Number); return new Date(Date.UTC(y,m-1,d)).getTime(); };
+      return parse(a[0]) - parse(b[0]);
+    });
+
+  // Summary = column-wise sum across all days
+  const summary = new Array(48).fill(0);
+  for (const r of matchingRows) for (let i = 0; i < 48; i++) summary[i] += (r[i + 1] || 0);
+
+  // Scale relative to max of individual day cells (not summary) so day variation is visible
+  let maxC = 1;
+  for (const r of matchingRows) for (let i = 0; i < 48; i++) maxC = Math.max(maxC, r[i + 1] || 0);
+  const maxS = Math.max(...summary, 1);
+
+  // Build rows
+  const rows = matchingRows.map(r => {
+    const cells = Array.from({length:48}, (_,i) => {
+      const c = r[i + 1] || 0;
+      const hour = Math.floor(i/2), half = i%2===0?'00':'30';
+      return `<div class="hm-cell" title="${vmDayLabel(r[0])} ${hour}:${half} — ${c} VM${c!==1?'s':''}" style="background:${c===0?'rgba(0,212,255,.04)':`rgba(255,77,109,${0.1+(c/maxC)*0.85})`}"></div>`;
+    }).join('');
+    return `<div class="hm-row">
+      <div class="hm-row-lbl">${vmDayLabel(r[0])}</div>
+      <div class="hm-row-cells">${cells}</div>
+    </div>`;
   }).join('');
 
-  const labels = [];
-  for (let h = 0; h < 24; h += 3) labels.push(`<div class="hm-label">${h}:00</div>`);
-  document.getElementById('vm-labels').innerHTML = labels.join('');
+  // Summary row
+  const sumCells = summary.map((c, i) => {
+    const hour = Math.floor(i/2), half = i%2===0?'00':'30';
+    return `<div class="hm-cell" title="${hour}:${half} — ${c} VM${c!==1?'s':''} total" style="background:${c===0?'rgba(0,212,255,.04)':`rgba(255,77,109,${0.1+(c/maxS)*0.85})`}"></div>`;
+  }).join('');
+
+  const label = period === 'week' ? 'Week Total' : 'Month Total';
+
+  heatEl.className = 'hm-grid';
+  heatEl.innerHTML = rows
+    + `<div class="hm-row hm-summary">
+        <div class="hm-row-lbl">${label}</div>
+        <div class="hm-row-cells">${sumCells}</div>
+       </div>`;
+
+  // Time labels aligned under the cells column
+  lblEl.className = '';
+  lblEl.innerHTML = `<div class="hm-time-row">
+    <div></div>
+    <div class="hm-time-cells">${timeLabelHtml()}</div>
+  </div>`;
 }
 
 // ── HISTORY TAB ───────────────────────────────────────────────────────────────
+// ── AI ANALYSIS ──────────────────────────────────────────────────────────────
+let _chartCalls = null, _chartTalk = null, _chartVm = null;
+let _analysisLoading = false;
+const ANALYSIS_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes client-side cooldown
+
+function analysisRemainingMs() {
+  const last = parseInt(_lsGet('br-analysis-last') || '0', 10);
+  return Math.max(0, last + ANALYSIS_COOLDOWN_MS - Date.now());
+}
+
+function updateAnalysisBtn() {
+  const btn = document.getElementById('analysis-refresh-btn');
+  if (!btn) return;
+  const remaining = analysisRemainingMs();
+  if (remaining > 0) {
+    const mins = Math.ceil(remaining / 60000);
+    btn.disabled = true;
+    btn.textContent = `Refresh (${mins}m)`;
+    setTimeout(updateAnalysisBtn, 60000);
+  } else {
+    btn.disabled = false;
+    btn.textContent = 'Refresh Analysis';
+  }
+}
+
+async function loadAnalysis() {
+  if (_analysisLoading) return;
+  if (analysisRemainingMs() > 0) return; // cooldown active
+  _analysisLoading = true;
+  const btn  = document.getElementById('analysis-refresh-btn');
+  const body = document.getElementById('analysis-body');
+  const msg  = document.getElementById('analysis-msg');
+  if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
+  body.innerHTML = '<div style="color:var(--muted);font-size:13px;">Loading analysis…</div>';
+  msg.style.display = 'none';
+
+  try {
+    const res  = await fetch('/api/ai-analysis', { headers: authHeaders() });
+    const data = await res.json();
+    if (!res.ok) {
+      body.innerHTML = `<div style="color:var(--danger);font-size:13px;">${data.error || 'Error loading analysis.'}</div>`;
+      return;
+    }
+
+    renderAnalysisCharts(data.chartData || []);
+
+    const paragraphs = (data.insights || '').split(/\n\n+/).filter(Boolean);
+    body.innerHTML = paragraphs.map(p => `<p>${p.trim()}</p>`).join('');
+
+    // Record cooldown start only for live calls (not cache hits)
+    if (!data.cached) _lsSet('br-analysis-last', String(Date.now()));
+
+    const source = data.cached
+      ? `Cached — generated ${new Date(data.cachedAt).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}`
+      : `Generated ${new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}`;
+    msg.style.display = 'block';
+    msg.style.color = 'var(--muted)';
+    msg.textContent = source;
+  } catch(e) {
+    body.innerHTML = `<div style="color:var(--danger);font-size:13px;">${e.message}</div>`;
+  } finally {
+    _analysisLoading = false;
+    updateAnalysisBtn();
+  }
+}
+
+function renderAnalysisCharts(data) {
+  const labels   = data.map(d => d.period);
+  const gridColor = 'rgba(255,255,255,0.05)';
+  const tickColor = '#6b8db5';
+  const chartDefaults = {
+    responsive: true,
+    maintainAspectRatio: true,
+    plugins: { legend: { labels: { color: '#a0b4c8', font: { size: 11 } } } },
+    scales: {
+      x: { ticks: { color: tickColor, font: { size: 10 } }, grid: { color: gridColor } },
+      y: { ticks: { color: tickColor, font: { size: 10 } }, grid: { color: gridColor }, beginAtZero: true },
+    },
+  };
+
+  // Calls chart
+  if (_chartCalls) _chartCalls.destroy();
+  _chartCalls = new Chart(document.getElementById('chart-calls'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label:'Placed',   data: data.map(d => d.placed),   borderColor:'#00d4ff', backgroundColor:'rgba(0,212,255,.1)', tension:.3, fill:true, yAxisID:'y' },
+        { label:'Answered', data: data.map(d => d.answered), borderColor:'#00ff94', backgroundColor:'rgba(0,255,148,.1)', tension:.3, fill:true, yAxisID:'y' },
+        { label:'Policies', data: data.map(d => d.policies), borderColor:'#ff8c42', backgroundColor:'rgba(255,140,66,.15)', tension:.3, fill:true, yAxisID:'y2', borderDash:[5,3] },
+      ],
+    },
+    options: {
+      ...chartDefaults,
+      scales: {
+        ...chartDefaults.scales,
+        y:  { ...chartDefaults.scales.y, position:'left' },
+        y2: { ...chartDefaults.scales.y, position:'right', grid:{ drawOnChartArea:false }, ticks:{ color:'#ff8c42', font:{ size:10 } } },
+      },
+    },
+  });
+
+  // Talk time chart
+  if (_chartTalk) _chartTalk.destroy();
+  _chartTalk = new Chart(document.getElementById('chart-talk'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label:'Talk Min', data: data.map(d => d.talkMin), borderColor:'#ffd166', backgroundColor:'rgba(255,209,102,.1)', tension:.3, fill:true },
+      ],
+    },
+    options: { ...chartDefaults, plugins: { legend: { display: false } } },
+  });
+
+  // Voicemail / missed chart
+  if (_chartVm) _chartVm.destroy();
+  _chartVm = new Chart(document.getElementById('chart-vm'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label:'Voicemail', data: data.map(d => d.voicemail), backgroundColor:'rgba(255,140,66,.7)' },
+        { label:'Missed',    data: data.map(d => d.missed),    backgroundColor:'rgba(255,80,80,.6)' },
+      ],
+    },
+    options: { ...chartDefaults, scales: { ...chartDefaults.scales, x: { ...chartDefaults.scales.x, stacked: false } } },
+  });
+}
+
 async function loadHistory() {
   try {
   const hdrs = authHeaders();
@@ -1281,16 +1816,45 @@ async function loadAccountTab() {
   document.getElementById('acct-info-grid').innerHTML = [
     ['Email', acct.email],
     ['Company', acct.company_name || '—'],
-    ['Contact', acct.contact_name || '—'],
-    ['Phone', acct.phone || '—'],
-    ['Plan', acct.plan || '—'],
     ['Status', statusLabels[acct.status] || acct.status],
+    ['Plan', (acct.plan || 'basic').charAt(0).toUpperCase() + (acct.plan||'basic').slice(1)
+      + ' — $' + (PLAN_PRICES[acct.plan] || '—') + '/mo'],
     ['Agents', acct.agent_count || 1],
     ['Trial Ends', trialEnd],
     ['Paid Through', paidThru],
   ].map(([lbl, val]) =>
     `<div class="acct-info-item"><div class="acct-info-label">${lbl}</div><div class="acct-info-val">${val}</div></div>`
   ).join('');
+
+  // Editable contact fields
+  document.getElementById('ac-contact').value = acct.contact_name || '';
+  document.getElementById('ac-phone').value   = acct.phone || '';
+
+  // Report delivery section (pro/premium only)
+  const isPaid = ['pro','premium'].includes(acct.plan) && !_trialExpired;
+  document.getElementById('report-delivery-section').style.display = isPaid ? '' : 'none';
+  if (isPaid) {
+    const tzSel = document.getElementById('ac-timezone');
+    const hrSel = document.getElementById('ac-report-hour');
+    tzSel.value = acct.timezone || 'America/Los_Angeles';
+    hrSel.value = String(acct.report_hour ?? 7);
+  }
+
+  // Trial expired notice
+  document.getElementById('trial-expired-notice').style.display = _trialExpired ? 'block' : 'none';
+
+  // Plan upgrade section
+  _currentPlan  = acct.plan || 'basic';
+  _selectedPlan = null;
+  document.getElementById('plan-upgrade-btn').style.display = 'none';
+  document.getElementById('plan-tier-grid').innerHTML = ['basic','pro','premium'].map(p => {
+    const isCurrent  = p === _currentPlan;
+    return `<div class="plan-tier${isCurrent?' plan-current':''}" onclick="selectPlan('${p}',this)">
+      <div class="plan-tier-name">${p.toUpperCase()}</div>
+      <div class="plan-tier-price">$${PLAN_PRICES[p]}<span>/mo</span></div>
+      <div class="plan-tier-badge">${isCurrent ? '✓ Current Plan' : PLAN_FEATURES[p]}</div>
+    </div>`;
+  }).join('');
 
   buildColumnMapUI();
   if (acct.sales_column_map) _columnMap = acct.sales_column_map;
@@ -1320,6 +1884,81 @@ function buildColumnMapUI() {
   ).join('');
 }
 
+async function saveContactInfo() {
+  const contact = document.getElementById('ac-contact').value.trim();
+  const phone   = document.getElementById('ac-phone').value.trim();
+  const msg     = document.getElementById('ac-contact-msg');
+  msg.style.display = 'block';
+  const { error } = await _supabase.from('accounts').update({ contact_name: contact, phone }).eq('user_id', _userId);
+  if (error) { msg.style.color='var(--danger)'; msg.textContent='Error: '+error.message; }
+  else { msg.style.color='var(--accent2)'; msg.textContent='Contact info saved.'; }
+  setTimeout(() => { msg.style.display='none'; }, 3000);
+}
+
+async function saveReportPrefs() {
+  const timezone    = document.getElementById('ac-timezone').value;
+  const report_hour = parseInt(document.getElementById('ac-report-hour').value, 10);
+  const msg         = document.getElementById('ac-report-msg');
+  msg.style.display = 'block';
+  const { error } = await _supabase.from('accounts').update({ timezone, report_hour }).eq('user_id', _userId);
+  if (error) { msg.style.color='var(--danger)'; msg.textContent='Error: '+error.message; }
+  else { msg.style.color='var(--accent2)'; msg.textContent='Report preferences saved.'; }
+  setTimeout(() => { msg.style.display='none'; }, 3000);
+}
+
+function selectPlan(plan, el) {
+  if (plan === _currentPlan) return;
+  _selectedPlan = plan;
+  document.querySelectorAll('.plan-tier').forEach(t => t.classList.remove('plan-selected'));
+  el.classList.add('plan-selected');
+  document.getElementById('plan-upgrade-btn').style.display = '';
+}
+
+function requestPlanUpgrade() {
+  if (!_selectedPlan || _selectedPlan === _currentPlan) return;
+  const oldPrice = PLAN_PRICES[_currentPlan] || 0;
+  const newPrice = PLAN_PRICES[_selectedPlan];
+  const dir      = newPrice > oldPrice ? 'upgrade' : 'downgrade';
+  document.getElementById('plan-upgrade-summary').innerHTML =
+    `<p style="font-size:14px;margin-bottom:1rem;color:var(--muted);">You are requesting a plan ${dir}:</p>
+    <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;">
+      <div style="flex:1;background:var(--card2);border-radius:10px;padding:12px;text-align:center;">
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;margin-bottom:4px;">Current</div>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:1.3rem;">${_currentPlan.toUpperCase()}</div>
+        <div style="color:var(--accent);font-weight:700;">$${oldPrice}/mo</div>
+      </div>
+      <div style="font-size:1.5rem;color:var(--muted);">→</div>
+      <div style="flex:1;background:var(--card2);border-radius:10px;padding:12px;text-align:center;border:1px solid var(--accent);">
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;margin-bottom:4px;">New</div>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:1.3rem;">${_selectedPlan.toUpperCase()}</div>
+        <div style="color:var(--accent);font-weight:700;">$${newPrice}/mo</div>
+      </div>
+    </div>
+    <p style="font-size:12px;color:var(--muted);">Your request will be reviewed by an administrator who will activate the change upon payment confirmation.</p>`;
+  document.getElementById('plan-upgrade-modal').classList.add('open');
+}
+
+async function executePlanUpgrade() {
+  if (!_selectedPlan) return;
+  const btn = document.getElementById('plan-upgrade-confirm-btn');
+  btn.disabled = true;
+  const { error } = await _supabase.from('accounts').update({ plan: _selectedPlan }).eq('user_id', _userId);
+  document.getElementById('plan-upgrade-modal').classList.remove('open');
+  btn.disabled = false;
+  const msg = document.getElementById('ac-plan-msg');
+  msg.style.display = 'block';
+  if (error) {
+    msg.style.color='var(--danger)'; msg.textContent='Error: '+error.message;
+  } else {
+    _currentPlan = _selectedPlan;
+    _selectedPlan = null;
+    msg.style.color='var(--accent2)';
+    msg.textContent='Plan change requested. An administrator will activate your account upon payment confirmation.';
+    loadAccountTab();
+  }
+  setTimeout(() => { msg.style.display='none'; }, 6000);
+}
+
 async function saveColumnMap() {
   const map = {};
   COL_FIELDS.forEach(f => {
@@ -1346,15 +1985,15 @@ async function loadAdminPanel() {
 }
 
 function renderAdminTable(rows) {
-  const statusOpts = ['trial','paid','deferred','past_due','cancelled'].map(s =>
-    `<option value="${s}">${s}</option>`).join('');
-
   document.getElementById('admin-body').innerHTML = rows.map(r => `
     <tr data-uid="${r.user_id}">
       <td>${r.email}</td>
       <td>${r.company_name||'—'}</td>
       <td>${r.contact_name||'—'}</td>
-      <td>${r.plan||'—'}</td>
+      <td><select class="admin-select" onchange="adminSave('${r.user_id}','plan',this.value)">
+        ${['basic','pro','premium'].map(p =>
+          `<option value="${p}"${p===(r.plan||'basic')?' selected':''}>${p} — $${PLAN_PRICES[p]||'?'}</option>`).join('')}
+      </select></td>
       <td><span class="status-pill sp-${r.status||'trial'}">${r.status||'trial'}</span></td>
       <td>${r.agent_count||1}</td>
       <td>${r.trial_ends_at ? new Date(r.trial_ends_at).toLocaleDateString() : '—'}</td>

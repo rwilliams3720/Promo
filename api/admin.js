@@ -38,7 +38,7 @@ export default async function handler(req, res) {
     const { userId, ...fields } = req.body || {};
     if (!userId) return res.status(400).json({ error: 'userId required' });
 
-    const allowed = ['status','notes','paid_through','is_admin','plan','agent_count','trial_ends_at','stripe_customer_id'];
+    const allowed = ['status','notes','paid_through','is_admin','plan','agent_count','trial_ends_at','stripe_customer_id','timezone','report_hour'];
     const update  = {};
     for (const key of allowed) {
       if (fields[key] !== undefined) update[key] = fields[key];

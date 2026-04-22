@@ -6,7 +6,11 @@
     { "src": "api/perf.js",    "use": "@vercel/node" },
     { "src": "api/config.js",  "use": "@vercel/node" },
     { "src": "api/admin.js",   "use": "@vercel/node" },
-    { "src": "index.html",     "use": "@vercel/static" }
+    { "src": "api/cleanup.js",      "use": "@vercel/node" },
+    { "src": "api/email-report.js", "use": "@vercel/node" },
+    { "src": "api/ai-analysis.js",  "use": "@vercel/node" },
+    { "src": "index.html",     "use": "@vercel/static" },
+    { "src": "landing.html",  "use": "@vercel/static" }
   ],
   "routes": [
     { "src": "/api/upload",  "dest": "/api/upload.js"  },
@@ -14,6 +18,14 @@
     { "src": "/api/perf",    "dest": "/api/perf.js"    },
     { "src": "/api/config",  "dest": "/api/config.js"  },
     { "src": "/api/admin",   "dest": "/api/admin.js"   },
+    { "src": "/api/cleanup",      "dest": "/api/cleanup.js"      },
+    { "src": "/api/email-report", "dest": "/api/email-report.js" },
+    { "src": "/api/ai-analysis",  "dest": "/api/ai-analysis.js"  },
+    { "src": "/",            "dest": "/landing.html"   },
     { "src": "/(.*)",        "dest": "/index.html"     }
+  ],
+  "crons": [
+    { "path": "/api/cleanup",      "schedule": "0 3 1 * *" },
+    { "path": "/api/email-report", "schedule": "0 * * * *" }
   ]
 }
