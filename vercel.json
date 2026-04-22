@@ -16,7 +16,8 @@
     { "src": "index.html",    "use": "@vercel/static" },
     { "src": "landing.html",  "use": "@vercel/static" },
     { "src": "favicon.svg",   "use": "@vercel/static" },
-    { "src": "og.svg",        "use": "@vercel/static" }
+    { "src": "og.svg",        "use": "@vercel/static" },
+    { "src": "og.png",        "use": "@vercel/static" }
   ],
   "routes": [
     { "src": "/api/upload",  "dest": "/api/upload.js"  },
@@ -33,6 +34,7 @@
     { "src": "/api/og",        "dest": "/api/og.js"      },
     { "src": "/favicon.svg",  "dest": "/favicon.svg"    },
     { "src": "/og.svg",       "dest": "/og.svg"         },
+    { "src": "/og.png",       "dest": "/og.png"         },
     { "src": "/",             "dest": "/landing.html"   },
     { "src": "/(.*)",         "dest": "/index.html"     }
   ],
