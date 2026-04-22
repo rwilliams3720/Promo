@@ -617,9 +617,10 @@
       </div>
       <div class="acct-section" id="plan-upgrade-section">
         <h3>Plan &amp; Billing</h3>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Select a plan to upgrade or change your subscription.</p>
+        <p id="plan-billing-desc" style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Select a plan to start your subscription.</p>
         <div class="plan-tier-grid" id="plan-tier-grid"></div>
-        <button class="btn btn-primary" id="plan-upgrade-btn" onclick="requestPlanUpgrade()" style="display:none">Request Plan Change</button>
+        <button class="btn btn-primary" id="plan-upgrade-btn" onclick="requestPlanUpgrade()" style="display:none">Subscribe — Checkout with Stripe</button>
+        <button class="btn btn-secondary" id="plan-portal-btn" onclick="openBillingPortal()" style="display:none;margin-top:.5rem;">Manage Billing &amp; Subscription</button>
         <div id="ac-plan-msg" style="font-size:13px;margin-top:10px;display:none"></div>
       </div>
       <div class="acct-section">
@@ -665,17 +666,6 @@
 </main>
 </div>
 
-<!-- ── PLAN UPGRADE MODAL ── -->
-<div class="modal-overlay" id="plan-upgrade-modal">
-  <div class="modal-box">
-    <div class="modal-title">Confirm Plan Change</div>
-    <div id="plan-upgrade-summary"></div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="document.getElementById('plan-upgrade-modal').classList.remove('open')">Cancel</button>
-      <button class="btn btn-primary" id="plan-upgrade-confirm-btn" onclick="executePlanUpgrade()">Confirm</button>
-    </div>
-  </div>
-</div>
 
 <!-- ── COLUMN MAPPER MODAL ── -->
 <div class="modal-overlay" id="col-mapper-modal">
@@ -890,6 +880,18 @@ async function checkAccountAndShow(session) {
 
     showScreen('app');
     document.getElementById('user-info').textContent = _userEmail;
+
+    // Handle return from Stripe Checkout
+    const _urlParams = new URLSearchParams(window.location.search);
+    if (_urlParams.get('billing') === 'success') {
+      history.replaceState({}, '', '/app');
+      setTimeout(() => {
+        const msg = document.getElementById('ac-plan-msg');
+        if (msg) { msg.style.display='block'; msg.style.color='var(--accent2)'; msg.textContent='Payment successful! Your subscription is now active.'; setTimeout(()=>{msg.style.display='none';},8000); }
+      }, 800);
+    } else if (_urlParams.get('billing') === 'cancel') {
+      history.replaceState({}, '', '/app');
+    }
 
     const banner = document.getElementById('restrict-banner');
     const msg    = document.getElementById('restrict-msg');
@@ -1845,8 +1847,16 @@ async function loadAccountTab() {
 
   // Plan upgrade section
   _currentPlan  = acct.plan || 'basic';
+  _acctStatus   = acct.status || _acctStatus;
   _selectedPlan = null;
-  document.getElementById('plan-upgrade-btn').style.display = 'none';
+  const isPaid = _acctStatus === 'paid' || _acctStatus === 'deferred';
+  document.getElementById('plan-upgrade-btn').style.display  = 'none';
+  document.getElementById('plan-portal-btn').style.display   = isPaid ? '' : 'none';
+  document.getElementById('plan-portal-btn').disabled        = false;
+  document.getElementById('plan-portal-btn').textContent     = 'Manage Billing & Subscription';
+  document.getElementById('plan-billing-desc').textContent   = isPaid
+    ? 'Select a different plan below, or manage your subscription and payment method via the billing portal.'
+    : 'Select a plan below and subscribe via Stripe to activate your account.';
   document.getElementById('plan-tier-grid').innerHTML = ['basic','pro','premium'].map(p => {
     const isCurrent  = p === _currentPlan;
     return `<div class="plan-tier${isCurrent?' plan-current':''}" onclick="selectPlan('${p}',this)">
@@ -1912,51 +1922,58 @@ function selectPlan(plan, el) {
   document.querySelectorAll('.plan-tier').forEach(t => t.classList.remove('plan-selected'));
   el.classList.add('plan-selected');
   document.getElementById('plan-upgrade-btn').style.display = '';
+  document.getElementById('plan-upgrade-btn').textContent =
+    _acctStatus === 'paid' || _acctStatus === 'deferred'
+      ? 'Change Plan — Checkout with Stripe'
+      : 'Subscribe — Checkout with Stripe';
 }
 
-function requestPlanUpgrade() {
+async function requestPlanUpgrade() {
   if (!_selectedPlan || _selectedPlan === _currentPlan) return;
-  const oldPrice = PLAN_PRICES[_currentPlan] || 0;
-  const newPrice = PLAN_PRICES[_selectedPlan];
-  const dir      = newPrice > oldPrice ? 'upgrade' : 'downgrade';
-  document.getElementById('plan-upgrade-summary').innerHTML =
-    `<p style="font-size:14px;margin-bottom:1rem;color:var(--muted);">You are requesting a plan ${dir}:</p>
-    <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;">
-      <div style="flex:1;background:var(--card2);border-radius:10px;padding:12px;text-align:center;">
-        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;margin-bottom:4px;">Current</div>
-        <div style="font-family:'Bebas Neue',sans-serif;font-size:1.3rem;">${_currentPlan.toUpperCase()}</div>
-        <div style="color:var(--accent);font-weight:700;">$${oldPrice}/mo</div>
-      </div>
-      <div style="font-size:1.5rem;color:var(--muted);">→</div>
-      <div style="flex:1;background:var(--card2);border-radius:10px;padding:12px;text-align:center;border:1px solid var(--accent);">
-        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;margin-bottom:4px;">New</div>
-        <div style="font-family:'Bebas Neue',sans-serif;font-size:1.3rem;">${_selectedPlan.toUpperCase()}</div>
-        <div style="color:var(--accent);font-weight:700;">$${newPrice}/mo</div>
-      </div>
-    </div>
-    <p style="font-size:12px;color:var(--muted);">Your request will be reviewed by an administrator who will activate the change upon payment confirmation.</p>`;
-  document.getElementById('plan-upgrade-modal').classList.add('open');
+  const btn = document.getElementById('plan-upgrade-btn');
+  const msg = document.getElementById('ac-plan-msg');
+  btn.disabled = true;
+  btn.textContent = 'Redirecting to Stripe…';
+  try {
+    const r = await fetch('/api/stripe-checkout', {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan: _selectedPlan }),
+    });
+    const data = await r.json();
+    if (!r.ok || !data.url) throw new Error(data.error || 'Checkout failed');
+    window.location.href = data.url;
+  } catch (err) {
+    msg.style.display = 'block';
+    msg.style.color = 'var(--danger)';
+    msg.textContent = 'Error: ' + err.message;
+    btn.disabled = false;
+    btn.textContent = 'Subscribe — Checkout with Stripe';
+    setTimeout(() => { msg.style.display = 'none'; }, 5000);
+  }
 }
 
-async function executePlanUpgrade() {
-  if (!_selectedPlan) return;
-  const btn = document.getElementById('plan-upgrade-confirm-btn');
-  btn.disabled = true;
-  const { error } = await _supabase.from('accounts').update({ plan: _selectedPlan }).eq('user_id', _userId);
-  document.getElementById('plan-upgrade-modal').classList.remove('open');
-  btn.disabled = false;
+async function openBillingPortal() {
+  const btn = document.getElementById('plan-portal-btn');
   const msg = document.getElementById('ac-plan-msg');
-  msg.style.display = 'block';
-  if (error) {
-    msg.style.color='var(--danger)'; msg.textContent='Error: '+error.message;
-  } else {
-    _currentPlan = _selectedPlan;
-    _selectedPlan = null;
-    msg.style.color='var(--accent2)';
-    msg.textContent='Plan change requested. An administrator will activate your account upon payment confirmation.';
-    loadAccountTab();
+  btn.disabled = true;
+  btn.textContent = 'Opening portal…';
+  try {
+    const r = await fetch('/api/stripe-portal', {
+      method: 'POST',
+      headers: authHeaders(),
+    });
+    const data = await r.json();
+    if (!r.ok || !data.url) throw new Error(data.error || 'Portal unavailable');
+    window.location.href = data.url;
+  } catch (err) {
+    msg.style.display = 'block';
+    msg.style.color = 'var(--danger)';
+    msg.textContent = 'Error: ' + err.message;
+    btn.disabled = false;
+    btn.textContent = 'Manage Billing & Subscription';
+    setTimeout(() => { msg.style.display = 'none'; }, 5000);
   }
-  setTimeout(() => { msg.style.display='none'; }, 6000);
 }
 
 async function saveColumnMap() {
