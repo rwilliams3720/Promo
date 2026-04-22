@@ -157,8 +157,9 @@ async function buildReport(userId, dateStr, dateLabel, acct) {
   for (const id of Object.keys(AGENT_INFO)) {
     callStats[id] = { placed: 0, answered: 0, talkSecs: 0 };
   }
-  let totalCalls = 0, totalAnswered = 0, totalTalkSecs = 0;
+  let totalCalls = 0, totalAnswered = 0, totalTalkSecs = 0, totalVoicemails = 0;
   for (const row of (calls || [])) {
+    if (row.disposition === 'voicemail') { totalVoicemails++; continue; }
     if (!row.agent_id || !callStats[row.agent_id]) continue;
     const s = callStats[row.agent_id];
     if (row.disposition === 'placed')   { s.placed++;   totalCalls++; }
@@ -177,7 +178,7 @@ async function buildReport(userId, dateStr, dateLabel, acct) {
     totalPolicies++;
   }
 
-  const html = buildHtml(acct, dateLabel, callStats, salesStats, totalCalls, totalAnswered, totalTalkSecs, totalPolicies);
+  const html = buildHtml(acct, dateLabel, callStats, salesStats, totalCalls, totalAnswered, totalTalkSecs, totalPolicies, totalVoicemails);
   return { hasData, html };
 }
 
@@ -209,7 +210,7 @@ function agentRows(callStats, salesStats) {
     }).join('');
 }
 
-function buildHtml(acct, dateLabel, callStats, salesStats, totalCalls, totalAnswered, totalTalkSecs, totalPolicies) {
+function buildHtml(acct, dateLabel, callStats, salesStats, totalCalls, totalAnswered, totalTalkSecs, totalPolicies, totalVoicemails) {
   const company = acct.company_name || 'Your Team';
   return `<!DOCTYPE html>
 <html>
@@ -226,29 +227,42 @@ function buildHtml(acct, dateLabel, callStats, salesStats, totalCalls, totalAnsw
     <div style="font-size:13px;color:#6b8db5;margin-top:2px;">${company}</div>
   </td></tr>
 
-  <!-- Summary cards -->
-  <tr><td style="background:#132744;padding:24px 32px;border-bottom:1px solid #1e3a5f;">
+  <!-- Summary cards — row 1: Placed | Received | Voicemails -->
+  <tr><td style="background:#132744;padding:24px 32px 12px;border-bottom:none;">
     <table width="100%" cellpadding="0" cellspacing="0">
       <tr>
-        <td width="25%" style="text-align:center;padding:0 8px;">
+        <td width="33%" style="text-align:center;padding:0 6px;">
           <div style="background:#060e1c;border-radius:10px;padding:14px 8px;border:1px solid #1e3a5f;">
-            <div style="font-size:11px;color:#6b8db5;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Total Calls</div>
+            <div style="font-size:11px;color:#6b8db5;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Placed</div>
             <div style="font-size:28px;font-weight:700;color:#00d4ff;">${totalCalls}</div>
           </div>
         </td>
-        <td width="25%" style="text-align:center;padding:0 8px;">
+        <td width="33%" style="text-align:center;padding:0 6px;">
           <div style="background:#060e1c;border-radius:10px;padding:14px 8px;border:1px solid #1e3a5f;">
-            <div style="font-size:11px;color:#6b8db5;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Answered</div>
+            <div style="font-size:11px;color:#6b8db5;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Received</div>
             <div style="font-size:28px;font-weight:700;color:#00ff94;">${totalAnswered}</div>
           </div>
         </td>
-        <td width="25%" style="text-align:center;padding:0 8px;">
+        <td width="33%" style="text-align:center;padding:0 6px;">
+          <div style="background:#060e1c;border-radius:10px;padding:14px 8px;border:1px solid #1e3a5f;">
+            <div style="font-size:11px;color:#6b8db5;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Voicemails</div>
+            <div style="font-size:28px;font-weight:700;color:#ff4d6d;">${totalVoicemails}</div>
+          </div>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+  <!-- Summary cards — row 2: Talk Time | Policies -->
+  <tr><td style="background:#132744;padding:12px 32px 24px;border-bottom:1px solid #1e3a5f;">
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td width="50%" style="text-align:center;padding:0 6px;">
           <div style="background:#060e1c;border-radius:10px;padding:14px 8px;border:1px solid #1e3a5f;">
             <div style="font-size:11px;color:#6b8db5;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Talk Time</div>
             <div style="font-size:22px;font-weight:700;color:#ffd166;">${fmtTime(totalTalkSecs)}</div>
           </div>
         </td>
-        <td width="25%" style="text-align:center;padding:0 8px;">
+        <td width="50%" style="text-align:center;padding:0 6px;">
           <div style="background:#060e1c;border-radius:10px;padding:14px 8px;border:1px solid #1e3a5f;">
             <div style="font-size:11px;color:#6b8db5;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Policies</div>
             <div style="font-size:28px;font-weight:700;color:#ff8c42;">${totalPolicies}</div>
@@ -267,7 +281,7 @@ function buildHtml(acct, dateLabel, callStats, salesStats, totalCalls, totalAnsw
           <th style="padding:8px 12px;text-align:left;font-size:10px;color:#6b8db5;text-transform:uppercase;letter-spacing:.06em;font-weight:600;">Agent</th>
           <th style="padding:8px 12px;text-align:left;font-size:10px;color:#6b8db5;text-transform:uppercase;letter-spacing:.06em;font-weight:600;">Team</th>
           <th style="padding:8px 12px;text-align:center;font-size:10px;color:#6b8db5;text-transform:uppercase;letter-spacing:.06em;font-weight:600;">Placed</th>
-          <th style="padding:8px 12px;text-align:center;font-size:10px;color:#6b8db5;text-transform:uppercase;letter-spacing:.06em;font-weight:600;">Answered</th>
+          <th style="padding:8px 12px;text-align:center;font-size:10px;color:#6b8db5;text-transform:uppercase;letter-spacing:.06em;font-weight:600;">Received</th>
           <th style="padding:8px 12px;text-align:center;font-size:10px;color:#6b8db5;text-transform:uppercase;letter-spacing:.06em;font-weight:600;">Talk Time</th>
           <th style="padding:8px 12px;text-align:left;font-size:10px;color:#6b8db5;text-transform:uppercase;letter-spacing:.06em;font-weight:600;">Policies Issued</th>
         </tr>
