@@ -1833,17 +1833,19 @@ async function loadAccountTab() {
   const { data: acct } = await _supabase.from('accounts').select('*').eq('user_id', _userId).single();
   if (!acct) return;
 
-  const statusLabels = { trial:'Trial', paid:'Paid', deferred:'Deferred', past_due:'Past Due', cancelled:'Cancelled' };
-  const trialEnd = acct.trial_ends_at ? new Date(acct.trial_ends_at).toLocaleDateString() : '—';
-  const paidThru = acct.paid_through  ? new Date(acct.paid_through).toLocaleDateString()  : '—';
+  const isSubscribed = ['paid','deferred'].includes(acct.status);
+  const planName     = (acct.plan || 'basic').charAt(0).toUpperCase() + (acct.plan || 'basic').slice(1);
+  const planDisplay  = acct.status === 'trial'
+    ? 'Trial'
+    : `Subscribed to ${planName} — $${PLAN_PRICES[acct.plan] || '—'}/mo`;
+  const trialEnd = (!isSubscribed && acct.trial_ends_at) ? new Date(acct.trial_ends_at).toLocaleDateString() : '—';
+  const paidThru = acct.paid_through ? new Date(acct.paid_through).toLocaleDateString() : '—';
 
   document.getElementById('acct-info-grid').innerHTML = [
     ['Email', acct.email],
     ['Company', acct.company_name || '—'],
-    ['Status', statusLabels[acct.status] || acct.status],
-    ['Plan', (acct.plan || 'basic').charAt(0).toUpperCase() + (acct.plan||'basic').slice(1)
-      + ' — $' + (PLAN_PRICES[acct.plan] || '—') + '/mo'],
-    ['Agents', acct.agent_count || 1],
+    ['Plan', planDisplay],
+    ['Teams', acct.agent_count || 1],
     ['Trial Ends', trialEnd],
     ['Paid Through', paidThru],
   ].map(([lbl, val]) =>
