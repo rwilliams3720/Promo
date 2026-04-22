@@ -1045,6 +1045,11 @@ async function handleSignOut() {
 }
 
 // ── TABS ──────────────────────────────────────────────────────────────────────
+function goToAccountTab() {
+  const btn = document.querySelector('.tab[onclick*="account"]');
+  showTab('account', btn);
+}
+
 function showTab(name, btn) {
   if (_trialExpired && name !== 'account') return;
   document.querySelectorAll('[id^="tab-"]').forEach(el => el.style.display = 'none');
@@ -1693,9 +1698,7 @@ function renderAnalysisTrialTeaser() {
         top performer breakdowns, agents who need coaching, and specific actions your manager can take this week.
         Powered by Claude AI and updated every 4 hours.
       </p>
-      <button class="btn btn-primary" onclick="showTab('account', document.querySelector('.tab[onclick*=\'account\']'))">
-        Upgrade to Premium
-      </button>
+      <button class="btn btn-primary" onclick="goToAccountTab()">Upgrade to Premium</button>
     </div>`;
   document.getElementById('analysis-msg').style.display = 'none';
 }
