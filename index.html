@@ -1849,12 +1849,12 @@ async function loadAccountTab() {
   _currentPlan  = acct.plan || 'basic';
   _acctStatus   = acct.status || _acctStatus;
   _selectedPlan = null;
-  const isPaid = _acctStatus === 'paid' || _acctStatus === 'deferred';
+  const isActiveSub = _acctStatus === 'paid' || _acctStatus === 'deferred';
   document.getElementById('plan-upgrade-btn').style.display  = 'none';
-  document.getElementById('plan-portal-btn').style.display   = isPaid ? '' : 'none';
+  document.getElementById('plan-portal-btn').style.display   = isActiveSub ? '' : 'none';
   document.getElementById('plan-portal-btn').disabled        = false;
   document.getElementById('plan-portal-btn').textContent     = 'Manage Billing & Subscription';
-  document.getElementById('plan-billing-desc').textContent   = isPaid
+  document.getElementById('plan-billing-desc').textContent   = isActiveSub
     ? 'Select a different plan below, or manage your subscription and payment method via the billing portal.'
     : 'Select a plan below and subscribe via Stripe to activate your account.';
   document.getElementById('plan-tier-grid').innerHTML = ['basic','pro','premium'].map(p => {
