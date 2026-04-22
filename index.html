@@ -999,7 +999,8 @@ async function handleSignup() {
       return showMsg('su-msg',
         'An account with this email already exists. <button class="auth-link" onclick="showScreen(\'login\')" style="font-size:inherit;display:inline;">Sign in here</button>.');
     }
-    showMsg('su-msg', 'Account created! Sign in now to start your 21-day trial.', 'ok');
+    showMsg('su-msg', 'Account created! Taking you to sign in…', 'ok');
+    setTimeout(() => showScreen('login'), 2000);
   } finally {
     if (btn) btn.disabled = false;
   }

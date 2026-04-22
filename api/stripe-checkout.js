@@ -1,19 +1,22 @@
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 
-const stripe   = new Stripe(process.env.STRIPE_SECRET_KEY);
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
-
-const PRICES = {
-  basic:   process.env.STRIPE_PRICE_BASIC,
-  pro:     process.env.STRIPE_PRICE_PRO,
-  premium: process.env.STRIPE_PRICE_PREMIUM,
-};
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  const stripeKey = process.env.STRIPE_SECRET_KEY;
+  if (!stripeKey) return res.status(500).json({ error: 'Stripe not configured' });
+  const stripe = new Stripe(stripeKey, { maxNetworkRetries: 1 });
+
+  const PRICES = {
+    basic:   process.env.STRIPE_PRICE_BASIC,
+    pro:     process.env.STRIPE_PRICE_PRO,
+    premium: process.env.STRIPE_PRICE_PREMIUM,
+  };
 
   const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
@@ -30,14 +33,11 @@ export default async function handler(req, res) {
 
   const { plan } = req.body || {};
   const priceId = PRICES[plan];
-  if (!priceId) return res.status(400).json({ error: 'Invalid plan' });
+  if (!priceId) return res.status(400).json({ error: 'Invalid plan: ' + plan });
 
-  const baseUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
-    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-    : 'https://the-boat-race.com';
+  const baseUrl = 'https://the-boat-race.com';
 
   try {
-    // Reuse existing Stripe customer if present
     let customerId = acct.stripe_customer_id || undefined;
     if (!customerId) {
       const customer = await stripe.customers.create({
