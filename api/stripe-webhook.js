@@ -94,9 +94,11 @@ export default async function handler(req, res) {
 
       case 'customer.subscription.deleted': {
         const customerId = event.data.object.customer;
+        // Don't override 'deferred' — admin set it intentionally to preserve access after cancel
         await supabase.from('accounts')
           .update({ status: 'cancelled' })
-          .eq('stripe_customer_id', customerId);
+          .eq('stripe_customer_id', customerId)
+          .neq('status', 'deferred');
         break;
       }
     }

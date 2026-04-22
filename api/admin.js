@@ -1,3 +1,4 @@
+import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
@@ -33,7 +34,7 @@ export default async function handler(req, res) {
     }
   }
 
-  // PATCH — update an account (status, notes, paid_through, is_admin, plan, agent_count)
+  // PATCH — update an account
   if (req.method === 'PATCH') {
     const { userId, ...fields } = req.body || {};
     if (!userId) return res.status(400).json({ error: 'userId required' });
@@ -48,6 +49,26 @@ export default async function handler(req, res) {
     try {
       const { error } = await supabase.from('accounts').update(update).eq('user_id', userId);
       if (error) return res.status(500).json({ error: error.message });
+
+      // When setting status to 'deferred', cancel any active Stripe subscriptions immediately.
+      // The subscription.deleted webhook is protected from overriding 'deferred' back to 'cancelled'.
+      if (update.status === 'deferred') {
+        const { data: acct } = await supabase
+          .from('accounts').select('stripe_customer_id').eq('user_id', userId).single();
+        if (acct?.stripe_customer_id && process.env.STRIPE_SECRET_KEY) {
+          try {
+            const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { maxNetworkRetries: 1 });
+            const subs = await stripe.subscriptions.list({ customer: acct.stripe_customer_id, status: 'active' });
+            for (const sub of subs.data) {
+              await stripe.subscriptions.cancel(sub.id);
+            }
+          } catch (stripeErr) {
+            // Log but don't fail the admin save if Stripe cancel errors
+            console.error('Stripe cancel error on deferred:', stripeErr.message);
+          }
+        }
+      }
+
       return res.status(200).json({ success: true });
     } catch (err) {
       return res.status(500).json({ error: err.message });

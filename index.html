@@ -560,10 +560,6 @@
   <!-- ── TAB: ACCOUNT ── -->
   <div id="tab-account" style="display:none">
     <div class="panel">
-      <div id="trial-expired-notice" class="trial-expired-banner" style="display:none">
-        <h3>Trial Expired</h3>
-        <p>Your 21-day trial has ended. Select a plan below to restore full dashboard access. An administrator will activate your account upon payment confirmation.</p>
-      </div>
       <div class="acct-section">
         <h3>Account Info</h3>
         <div class="acct-info-grid" id="acct-info-grid"></div>
@@ -896,8 +892,10 @@ async function checkAccountAndShow(session) {
     const banner = document.getElementById('restrict-banner');
     const msg    = document.getElementById('restrict-msg');
 
-    if (_trialExpired) {
-      // Lock to Account tab only — hide all other tabs
+    const isLocked = _trialExpired || _acctStatus === 'past_due' || _acctStatus === 'cancelled';
+
+    if (isLocked) {
+      // Lock to Account tab only — no dashboard access
       document.querySelectorAll('.tab').forEach(t => {
         const isAccount = (t.getAttribute('onclick') || '').includes("'account'");
         t.style.display = isAccount ? '' : 'none';
@@ -907,22 +905,19 @@ async function checkAccountAndShow(session) {
       if (acctTab) acctTab.style.display = 'block';
       const acctBtn = document.querySelector('.tab[onclick*="\'account\'"]');
       if (acctBtn) acctBtn.classList.add('active');
-      banner.style.display = 'none';
+      banner.style.display = 'flex';
+      msg.textContent = _acctStatus === 'cancelled'
+        ? 'Your subscription has been cancelled. Subscribe below to restore access.'
+        : _acctStatus === 'past_due'
+        ? 'Your payment is past due. Update your payment method below to restore access.'
+        : 'Your trial has expired. Subscribe below to continue.';
     } else {
-      const restricted = (_acctStatus === 'past_due' || _acctStatus === 'cancelled');
-      if (restricted) {
-        banner.style.display = 'flex';
-        msg.textContent = _acctStatus === 'cancelled'
-          ? 'Your account has been cancelled. Uploads are disabled.'
-          : 'Your account has a past-due balance. Uploads are disabled. Please update your payment information.';
-        document.getElementById('upload-panel-calls').style.display = 'none';
-        document.getElementById('upload-panel-sales').style.display = 'none';
-      }
+      // Full access — deferred treated same as paid
+      banner.style.display = 'none';
     }
 
     if (_isAdmin) document.getElementById('adminTab').style.display = '';
-    const isPremium = acct.plan === 'premium' && ['paid','deferred','trial'].includes(acct.status)
-      && !(acct.status === 'trial' && acct.trial_ends_at && new Date(acct.trial_ends_at) < new Date());
+    const isPremium = acct.plan === 'premium' && !isLocked;
     document.getElementById('analysisTab').style.display = (isPremium || _isAdmin) ? '' : 'none';
 
     buildColumnMapUI();
@@ -1842,9 +1837,6 @@ async function loadAccountTab() {
     tzSel.value = acct.timezone || 'America/Los_Angeles';
     hrSel.value = String(acct.report_hour ?? 7);
   }
-
-  // Trial expired notice
-  document.getElementById('trial-expired-notice').style.display = _trialExpired ? 'block' : 'none';
 
   // Plan upgrade section
   _currentPlan  = acct.plan || 'basic';
