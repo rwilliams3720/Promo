@@ -1877,7 +1877,7 @@ async function loadAccountTab() {
     ? 'Select a different plan below, or manage your subscription and payment method via the billing portal.'
     : 'Select a plan below and subscribe via Stripe to activate your account.';
   document.getElementById('plan-tier-grid').innerHTML = ['basic','pro','premium'].map(p => {
-    const isCurrent  = p === _currentPlan;
+    const isCurrent = _acctStatus !== 'trial' && p === _currentPlan;
     return `<div class="plan-tier${isCurrent?' plan-current':''}" onclick="selectPlan('${p}',this)">
       <div class="plan-tier-name">${p.toUpperCase()}</div>
       <div class="plan-tier-price">$${PLAN_PRICES[p]}<span>/mo</span></div>
@@ -1936,7 +1936,7 @@ async function saveReportPrefs() {
 }
 
 function selectPlan(plan, el) {
-  if (plan === _currentPlan) return;
+  if (plan === _currentPlan && _acctStatus !== 'trial') return;
   _selectedPlan = plan;
   document.querySelectorAll('.plan-tier').forEach(t => t.classList.remove('plan-selected'));
   el.classList.add('plan-selected');
