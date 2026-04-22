@@ -438,7 +438,7 @@
            ondragover="dzDragOver(event,'dz-calls')"
            ondragleave="dzDragLeave('dz-calls')"
            ondrop="dzDrop(event,'calls')">
-        <input type="file" id="fi-calls" accept=".xlsx,.xls,.csv" onchange="handleFile('calls',this)">
+        <input type="file" id="fi-calls" accept=".xlsx,.xls,.csv" onchange="handleFile('calls',this)" onclick="event.stopPropagation()">
         <div class="drop-icon">📞</div>
         <div class="drop-label">Drop call log here or click to browse</div>
         <div class="drop-sub">XLSX, XLS, CSV — call disposition data</div>
@@ -452,7 +452,7 @@
            ondragover="dzDragOver(event,'dz-sales')"
            ondragleave="dzDragLeave('dz-sales')"
            ondrop="dzDrop(event,'sales')">
-        <input type="file" id="fi-sales" accept=".xlsx,.xls,.csv" onchange="handleFile('sales',this)">
+        <input type="file" id="fi-sales" accept=".xlsx,.xls,.csv" onchange="handleFile('sales',this)" onclick="event.stopPropagation()">
         <div class="drop-icon">📈</div>
         <div class="drop-label">Drop sales log here or click to browse</div>
         <div class="drop-sub">XLSX, XLS, CSV — replaces current month's sales</div>
