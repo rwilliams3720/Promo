@@ -12,6 +12,22 @@ const supabase = createClient(
 const MONTH_NAMES = ['January','February','March','April','May','June',
                      'July','August','September','October','November','December'];
 
+async function fetchAllPages(client, table, columns, userId) {
+  const PAGE = 1000;
+  const rows = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await client.from(table)
+      .select(columns).eq('user_id', userId)
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(`${table} read failed: ${error.message}`);
+    if (data?.length) rows.push(...data);
+    if (!data || data.length < PAGE) break;
+    from += PAGE;
+  }
+  return rows;
+}
+
 const AGENT_INFO = {
   ashley:  { name:'Ashley McEniry',    team:'service' },
   fiona:   { name:'Fiona Rodriguez',   team:'service' },
@@ -163,9 +179,8 @@ async function processCallUpload(rows, userId) {
         { onConflict: 'user_id,key' }
       );
     } else if (cmp < 0) {
-      const { data: hashes } = await supabase.from('call_log')
-        .select('hash').eq('user_id', userId);
-      const known = Object.fromEntries((hashes || []).map(r => [r.hash, true]));
+      const hashes = await fetchAllPages(supabase, 'call_log', 'hash', userId);
+      const known = Object.fromEntries(hashes.map(r => [r.hash, true]));
       const classified = classifyCalls(rows, known);
       if (!classified.newLogRows.length) {
         return { success: true, message: `No calls found in ${dataMonth}.`, new: 0, skipped: classified.duplicatesSkipped };
@@ -181,9 +196,8 @@ async function processCallUpload(rows, userId) {
     );
   }
 
-  const { data: hashes } = await supabase.from('call_log')
-    .select('hash').eq('user_id', userId);
-  const knownHashes = Object.fromEntries((hashes || []).map(r => [r.hash, true]));
+  const hashRows = await fetchAllPages(supabase, 'call_log', 'hash', userId);
+  const knownHashes = Object.fromEntries(hashRows.map(r => [r.hash, true]));
 
   const classified = classifyCalls(rows, knownHashes);
   if (!classified.newLogRows.length) {
@@ -202,10 +216,8 @@ async function processCallUpload(rows, userId) {
   const { error: logErr } = await supabase.from('call_log').upsert(logInserts, { onConflict: 'user_id,hash', ignoreDuplicates: true });
   if (logErr) return { success: false, error: 'call_log write failed: ' + logErr.message };
 
-  const { data: allLog, error: readErr } = await supabase.from('call_log')
-    .select('agent_id,disposition,talk_secs,call_dt').eq('user_id', userId);
-  if (readErr) return { success: false, error: 'call_log read failed: ' + readErr.message };
-  const allLogRows = (allLog || []).map(r => [
+  const allLog = await fetchAllPages(supabase, 'call_log', 'agent_id,disposition,talk_secs,call_dt', userId);
+  const allLogRows = allLog.map(r => [
     '', r.agent_id || '', r.disposition, r.talk_secs ? r.talk_secs / 60 : 0, r.call_dt || '', ''
   ]);
   const totals = aggregateFromLog(allLogRows);
@@ -316,10 +328,8 @@ async function processSalesUpload(rows, userId, columnMap) {
     if (sLogErr) return { success: false, error: 'sales_log write failed: ' + sLogErr.message };
   }
 
-  const { data: allSales, error: sReadErr } = await supabase.from('sales_log')
-    .select('agent_id,product').eq('user_id', userId);
-  if (sReadErr) return { success: false, error: 'sales_log read failed: ' + sReadErr.message };
-  const allSalesRows  = (allSales || []).map(r => ['', r.agent_id || 'skip', r.product || 'other', '', '']);
+  const allSales = await fetchAllPages(supabase, 'sales_log', 'agent_id,product', userId);
+  const allSalesRows = allSales.map(r => ['', r.agent_id || 'skip', r.product || 'other', '', '']);
   const agentTotals   = aggregateSalesFromLog(allSalesRows);
 
   const { error: sSeedErr } = await ensureRaceDataRows(userId);
