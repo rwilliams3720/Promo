@@ -126,6 +126,62 @@ Do **not** revert to a boolean `_checkingAccount` flag — it caused permanent d
 - User's mapping saved to `accounts.sales_column_map` (JSONB) and reused on future uploads
 - Sales uploads are **month-scoped replace**: all sales_log rows for that user+month are deleted then re-inserted — automatically handles removed sales
 
+## Call Classification Rules (upload.js `classifyCalls`)
+
+| Condition | Category | Effect |
+|-----------|----------|--------|
+| Disposition contains "Voice Mail" or "VM" + INBOUND + not internal | `voicemail` | race-wide voicemail count (deduction) |
+| Disposition contains "Voice Mail" or "VM" + OUTBOUND | `placed` | agent gets placed-call credit |
+| Disposition contains "Internal" or "Voice Mail Access" | `internal` | excluded from all counts |
+| Disposition contains "Abandon" | `missed` | race-wide missed count (deduction) |
+| OUTBOUND (non-VM, non-internal) | `placed` | agent placed count |
+| INBOUND + disposition contains "Handled" | `answered` | agent answered count |
+| Everything else | `other` | excluded from all counts |
+
+Voicemail and missed are **mutually exclusive** — a call lands in exactly one bucket. Voicemails are not attributed to individual agents; they are race-wide deductions applied equally to all.
+
+## Supabase Pagination — `fetchAllPages` (upload.js)
+
+Supabase silently caps unpaginated reads at 1000 rows. All call_log/sales_log reads in `upload.js` use the `fetchAllPages` helper to bypass this:
+
+```js
+async function fetchAllPages(client, table, columns, userId) {
+  const PAGE = 1000;
+  const rows = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await client.from(table)
+      .select(columns).eq('user_id', userId)
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(`${table} read failed: ${error.message}`);
+    if (data?.length) rows.push(...data);
+    if (!data || data.length < PAGE) break;
+    from += PAGE;
+  }
+  return rows;
+}
+```
+
+`perf.js` and `ai-analysis.js` use their own inline pagination loops with the same pattern. **Never add an unpaginated `.select()` on call_log or sales_log** — datasets exceed 1000 rows and the truncation is silent.
+
+## race_data Update Behavior (upload.js)
+
+`race_data` is rebuilt from ALL call_log rows on every call upload — even if the uploaded file contains zero new rows (all duplicates). This allows re-uploading the same file to force a recalculation after code fixes.
+
+Flow:
+1. Hash dedup: read all existing hashes via `fetchAllPages`
+2. Classify new rows from file
+3. Insert new rows (skipped if none)
+4. Read ALL call_log rows via `fetchAllPages` → `aggregateFromLog` → update race_data (always runs)
+
+## Talk Time Display (`fmtMins` in index.html)
+
+All talk time values are formatted through `fmtMins(minutes)`:
+- Under 60 min → `"45.2 min"`
+- 60+ min → `"1h 23m"`
+
+Applied to: race tab stats card ("Talk Time"), per-agent race bar labels, and perf table Talk Min / Avg Min / Max Min columns.
+
 ## Scoring Formula (frontend `calcScore`)
 ```javascript
 polPts      = wl*SCORING.wl + ul*SCORING.ul + term*SCORING.term + ...
