@@ -1471,16 +1471,18 @@ async function submitColMapper() {
     .update({ sales_column_map: _columnMap })
     .eq('user_id', _userId);
 
+  const pendingData = _pendingUploadData;
+  const pendingType = _pendingUploadType;
   closeColMapper();
 
-  if (_pendingUploadData && _pendingUploadType) {
-    const logEl = document.getElementById('ul-' + _pendingUploadType);
+  if (pendingData && pendingType) {
+    const logEl = document.getElementById('ul-' + pendingType);
     try {
       const hdrs = authHeaders();
       const res  = await fetch('/api/upload', {
         method: 'POST',
         headers: { ...hdrs, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: _pendingUploadType, data: _pendingUploadData, columnMap: _columnMap }),
+        body: JSON.stringify({ type: pendingType, data: pendingData, columnMap: _columnMap }),
       });
       const json = await res.json();
       if (!res.ok || json.success === false) { logEl.innerHTML = `<span class="err">Error: ${json.error || 'Upload failed'}</span>`; return; }
