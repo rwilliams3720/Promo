@@ -542,7 +542,6 @@ function aggregateFromLog(logRows) {
 
   for (const id in agents) {
     const s   = agents[id];
-    s.talkMin = Math.round(s.talkMin * 10) / 10;
     s.avgMin  = s.talkCalls > 0 ? Math.round((s.talkMin / s.talkCalls) * 100) / 100 : 0;
   }
 
