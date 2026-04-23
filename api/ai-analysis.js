@@ -105,15 +105,15 @@ export default async function handler(req, res) {
 
       if (!monthly[monKey]) monthly[monKey] = { placed:0, answered:0, talkMin:0, voicemail:0, missed:0, policies:0 };
       const m = monthly[monKey];
-      if (row.disposition === 'placed')   { m.placed++;   }
-      if (row.disposition === 'answered') { m.answered++;  m.talkMin += (row.talk_secs||0)/60; }
+      if (row.disposition === 'placed')    { m.placed++;   m.talkMin += (row.talk_secs||0)/60; }
+      if (row.disposition === 'answered')  { m.answered++; m.talkMin += (row.talk_secs||0)/60; }
       if (row.disposition === 'voicemail') m.voicemail++;
       if (row.disposition === 'missed')    m.missed++;
 
       if (!AGENT_INFO[row.agent_id]) continue;
       if (!agents[row.agent_id]) agents[row.agent_id] = { placed:0, answered:0, talkMin:0, policies:0 };
       const a = agents[row.agent_id];
-      if (row.disposition === 'placed')   a.placed++;
+      if (row.disposition === 'placed')   { a.placed++;   a.talkMin += (row.talk_secs||0)/60; }
       if (row.disposition === 'answered') { a.answered++; a.talkMin += (row.talk_secs||0)/60; }
     }
 
@@ -152,8 +152,9 @@ export default async function handler(req, res) {
     // Build compact text for Claude
     const monthlyText = sortedMonths.map(mon => {
       const m = monthly[mon];
-      const ansRate = m.placed > 0 ? Math.round(m.answered/m.placed*100) : 0;
-      return `${mon}: ${m.placed} placed, ${m.answered} answered (${ansRate}% rate), ${Math.round(m.talkMin)}min talk, ${m.voicemail} voicemail, ${m.missed} missed`;
+      const inbound = m.answered + m.voicemail + m.missed;
+      const handleRate = inbound > 0 ? Math.round(m.answered/inbound*100) : 0;
+      return `${mon}: ${m.placed} outbound placed, ${m.answered} inbound received (${handleRate}% inbound handle rate), ${Math.round(m.talkMin)}min talk, ${m.voicemail} voicemails, ${m.missed} missed`;
     }).join('\n');
 
     const agentText = Object.entries(agents)
@@ -161,8 +162,7 @@ export default async function handler(req, res) {
       .sort((a, b) => b[1].placed - a[1].placed)
       .map(([id, s]) => {
         const info = AGENT_INFO[id];
-        const ansRate = s.placed > 0 ? Math.round(s.answered/s.placed*100) : 0;
-        return `${info.name} (${info.team}): ${s.placed} placed, ${s.answered} answered (${ansRate}%), ${Math.round(s.talkMin)}min talk, ${s.policies} policies`;
+        return `${info.name} (${info.team}): ${s.placed} outbound placed, ${s.answered} inbound received, ${Math.round(s.talkMin)}min talk, ${s.policies} policies`;
       }).join('\n');
 
     const company = acct.company_name || 'the team';

@@ -106,15 +106,20 @@ export default async function handler(req, res) {
       const rows = [];
       for (const [period, agents] of Object.entries(periodMap)) {
         const race = agents.__race || { voicemail:0, missed:0 };
+        let totPlaced = 0, totAnswered = 0, totTalkMin = 0;
         for (const [id, s] of Object.entries(agents)) {
           if (id === '__race') continue;
           const info   = AGENT_INFO[id];
           const avgMin = s.talkCalls > 0 ? Math.round((s.talkMin/s.talkCalls)*100)/100 : 0;
           const maxMin = Math.round(s.maxSecs/60*100)/100;
+          totPlaced   += s.placed;
+          totAnswered += s.answered;
+          totTalkMin  += s.talkMin;
           rows.push([period, info.name, info.team, s.placed, s.answered, 0, 0,
                      Math.round(s.talkMin*10)/10, avgMin, maxMin]);
         }
-        rows.push([period, '— TEAM TOTAL —', '', 0, 0, race.voicemail, race.missed, 0, 0, 0]);
+        rows.push([period, '— TEAM TOTAL —', '', totPlaced, totAnswered,
+                   race.voicemail, race.missed, Math.round(totTalkMin*10)/10, 0, 0]);
       }
       return rows;
     }
