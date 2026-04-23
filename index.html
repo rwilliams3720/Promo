@@ -1105,6 +1105,14 @@ async function loadRaceData() {
   renderRace(_raceData);
 }
 
+function fmtMins(m) {
+  m = m || 0;
+  if (m < 60) return (Math.round(m * 10) / 10) + ' min';
+  const h = Math.floor(m / 60);
+  const min = Math.round(m % 60);
+  return `${h}h ${String(min).padStart(2,'0')}m`;
+}
+
 function calcScore(ag) {
   const svc = ag.team === 'service';
   const polPts = (ag.wl||0)*SCORING.wl + (ag.ul||0)*SCORING.ul + (ag.term||0)*SCORING.term +
@@ -1160,8 +1168,8 @@ function renderRace(data) {
       <div class="stat-val">${totalAnswered}</div>
     </div>
     <div class="stat-card" style="--accent-line:var(--accent)">
-      <div class="stat-label">Talk Minutes</div>
-      <div class="stat-val">${Math.round(totalTalk * 10) / 10}</div>
+      <div class="stat-label">Talk Time</div>
+      <div class="stat-val">${fmtMins(totalTalk)}</div>
     </div>
     <div class="stat-card" style="--accent-line:var(--danger)">
       <div class="stat-label">VM / Missed</div>
@@ -1196,7 +1204,7 @@ function renderRace(data) {
         </div>
         <div class="race-bar-bg" style="margin-top:6px">
           <div class="race-bar-fill" style="width:${barW}%;background:linear-gradient(90deg,${ag.color}88,${ag.color})">
-            <span class="race-bar-text">${Math.round((ag.talk_min||0)*10)/10} min</span>
+            <span class="race-bar-text">${fmtMins(ag.talk_min)}</span>
           </div>
         </div>
         ${sc.deduct<0?`<div class="deduct-bar"><div class="deduct-fill" style="width:${dedW}%"></div></div>`:''}
@@ -1536,7 +1544,7 @@ function renderPerf() {
       <td>${r[1]}${teamBadge ? ' '+teamBadge : ''}</td>
       <td>${r[3]||0}</td><td>${r[4]||0}</td>
       <td>${r[5]||0}</td><td>${r[6]||0}</td>
-      <td>${r[7]||0}</td><td>${r[8]||0}</td><td>${r[9]||0}</td>
+      <td>${fmtMins(r[7])}</td><td>${fmtMins(r[8])}</td><td>${fmtMins(r[9])}</td>
     </tr>`;
   }).join('') || '<tr><td colspan="8" style="color:var(--muted);text-align:center;padding:20px">No data</td></tr>';
 }
