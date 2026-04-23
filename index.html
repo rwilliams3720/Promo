@@ -731,13 +731,22 @@ const PLAN_FEATURES = {
   premium: 'Dashboard + Reports + AI Analysis',
 };
 
-const COL_FIELDS = ['product','written_by','written_date','policy_name','policy_type'];
+const COL_FIELDS = ['product','written_by','written_date','policy_name','policy_type','written_premium'];
 const FIELD_LABELS = {
-  product:'Product / LOB',
-  written_by:'Written By (agent)',
-  written_date:'Written Date',
-  policy_name:'Policy Name / Number',
-  policy_type:'Policy Type'
+  product:         'Product / LOB',
+  written_by:      'Written By (agent)',
+  written_date:    'Written Date',
+  policy_name:     'Policy Name / Number',
+  policy_type:     'Policy Type',
+  written_premium: 'Written Premium',
+};
+const FIELD_HINTS = {
+  product:         'Policy line sold — e.g. Whole Life, Term, Auto, Health, Fire',
+  written_by:      'Agent or producer name — assigns each sale to an agent',
+  written_date:    'Date the policy was written or sold',
+  policy_name:     'Optional — insured name or policy # used for deduplication',
+  policy_type:     'Optional — fallback category when Product column is ambiguous',
+  written_premium: 'Optional — dollar amount of the written premium (Premium plan reports)',
 };
 
 const COLORS = ['#00d4ff','#00ff94','#ffd166','#ff8c42','#b0bec5','#ff4d6d','#a78bfa','#34d399','#f472b6','#fb923c','#60a5fa'];
@@ -1084,6 +1093,7 @@ function showTab(name, btn) {
   const tab = document.getElementById('tab-' + name);
   if (tab) tab.style.display = 'block';
   if (btn) btn.classList.add('active');
+  if (name === 'race') loadRaceData();
   if (name === 'account') loadAccountTab();
   if (name === 'adminpanel') loadAdminPanel();
   if (name === 'perf') loadPerf();
@@ -1444,7 +1454,10 @@ function openColMapper(headers, missing) {
   const container = document.getElementById('col-mapper-fields');
   container.innerHTML = (missing || COL_FIELDS).map(field => `
     <div class="modal-field">
-      <label>${FIELD_LABELS[field] || field}</label>
+      <div class="field-label-row">
+        <label>${FIELD_LABELS[field] || field}</label>
+        ${FIELD_HINTS[field] ? `<span class="info-tip" data-tip="${FIELD_HINTS[field]}">i</span>` : ''}
+      </div>
       <select class="admin-select" id="cm-${field}" style="width:100%;padding:9px 12px;font-size:13px;">
         <option value="">— select column —</option>
         ${(headers||[]).map(h => `<option value="${h}">${h}</option>`).join('')}
@@ -2076,8 +2089,12 @@ async function changePassword() {
 
 function buildColumnMapUI() {
   document.getElementById('col-map-grid').innerHTML = COL_FIELDS.map(f =>
-    `<div class="col-map-item"><label>${FIELD_LABELS[f]}</label>
-    <input type="text" id="cmap-${f}" placeholder="Column header in your file" value="${_columnMap[f]||''}"></div>`
+    `<div class="col-map-item">
+      <div class="field-label-row">
+        <label>${FIELD_LABELS[f]}</label>
+        ${FIELD_HINTS[f] ? `<span class="info-tip" data-tip="${FIELD_HINTS[f]}">i</span>` : ''}
+      </div>
+      <input type="text" id="cmap-${f}" placeholder="Column header in your file" value="${_columnMap[f]||''}"></div>`
   ).join('');
 }
 
