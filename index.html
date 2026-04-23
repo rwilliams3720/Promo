@@ -1100,8 +1100,8 @@ async function loadRaceData() {
   const month = (rcRes.data || []).find(r => r.key === 'current_month')?.value || '';
   document.getElementById('header-month').textContent = month || 'No race data uploaded';
 
-  buildScoringUI();
   _raceData = rdRes.data || [];
+  buildScoringUI();
   renderRace(_raceData);
 }
 
