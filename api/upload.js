@@ -200,21 +200,20 @@ async function processCallUpload(rows, userId) {
   const knownHashes = Object.fromEntries(hashRows.map(r => [r.hash, true]));
 
   const classified = classifyCalls(rows, knownHashes);
-  if (!classified.newLogRows.length) {
-    return { success: true, message: 'No new calls found — all already logged.', new: 0, skipped: classified.duplicatesSkipped };
-  }
 
-  const logInserts = classified.newLogRows.map(r => ({
-    user_id:     userId,
-    hash:        r[0],
-    agent_id:    r[1] || null,
-    disposition: r[2],
-    talk_secs:   r[3] ? Math.round(r[3] * 60) : null,
-    call_dt:     r[4] || null,
-    call_slot:   r[5] != null ? r[5] : null,
-  }));
-  const { error: logErr } = await supabase.from('call_log').upsert(logInserts, { onConflict: 'user_id,hash', ignoreDuplicates: true });
-  if (logErr) return { success: false, error: 'call_log write failed: ' + logErr.message };
+  if (classified.newLogRows.length) {
+    const logInserts = classified.newLogRows.map(r => ({
+      user_id:     userId,
+      hash:        r[0],
+      agent_id:    r[1] || null,
+      disposition: r[2],
+      talk_secs:   r[3] ? Math.round(r[3] * 60) : null,
+      call_dt:     r[4] || null,
+      call_slot:   r[5] != null ? r[5] : null,
+    }));
+    const { error: logErr } = await supabase.from('call_log').upsert(logInserts, { onConflict: 'user_id,hash', ignoreDuplicates: true });
+    if (logErr) return { success: false, error: 'call_log write failed: ' + logErr.message };
+  }
 
   const allLog = await fetchAllPages(supabase, 'call_log', 'agent_id,disposition,talk_secs,call_dt', userId);
   const allLogRows = allLog.map(r => [
@@ -244,7 +243,7 @@ async function processCallUpload(rows, userId) {
 
   return {
     success:  true,
-    message:  'Call report processed successfully.',
+    message:  classified.newLogRows.length ? 'Call report processed successfully.' : 'No new calls — race data recalculated.',
     new:      classified.newLogRows.length,
     skipped:  classified.duplicatesSkipped,
     raceWide: totals.raceWide,
