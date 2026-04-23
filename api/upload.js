@@ -40,7 +40,8 @@ const SALES_COL_SYNONYMS = {
   written_date:    ['Written Date','Sale Date','Effective Date','Policy Date','Issue Date','Date Written','Bind Date','Close Date'],
   policy_name:     ['Policy Name','Insured','Insured Name','Client Name','Customer','Policy #','Policy Number','Client','Member Name'],
   policy_type:     ['Policy Type','Sub Type','Plan Type','Coverage Type','Product Category','Type','Sub-Type'],
-  written_premium: ['Written Premium','Written Prem','WP','Prem Written'],
+  written_premium: ['Written Premium','Written Prem','WP','Prem Written','Premium','Prem'],
+  details:         ['Details','Vehicle','Vehicle Description','Description','Notes','Memo'],
 };
 
 
@@ -260,6 +261,9 @@ async function processSalesUpload(rows, userId, columnMap) {
   if (missing.length > 0) {
     return { needsMapping: true, headers, missing };
   }
+
+  // Remove any rows with malformed dates (pre-2000) caused by prior date-parsing bugs
+  await supabase.from('sales_log').delete().eq('user_id', userId).lt('sale_date', '2000-01-01');
 
   const salesMonth = detectSalesMonth(rows, headerIdx, colIdx.written_date);
 
@@ -569,6 +573,7 @@ function classifySales(data, headerIdx, colIdx, knownHashes) {
   const dateCol     = colIdx.written_date    ?? -1;
   const typeCol     = colIdx.policy_type     ?? -1;
   const premiumCol  = colIdx.written_premium ?? -1;
+  const detailsCol  = colIdx.details         ?? -1;
 
   for (let i = headerIdx + 1; i < data.length; i++) {
     const row     = data[i];
@@ -579,10 +584,12 @@ function classifySales(data, headerIdx, colIdx, knownHashes) {
     const polType = typeCol !== -1 ? String(row[typeCol] || '').trim() : '';
     const rawPrem = premiumCol !== -1 ? String(row[premiumCol] || '').replace(/[$,\s]/g, '') : '';
     const writtenPremium = rawPrem ? (parseFloat(rawPrem) || null) : null;
+    const details = detailsCol !== -1 ? String(row[detailsCol] || '').trim() : '';
 
     if (!product || !agent || !date) continue;
 
-    const hash = sha256Short([agent, polName, product, date].join('|'));
+    const hashPrem = rawPrem || '';
+    const hash = sha256Short([agent, polName, product, dateOnly(date), details, hashPrem].join('|'));
     if (knownHashes[hash]) { duplicatesSkipped++; continue; }
 
     const category = mapPolicyCategory(product, polType);
@@ -638,11 +645,17 @@ function timeSlot(dtStr) {
 }
 
 function dateOnly(dtStr) {
+  const s = String(dtStr).trim();
+  // Handle M/D/YY short-year (e.g. "4/1/26" → "2026-04-01")
+  const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
+  if (mdy) {
+    return `${2000 + parseInt(mdy[3])}-${String(parseInt(mdy[1])).padStart(2,'0')}-${String(parseInt(mdy[2])).padStart(2,'0')}`;
+  }
   try {
-    const d = new Date(dtStr);
-    if (isNaN(d.getTime())) return String(dtStr).split(' ')[0] || dtStr;
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return s.split(' ')[0] || s;
     return d.toISOString().split('T')[0];
-  } catch(e) { return String(dtStr).split(' ')[0] || dtStr; }
+  } catch(e) { return s.split(' ')[0] || s; }
 }
 
 function cleanExtName(ext) {
@@ -695,6 +708,11 @@ function detectSalesMonth(rows, headerIdx, dateColIdx) {
   for (let r = headerIdx + 1; r < Math.min(rows.length, headerIdx + 50); r++) {
     const val = rows[r][dateColIdx];
     if (!val) continue;
+    // Handle M/D/YY short-year (e.g. "4/1/26")
+    const mdy = String(val).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
+    if (mdy) {
+      return MONTH_NAMES[parseInt(mdy[1]) - 1] + ' ' + (2000 + parseInt(mdy[3]));
+    }
     const d = new Date(val);
     if (!isNaN(d.getTime()) && d.getFullYear() > 2020) {
       return MONTH_NAMES[d.getMonth()] + ' ' + d.getFullYear();
