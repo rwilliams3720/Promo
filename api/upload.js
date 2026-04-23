@@ -77,11 +77,12 @@ const SALES_AGENT_MAP = {
 
 // Synonyms for sales report column detection — ordered by priority
 const SALES_COL_SYNONYMS = {
-  product:     ['Product','Line of Business','LOB','Coverage','Policy Line','Insurance Type','Product Type'],
-  written_by:  ['Written By','Agent','Producer','Rep','Sold By','CSR','Agent Name','Producer Name','Writing Agent','Advisor'],
-  written_date:['Written Date','Sale Date','Effective Date','Policy Date','Issue Date','Date Written','Bind Date','Close Date'],
-  policy_name: ['Policy Name','Insured','Insured Name','Client Name','Customer','Policy #','Policy Number','Client','Member Name'],
-  policy_type: ['Policy Type','Sub Type','Plan Type','Coverage Type','Product Category','Type','Sub-Type'],
+  product:         ['Product','Line of Business','LOB','Coverage','Policy Line','Insurance Type','Product Type'],
+  written_by:      ['Written By','Agent','Producer','Rep','Sold By','CSR','Agent Name','Producer Name','Writing Agent','Advisor'],
+  written_date:    ['Written Date','Sale Date','Effective Date','Policy Date','Issue Date','Date Written','Bind Date','Close Date'],
+  policy_name:     ['Policy Name','Insured','Insured Name','Client Name','Customer','Policy #','Policy Number','Client','Member Name'],
+  policy_type:     ['Policy Type','Sub Type','Plan Type','Coverage Type','Product Category','Type','Sub-Type'],
+  written_premium: ['Written Premium','Written Prem','WP','Prem Written'],
 };
 
 
@@ -317,11 +318,12 @@ async function processSalesUpload(rows, userId, columnMap) {
 
   if (classified.newLogRows.length > 0) {
     const logInserts = classified.newLogRows.map(r => ({
-      user_id:   userId,
-      hash:      r[0],
-      agent_id:  r[1] !== 'skip' ? r[1] : null,
-      product:   r[2],
-      sale_date: r[3] || null,
+      user_id:         userId,
+      hash:            r[0],
+      agent_id:        r[1] !== 'skip' ? r[1] : null,
+      product:         r[2],
+      sale_date:       r[3] || null,
+      written_premium: r[4] ?? null,
     }));
     const { error: sLogErr } = await supabase.from('sales_log').upsert(logInserts, { onConflict: 'user_id,hash', ignoreDuplicates: true });
     if (sLogErr) return { success: false, error: 'sales_log write failed: ' + sLogErr.message };
@@ -371,19 +373,43 @@ async function ensureRaceDataRows(userId) {
 
 
 // ─── MONTH MANAGEMENT ───────────────────────────────────────────
+async function fetchScoringConfig(userId) {
+  const { data, error } = await supabase.from('scoring_config').select('config_key,config_value').eq('user_id', userId);
+  if (error) console.warn('fetchScoringConfig: Supabase error, using defaults:', error.message);
+  const cfg = {};
+  if (data) for (const row of data) cfg[row.config_key] = parseFloat(row.config_value);
+  return {
+    wl:               cfg.wl               ?? 100,
+    ul:               cfg.ul               ?? 75,
+    term:             cfg.term             ?? 50,
+    health:           cfg.health           ?? 30,
+    auto:             cfg.auto             ?? 15,
+    fire:             cfg.fire             ?? 10,
+    placed_sales:     cfg.placed_sales     ?? 1,
+    placed_service:   cfg.placed_service   ?? 0.25,
+    answered_sales:   cfg.answered_sales   ?? 1,
+    answered_service: cfg.answered_service ?? 5,
+    talk_per_min:     cfg.talk_per_min     ?? 0.1,
+    avg_min:          cfg.avg_min          ?? 2,
+    missed_deduct:    cfg.missed_deduct    ?? -3,
+    voicemail_deduct: cfg.voicemail_deduct ?? -2,
+  };
+}
+
 async function archiveToHistorical(month, userId) {
   const { data: raceRows } = await supabase.from('race_data').select('*').eq('user_id', userId);
   if (!raceRows?.length) return;
 
+  const sc     = await fetchScoringConfig(userId);
   const rwMissed = raceRows[0]?.race_wide_missed    || 0;
   const rwVm     = raceRows[0]?.race_wide_voicemail || 0;
 
   const scored = raceRows.map(r => {
     const svc    = r.team === 'service';
-    const polPts = (r.wl||0)*100+(r.ul||0)*75+(r.term||0)*50+(r.health||0)*30+(r.auto||0)*15+(r.fire||0)*10;
-    const callPts = (r.placed||0)*(svc?0.25:1)+(r.answered||0)*(svc?5:1)+(+r.talk_min||0)*.1+(+r.avg_min||0)*2;
+    const polPts  = (r.wl||0)*sc.wl + (r.ul||0)*sc.ul + (r.term||0)*sc.term + (r.health||0)*sc.health + (r.auto||0)*sc.auto + (r.fire||0)*sc.fire;
+    const callPts = (r.placed||0)*(svc?sc.placed_service:sc.placed_sales) + (r.answered||0)*(svc?sc.answered_service:sc.answered_sales) + (+r.talk_min||0)*sc.talk_per_min + (+r.avg_min||0)*sc.avg_min;
     const gross  = Math.round(polPts + callPts);
-    const deduct = Math.round(rwMissed*(-3) + rwVm*(-2));
+    const deduct = Math.round(rwMissed*sc.missed_deduct + rwVm*sc.voicemail_deduct);
     return { ...r, gross, deduct, total: Math.max(0, gross + deduct) };
   }).sort((a, b) => b.total - a.total);
 
@@ -401,14 +427,15 @@ async function archiveToHistorical(month, userId) {
 }
 
 async function archiveCallStatsToHistorical(month, totals, userId) {
+  const sc       = await fetchScoringConfig(userId);
   const rwMissed = totals.raceWide.missed;
   const rwVm     = totals.raceWide.voicemails;
 
   const scored = Object.values(totals.agents).map(s => {
     const svc    = s.team === 'service';
-    const callPts = s.placed*(svc?0.25:1)+s.answered*(svc?5:1)+s.talkMin*.1+s.avgMin*2;
+    const callPts = s.placed*(svc?sc.placed_service:sc.placed_sales)+s.answered*(svc?sc.answered_service:sc.answered_sales)+s.talkMin*sc.talk_per_min+s.avgMin*sc.avg_min;
     const gross  = Math.round(callPts);
-    const deduct = Math.round(rwMissed*(-3) + rwVm*(-2));
+    const deduct = Math.round(rwMissed*sc.missed_deduct + rwVm*sc.voicemail_deduct);
     return { ...s, gross, deduct, total: Math.max(0, gross + deduct) };
   }).sort((a, b) => b.total - a.total);
 
@@ -563,11 +590,12 @@ function classifySales(data, headerIdx, colIdx, knownHashes) {
   const newLogRows = [];
   let duplicatesSkipped = 0;
 
-  const productCol  = colIdx.product      ?? -1;
-  const nameCol     = colIdx.policy_name  ?? -1;
-  const agentCol    = colIdx.written_by   ?? -1;
-  const dateCol     = colIdx.written_date ?? -1;
-  const typeCol     = colIdx.policy_type  ?? -1;
+  const productCol  = colIdx.product         ?? -1;
+  const nameCol     = colIdx.policy_name     ?? -1;
+  const agentCol    = colIdx.written_by      ?? -1;
+  const dateCol     = colIdx.written_date    ?? -1;
+  const typeCol     = colIdx.policy_type     ?? -1;
+  const premiumCol  = colIdx.written_premium ?? -1;
 
   for (let i = headerIdx + 1; i < data.length; i++) {
     const row     = data[i];
@@ -576,6 +604,8 @@ function classifySales(data, headerIdx, colIdx, knownHashes) {
     const agent   = String(row[agentCol]   || '').trim();
     const date    = String(row[dateCol]    || '').trim();
     const polType = typeCol !== -1 ? String(row[typeCol] || '').trim() : '';
+    const rawPrem = premiumCol !== -1 ? String(row[premiumCol] || '').replace(/[$,\s]/g, '') : '';
+    const writtenPremium = rawPrem ? (parseFloat(rawPrem) || null) : null;
 
     if (!product || !agent || !date) continue;
 
@@ -584,7 +614,7 @@ function classifySales(data, headerIdx, colIdx, knownHashes) {
 
     const category = mapPolicyCategory(product, polType);
     if (category === 'other') {
-      newLogRows.push([hash, 'skip', 'other', dateOnly(date), '']);
+      newLogRows.push([hash, 'skip', 'other', dateOnly(date), null]);
       continue;
     }
 
@@ -597,7 +627,7 @@ function classifySales(data, headerIdx, colIdx, knownHashes) {
     }
     if (!agentInfo) continue;
 
-    newLogRows.push([hash, agentInfo.id, category, dateOnly(date), '']);
+    newLogRows.push([hash, agentInfo.id, category, dateOnly(date), writtenPremium]);
   }
 
   return { newLogRows, duplicatesSkipped };

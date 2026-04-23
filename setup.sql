@@ -158,6 +158,17 @@ ALTER TABLE call_performance_log ENABLE ROW LEVEL SECURITY;
 
 CREATE INDEX IF NOT EXISTS historical_wins_user_month ON historical_wins (user_id, month);
 
+-- sales_log written premium
+ALTER TABLE sales_log ADD COLUMN IF NOT EXISTS written_premium numeric;
+
+-- AI analysis columns (added progressively — safe to re-run)
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS ai_analysis_cache jsonb;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS ai_analysis_at    timestamptz;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS ai_history_key    jsonb;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS timezone          text NOT NULL DEFAULT 'America/Los_Angeles';
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS report_hour       smallint NOT NULL DEFAULT 7;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS last_report_date  date;
+
 
 -- ─── 4. ADD user_id TO DATA TABLES (no-op if already created above) ──────────────────────────────
 

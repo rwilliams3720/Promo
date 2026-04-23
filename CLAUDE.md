@@ -21,6 +21,10 @@ Browser (index.html, served by Vercel)
     → lists/updates all accounts rows
   ↓ GET /api/config
     → serves SUPABASE_URL + SUPABASE_ANON_KEY to browser
+  ↓ GET /api/ai-analysis  (Authorization: Bearer <jwt>, Premium or admin)
+    → returns cached analysis if <5 days old; otherwise calls Claude and rebuilds history key
+  ↓ POST /api/ai-analysis?action=email  (Authorization: Bearer <jwt>)
+    → emails current cached analysis via Resend to the account's email address
 ```
 
 ## Key Files
@@ -82,6 +86,38 @@ Keys: `wl, ul, term, health, auto, fire, placed_sales, placed_service, answered_
 | `cancelled` | Read-only | ✗ | Banner shown, uploads hidden |
 
 Trial expiry is checked client-side: if `status=trial` and `trial_ends_at < now()`, treated as `past_due`.
+
+## Feature Gating by Plan
+| Feature | Basic | Pro | Premium |
+|---------|-------|-----|---------|
+| Race/Scoring tab | ✓ | ✓ | ✓ |
+| Call Performance table | ✓ | ✓ | ✓ |
+| Voicemail Heatmap | Upsell panel | ✓ | ✓ |
+| AI Analysis tab | — | — | ✓ (admin always) |
+| Daily email reports | — | ✓ | ✓ |
+
+**Heatmap gating**: `loadPerf()` shows `#heatmap-panel` for Pro/Premium/admin; shows `#heatmap-upsell` (description + "Manage Subscription" button → account tab) for Basic.
+
+## Sandbox Reset (Admin only)
+Account tab shows a "Sandbox — Reset My Data" section for `_isAdmin` accounts. Two-click confirm (5s timeout). Deletes `call_log`, `sales_log`, resets `race_data` to zero, clears `race_config.current_month`. No server endpoint needed — uses anon Supabase client with RLS (user deletes their own rows). Intended for `wilrus01` sandbox testing; grant `is_admin=true` to that account via SQL.
+
+## AI Analysis
+- **Timer**: 5-day cooldown enforced client-side (`br-analysis-last` in localStorage). Button shows remaining time (days + hours).
+- **Tab open**: displays cached analysis from `br-analysis-data` localStorage — no server call.
+- **Analyze button**: only active when timer expired. Calls `/api/ai-analysis`, saves result + timestamp to localStorage.
+- **Email Analysis button**: appears after analysis is displayed. Two-click confirm (6s timeout). Calls `POST /api/ai-analysis?action=email` → Resend to account email.
+- **Server cache**: `accounts.ai_analysis_cache` (jsonb) + `accounts.ai_analysis_at` (timestamptz) — TTL 5 days.
+- **History key**: `accounts.ai_history_key` (jsonb) — compact snapshot of last analysis (abbreviated keys). Used by Claude to compare improvements, declines, areas to monitor.
+
+### History key schema
+```json
+{ "ts": "ISO", "m": { "Mon YYYY": { "p":n, "a":n, "tk":n, "vm":n, "ms":n, "pol":n } },
+  "w": { "YYYY-Wnn": { "p":n, "a":n, "tk":n, "vm":n, "ms":n } },
+  "r90": { "p":n, "a":n, "tk":n, "vm":n, "ms":n, "pol":n },
+  "ag": { "agentId": { "p":n, "a":n, "pol":n } },
+  "note": "last sentence from prior AI narrative (≤200 chars)" }
+```
+Keys: p=placed, a=answered, tk=talkMin, vm=voicemail, ms=missed, pol=policies. Last 3 months, last 4 weeks, rolling 90-day totals, per-agent 90-day, and AI's own prior summary note.
 
 ## Auth Screens
 1. **Login** — email + password + links to forgot password / sign up
@@ -194,7 +230,7 @@ total       = max(0, gross + deduct)
 ```
 Deductions are race-wide — applied equally to all agents.
 
-**Note:** `archiveToHistorical` and `archiveCallStatsToHistorical` in upload.js use hard-coded scoring multipliers (not scoring_config). Archived scores may not match displayed scores if scoring config has been customized. Known issue — not yet fixed.
+**Note:** `archiveToHistorical` and `archiveCallStatsToHistorical` both call `fetchScoringConfig(userId)` at archive time and use those values. Defaults match the original hard-coded values if no scoring_config rows exist.
 
 ## Agents (hardcoded in upload.js + perf.js)
 ashley, fiona, jocelyn, joseph, peyton, susan, tiffany, tracy, amin, andy, russel

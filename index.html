@@ -502,7 +502,7 @@
         </table>
       </div>
     </div>
-    <div class="panel">
+    <div class="panel" id="heatmap-panel">
       <div class="panel-title">Voicemail Heatmap</div>
       <div class="perf-controls">
         <select class="perf-select" id="vm-period" onchange="populateVmDates();renderVmHeatmap()">
@@ -517,6 +517,12 @@
         <div class="hm-labels" id="vm-labels"></div>
       </div>
     </div>
+    <div class="panel" id="heatmap-upsell" style="display:none;text-align:center;padding:2rem 1.5rem;">
+      <div class="panel-title">Voicemail Heatmap</div>
+      <p style="color:var(--muted);margin:.75rem 0 .5rem;">See exactly when voicemails hit throughout the day — by day, week, or month — so you can staff smarter and reduce missed calls.</p>
+      <p style="color:var(--muted);margin:0 0 1.5rem;font-size:13px;">Available on Pro and Premium plans.</p>
+      <button class="btn btn-primary" onclick="goToAccountTab()">Manage Subscription</button>
+    </div>
   </div>
 
   <!-- ── TAB: ANALYSIS ── -->
@@ -524,7 +530,10 @@
     <div class="panel">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.2rem;">
         <div class="panel-title" style="margin:0">Performance Trends</div>
-        <button class="btn btn-secondary" id="analysis-refresh-btn" onclick="loadAnalysis()">Refresh Analysis</button>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button class="btn btn-secondary" id="analysis-refresh-btn" onclick="runAnalysis()">Analyze</button>
+          <button class="btn btn-secondary" id="analysis-email-btn" onclick="emailAnalysis()" style="display:none">Email Analysis</button>
+        </div>
       </div>
       <div class="analysis-charts">
         <div class="analysis-chart-box">
@@ -544,7 +553,7 @@
     <div class="panel">
       <div class="panel-title">AI Coaching Insights</div>
       <div id="analysis-body">
-        <div style="color:var(--muted);font-size:13px;">Click <strong>Refresh Analysis</strong> to generate insights.</div>
+        <div style="color:var(--muted);font-size:13px;">Click <strong>Analyze</strong> to generate insights.</div>
       </div>
       <div id="analysis-msg" style="font-size:12px;margin-top:8px;display:none"></div>
     </div>
@@ -642,6 +651,12 @@
         <button class="btn btn-primary" onclick="saveColumnMap()">Save Mapping</button>
         <div id="colmap-msg" style="font-size:13px;margin-top:10px;color:var(--accent2);display:none"></div>
       </div>
+      <div class="acct-section" id="sandbox-reset-section" style="display:none;border-top:2px solid var(--danger);padding-top:1.2rem;">
+        <h3 style="color:var(--danger)">Sandbox — Reset My Data</h3>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Permanently deletes all call logs, sales logs, race data, and resets the current month for your account. Use this to re-test fresh uploads. This cannot be undone.</p>
+        <button class="btn" style="background:var(--danger);color:#fff;" onclick="confirmResetMyData(this)">Delete All My Data</button>
+        <div id="sandbox-reset-msg" style="font-size:13px;margin-top:10px;display:none"></div>
+      </div>
     </div>
   </div>
 
@@ -707,6 +722,7 @@ let _session  = null;
 let _adminRows = [];
 let _raceData  = [];
 let _processingToken = null;
+let _analysisAt = null; // ai_analysis_at from accounts table — authoritative per-account timer
 
 const PLAN_PRICES = { basic: 25, pro: 35, premium: 50 };
 const PLAN_FEATURES = {
@@ -874,6 +890,7 @@ async function checkAccountAndShow(session) {
       _acctStatus  = acct.status   || 'trial';
       _currentPlan = acct.plan     || 'basic';
       _columnMap   = acct.sales_column_map || {};
+      _analysisAt  = acct.ai_analysis_at   || null;
 
       if (_acctStatus === 'trial' && acct.trial_ends_at) {
         if (new Date(acct.trial_ends_at) < new Date()) {
@@ -1046,6 +1063,7 @@ async function handleSignOut() {
   _columnMap = {};
   _perfData = null;
   _adminRows = [];
+  _analysisAt = null;
   _uploadInProgress = false;
   document.getElementById('ul-calls').innerHTML = '';
   document.getElementById('ul-sales').innerHTML = '';
@@ -1073,7 +1091,8 @@ function showTab(name, btn) {
   if (name === 'analysis') {
     if (_acctStatus === 'trial' && !_isAdmin) { renderAnalysisTrialTeaser(); return; }
     document.getElementById('analysis-refresh-btn').style.display = '';
-    updateAnalysisBtn(); loadAnalysis();
+    updateAnalysisBtn();
+    displayCachedAnalysis();
   }
 }
 
@@ -1490,8 +1509,10 @@ async function loadPerf() {
     console.log('[perf] call_log rows returned:', _perfData._debug?.rowCount ?? 'unknown');
     populatePerfDates();
     renderPerf();
-    populateVmDates();
-    renderVmHeatmap();
+    const heatmapAllowed = _isAdmin || ['pro','premium'].includes(_currentPlan);
+    document.getElementById('heatmap-panel').style.display  = heatmapAllowed ? '' : 'none';
+    document.getElementById('heatmap-upsell').style.display = heatmapAllowed ? 'none' : '';
+    if (heatmapAllowed) { populateVmDates(); renderVmHeatmap(); }
   } catch (err) {
     console.error('loadPerf error:', err);
     document.getElementById('perf-body').innerHTML =
@@ -1682,11 +1703,11 @@ function renderVmHeatmap() {
 // ── AI ANALYSIS ──────────────────────────────────────────────────────────────
 let _chartCalls = null, _chartTalk = null, _chartVm = null;
 let _analysisLoading = false;
-const ANALYSIS_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes client-side cooldown
+const ANALYSIS_COOLDOWN_MS = 5 * 24 * 60 * 60 * 1000; // 5 days
 
 function analysisRemainingMs() {
-  const last = parseInt(_lsGet('br-analysis-last') || '0', 10);
-  return Math.max(0, last + ANALYSIS_COOLDOWN_MS - Date.now());
+  if (!_analysisAt) return 0;
+  return Math.max(0, new Date(_analysisAt).getTime() + ANALYSIS_COOLDOWN_MS - Date.now());
 }
 
 function updateAnalysisBtn() {
@@ -1694,41 +1715,89 @@ function updateAnalysisBtn() {
   if (!btn) return;
   const remaining = analysisRemainingMs();
   if (remaining > 0) {
-    const mins = Math.ceil(remaining / 60000);
+    const days  = Math.floor(remaining / 86400000);
+    const hours = Math.ceil((remaining % 86400000) / 3600000);
+    const label = days > 0 ? `${days}d ${hours}h` : `${hours}h`;
     btn.disabled = true;
-    btn.textContent = `Refresh (${mins}m)`;
-    setTimeout(updateAnalysisBtn, 60000);
+    btn.textContent = `Analyze (${label})`;
+    // Poll at min(remaining, 5 minutes) so button re-enables promptly when timer expires
+    setTimeout(updateAnalysisBtn, Math.min(remaining, 5 * 60 * 1000));
   } else {
     btn.disabled = false;
-    btn.textContent = 'Refresh Analysis';
+    btn.textContent = 'Analyze';
   }
+}
+
+function displayCachedAnalysis() {
+  const cached = _lsGet('br-analysis-data');
+  if (cached) {
+    try {
+      const data = JSON.parse(cached);
+      if (data.chartData) renderAnalysisCharts(data.chartData);
+      if (data.insights) {
+        const paragraphs = data.insights.split(/\n\n+/).filter(Boolean);
+        document.getElementById('analysis-body').innerHTML = paragraphs.map(p => `<p>${p.trim()}</p>`).join('');
+        document.getElementById('analysis-email-btn').style.display = '';
+      }
+      if (data.cachedAt) {
+        const msg = document.getElementById('analysis-msg');
+        msg.style.display = 'block';
+        msg.style.color = 'var(--muted)';
+        msg.textContent = `Generated ${new Date(data.cachedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
+      }
+    } catch(e) { /* stale or corrupt — fall through to server fetch */ }
+    return;
+  }
+
+  // No local cache but account has a prior analysis — fetch it from server silently.
+  // The server returns the cached payload without calling Claude.
+  if (!_analysisAt) return;
+  fetch('/api/ai-analysis', { headers: authHeaders() })
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (!data?.insights) return;
+      renderAnalysisCharts(data.chartData || []);
+      const paragraphs = data.insights.split(/\n\n+/).filter(Boolean);
+      document.getElementById('analysis-body').innerHTML = paragraphs.map(p => `<p>${p.trim()}</p>`).join('');
+      document.getElementById('analysis-email-btn').style.display = '';
+      const cachedAt = data.cachedAt || _analysisAt;
+      _lsSet('br-analysis-data', JSON.stringify({ insights: data.insights, chartData: data.chartData, cachedAt }));
+      const msg = document.getElementById('analysis-msg');
+      msg.style.display = 'block';
+      msg.style.color = 'var(--muted)';
+      msg.textContent = `Generated ${new Date(cachedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
+    })
+    .catch(() => {});
 }
 
 function renderAnalysisTrialTeaser() {
   document.getElementById('analysis-refresh-btn').style.display = 'none';
+  document.getElementById('analysis-email-btn').style.display = 'none';
   document.getElementById('analysis-body').innerHTML = `
     <div style="text-align:center;padding:2rem 1rem;">
       <div style="font-size:2rem;margin-bottom:1rem;">🤖</div>
       <div style="font-family:'Bebas Neue',sans-serif;font-size:1.6rem;letter-spacing:.04em;margin-bottom:.75rem;">AI Coaching Insights</div>
       <p style="font-size:14px;color:var(--muted);max-width:480px;margin:0 auto 1.5rem;line-height:1.7;">
-        Premium subscribers get a full AI-powered analysis of their team's last 90 days — including monthly call trends,
+        Premium subscribers get a full AI-powered analysis of their team's last 90 days — including monthly and weekly call trends,
         top performer breakdowns, agents who need coaching, and specific actions your manager can take this week.
-        Powered by Claude AI and updated every 4 hours.
+        Powered by Claude AI, refreshable every 5 days.
       </p>
       <button class="btn btn-primary" onclick="goToAccountTab()">Upgrade to Premium</button>
     </div>`;
   document.getElementById('analysis-msg').style.display = 'none';
 }
 
-async function loadAnalysis() {
+async function runAnalysis() {
   if (_analysisLoading) return;
-  if (analysisRemainingMs() > 0) return; // cooldown active
+  if (analysisRemainingMs() > 0) return;
   _analysisLoading = true;
   const btn  = document.getElementById('analysis-refresh-btn');
   const body = document.getElementById('analysis-body');
   const msg  = document.getElementById('analysis-msg');
-  if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
-  body.innerHTML = '<div style="color:var(--muted);font-size:13px;">Loading analysis…</div>';
+  const emailBtn = document.getElementById('analysis-email-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Analyzing…'; }
+  if (emailBtn) emailBtn.style.display = 'none';
+  body.innerHTML = '<div style="color:var(--muted);font-size:13px;">Generating analysis…</div>';
   msg.style.display = 'none';
 
   try {
@@ -1740,24 +1809,60 @@ async function loadAnalysis() {
     }
 
     renderAnalysisCharts(data.chartData || []);
-
     const paragraphs = (data.insights || '').split(/\n\n+/).filter(Boolean);
     body.innerHTML = paragraphs.map(p => `<p>${p.trim()}</p>`).join('');
 
-    // Record cooldown start only for live calls (not cache hits)
-    if (!data.cached) _lsSet('br-analysis-last', String(Date.now()));
+    if (!data.cached) {
+      const nowIso = new Date().toISOString();
+      _analysisAt = nowIso;
+      _lsSet('br-analysis-data', JSON.stringify({ insights: data.insights, chartData: data.chartData, cachedAt: nowIso }));
+    }
 
     const source = data.cached
-      ? `Cached — generated ${new Date(data.cachedAt).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}`
-      : `Generated ${new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}`;
+      ? `Cached — generated ${new Date(data.cachedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`
+      : `Generated ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
     msg.style.display = 'block';
     msg.style.color = 'var(--muted)';
     msg.textContent = source;
+    if (emailBtn) emailBtn.style.display = '';
   } catch(e) {
     body.innerHTML = `<div style="color:var(--danger);font-size:13px;">${e.message}</div>`;
   } finally {
     _analysisLoading = false;
     updateAnalysisBtn();
+  }
+}
+
+async function emailAnalysis() {
+  const btn = document.getElementById('analysis-email-btn');
+  if (btn.dataset.confirming !== 'yes') {
+    btn.dataset.confirming = 'yes';
+    btn.textContent = 'Confirm Send';
+    setTimeout(() => { btn.dataset.confirming = ''; btn.textContent = 'Email Analysis'; }, 6000);
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  const msg = document.getElementById('analysis-msg');
+  try {
+    const res  = await fetch('/api/ai-analysis?action=email', { method: 'POST', headers: authHeaders() });
+    const data = await res.json();
+    msg.style.display = 'block';
+    if (res.ok) {
+      msg.style.color = 'var(--accent2)';
+      msg.textContent = 'Analysis emailed successfully.';
+    } else {
+      msg.style.color = 'var(--danger)';
+      msg.textContent = data.error || 'Email failed.';
+    }
+  } catch(e) {
+    msg.style.display = 'block';
+    msg.style.color = 'var(--danger)';
+    msg.textContent = e.message;
+  } finally {
+    btn.disabled = false;
+    btn.dataset.confirming = '';
+    btn.textContent = 'Email Analysis';
   }
 }
 
@@ -1910,6 +2015,48 @@ async function loadAccountTab() {
     const el = document.getElementById('cmap-' + f);
     if (el) el.value = (_columnMap[f] || '');
   });
+
+  document.getElementById('sandbox-reset-section').style.display = _isAdmin ? '' : 'none';
+}
+
+async function confirmResetMyData(btn) {
+  if (!_isAdmin) return;
+  const msg = document.getElementById('sandbox-reset-msg');
+  if (btn.dataset.confirming !== 'yes') {
+    btn.dataset.confirming = 'yes';
+    btn.textContent = 'Confirm — this will erase all your data';
+    setTimeout(() => { btn.dataset.confirming = ''; btn.textContent = 'Delete All My Data'; }, 5000);
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = 'Deleting…';
+  msg.style.display = 'none';
+  try {
+    await Promise.all([
+      _supabase.from('call_log').delete().eq('user_id', _userId),
+      _supabase.from('sales_log').delete().eq('user_id', _userId),
+    ]);
+    await _supabase.from('race_data').delete().eq('user_id', _userId);
+    await _supabase.from('race_config').delete().eq('user_id', _userId).eq('key', 'current_month');
+    msg.style.display = 'block';
+    msg.style.color = 'var(--accent2)';
+    msg.textContent = 'All data deleted. Uploads reset — ready for fresh test data.';
+    _raceData = []; _history = []; _perfData = null;
+    _lsRemove('br-analysis-data');
+    _analysisAt = null;
+    document.getElementById('analysis-body').innerHTML = '<div style="color:var(--muted);font-size:13px;">Click <strong>Analyze</strong> to generate insights.</div>';
+    document.getElementById('analysis-email-btn').style.display = 'none';
+    document.getElementById('analysis-msg').style.display = 'none';
+    loadRaceData();
+  } catch(e) {
+    msg.style.display = 'block';
+    msg.style.color = 'var(--danger)';
+    msg.textContent = 'Error: ' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.dataset.confirming = '';
+    btn.textContent = 'Delete All My Data';
+  }
 }
 
 async function changePassword() {

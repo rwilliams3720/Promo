@@ -135,40 +135,59 @@ export default async function handler(req, res) {
 }
 
 async function buildReport(userId, dateStr, dateLabel, acct) {
-  // Call log for the target date
-  const { data: calls } = await supabase
-    .from('call_log')
-    .select('agent_id,disposition,talk_secs')
-    .eq('user_id', userId)
-    .eq('call_dt', dateStr)
-    .not('disposition', 'in', '(internal,other,skip)');
+  const isPremium = acct.plan === 'premium' && ['paid','deferred'].includes(acct.status);
 
-  // Sales log for the target date (sale_date is a date column)
-  const { data: sales } = await supabase
-    .from('sales_log')
-    .select('agent_id,product')
-    .eq('user_id', userId)
-    .eq('sale_date', dateStr);
+  // Date range helpers
+  const d = new Date(dateStr + 'T12:00:00Z');
+  const mtdStart = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`;
+  const ytdStart = `${d.getUTCFullYear()}-01-01`;
+
+  // Fetch race_data for live team assignments alongside all data queries
+  const [callsRes, salesRes, mtdSalesRes, ytdSalesRes, raceRes] = await Promise.all([
+    supabase.from('call_log')
+      .select('agent_id,disposition,talk_secs')
+      .eq('user_id', userId).eq('call_dt', dateStr)
+      .not('disposition', 'in', '(internal,other,skip)'),
+    supabase.from('sales_log')
+      .select('agent_id,product')
+      .eq('user_id', userId).eq('sale_date', dateStr),
+    isPremium
+      ? supabase.from('sales_log').select('agent_id,product,written_premium')
+          .eq('user_id', userId).gte('sale_date', mtdStart).lte('sale_date', dateStr)
+      : Promise.resolve({ data: null }),
+    isPremium
+      ? supabase.from('sales_log').select('agent_id,product,written_premium')
+          .eq('user_id', userId).gte('sale_date', ytdStart).lte('sale_date', dateStr)
+      : Promise.resolve({ data: null }),
+    supabase.from('race_data').select('agent_id,name,team').eq('user_id', userId),
+  ]);
+
+  const calls = callsRes.data;
+  const sales = salesRes.data;
+
+  // Build agent info from live race_data — falls back to hardcoded AGENT_INFO if row missing
+  const agentInfo = { ...AGENT_INFO };
+  for (const row of (raceRes.data || [])) {
+    if (agentInfo[row.agent_id]) agentInfo[row.agent_id] = { name: agentInfo[row.agent_id].name, team: row.team };
+  }
 
   const hasData = (calls?.length || 0) > 0 || (sales?.length || 0) > 0;
 
-  // Aggregate calls per agent
+  // Aggregate daily calls per agent
   const callStats = {};
-  for (const id of Object.keys(AGENT_INFO)) {
-    callStats[id] = { placed: 0, answered: 0, talkSecs: 0 };
-  }
+  for (const id of Object.keys(AGENT_INFO)) callStats[id] = { placed: 0, answered: 0, talkSecs: 0 };
   let totalCalls = 0, totalAnswered = 0, totalTalkSecs = 0, totalVoicemails = 0;
   for (const row of (calls || [])) {
     if (row.disposition === 'voicemail') { totalVoicemails++; continue; }
     if (!row.agent_id || !callStats[row.agent_id]) continue;
     const s = callStats[row.agent_id];
-    if (row.disposition === 'placed')   { s.placed++;   totalCalls++; }
-    if (row.disposition === 'answered') { s.answered++;  totalAnswered++; }
+    if (row.disposition === 'placed')   { s.placed++;  totalCalls++; }
+    if (row.disposition === 'answered') { s.answered++; totalAnswered++; }
     s.talkSecs    += row.talk_secs || 0;
     totalTalkSecs += row.talk_secs || 0;
   }
 
-  // Aggregate sales per agent
+  // Aggregate daily sales per agent
   const salesStats = {};
   for (const id of Object.keys(AGENT_INFO)) salesStats[id] = {};
   let totalPolicies = 0;
@@ -178,8 +197,38 @@ async function buildReport(userId, dateStr, dateLabel, acct) {
     totalPolicies++;
   }
 
-  const html = buildHtml(acct, dateLabel, callStats, salesStats, totalCalls, totalAnswered, totalTalkSecs, totalPolicies, totalVoicemails);
+  // Aggregate MTD/YTD sales per agent per product (premium only)
+  const mtdStats   = aggregateSalesByAgentProduct(mtdSalesRes.data);
+  const ytdStats   = aggregateSalesByAgentProduct(ytdSalesRes.data);
+  const mtdPremium = aggregatePremiumByAgentProduct(mtdSalesRes.data);
+  const ytdPremium = aggregatePremiumByAgentProduct(ytdSalesRes.data);
+
+  const html = buildHtml(acct, dateLabel, dateStr, agentInfo, callStats, salesStats, totalCalls, totalAnswered, totalTalkSecs, totalPolicies, totalVoicemails, mtdStats, ytdStats, mtdStart, ytdStart, mtdPremium, ytdPremium);
   return { hasData, html };
+}
+
+function aggregateSalesByAgentProduct(rows) {
+  if (!rows) return null;
+  const stats = {};
+  for (const id of Object.keys(AGENT_INFO)) stats[id] = {};
+  for (const row of rows) {
+    if (!row.agent_id || !stats[row.agent_id] || !row.product) continue;
+    stats[row.agent_id][row.product] = (stats[row.agent_id][row.product] || 0) + 1;
+  }
+  return stats;
+}
+
+function aggregatePremiumByAgentProduct(rows) {
+  if (!rows) return null;
+  const stats = {};
+  for (const id of Object.keys(AGENT_INFO)) stats[id] = {};
+  for (const row of rows) {
+    if (!row.agent_id || !stats[row.agent_id] || !row.product) continue;
+    const amt = parseFloat(row.written_premium) || 0;
+    if (!amt) continue;
+    stats[row.agent_id][row.product] = (stats[row.agent_id][row.product] || 0) + amt;
+  }
+  return stats;
 }
 
 function fmtTime(secs) {
@@ -188,8 +237,129 @@ function fmtTime(secs) {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
-function agentRows(callStats, salesStats) {
-  return Object.entries(AGENT_INFO)
+function agentSalesTable(title, agentInfo, stats, periodStart, dateStr) {
+  const headerCols = SALES_PRODUCTS.map(p =>
+    `<th style="padding:6px 8px;text-align:center;font-size:10px;color:#6b8db5;text-transform:uppercase;letter-spacing:.05em;font-weight:600;white-space:nowrap;">${PRODUCT_LABELS[p].split('/')[0]}</th>`
+  ).join('');
+
+  const bodyRows = Object.entries(agentInfo)
+    .sort((a, b) => a[1].team.localeCompare(b[1].team) || a[1].name.localeCompare(b[1].name))
+    .map(([id, info]) => {
+      const s = stats[id] || {};
+      const rowTotal = SALES_PRODUCTS.reduce((n, p) => n + (s[p] || 0), 0);
+      const teamColor = info.team === 'sales' ? '#00d4ff' : '#00ff94';
+      const cells = SALES_PRODUCTS.map(p =>
+        `<td style="padding:6px 8px;border-bottom:1px solid #1e3a5f;text-align:center;font-size:12px;color:${s[p] ? '#e8f4fd' : '#3a5a7a'};">${s[p] || '—'}</td>`
+      ).join('');
+      return `<tr>
+        <td style="padding:6px 8px;border-bottom:1px solid #1e3a5f;font-size:12px;white-space:nowrap;">${info.name}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #1e3a5f;">
+          <span style="background:${teamColor}22;color:${teamColor};padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;text-transform:uppercase;">${info.team}</span>
+        </td>
+        ${cells}
+        <td style="padding:6px 8px;border-bottom:1px solid #1e3a5f;text-align:center;font-size:12px;font-weight:700;color:${rowTotal ? '#ff8c42' : '#3a5a7a'};">${rowTotal || '—'}</td>
+      </tr>`;
+    }).join('');
+
+  const totalCols = SALES_PRODUCTS.map(p => {
+    const col = Object.values(stats).reduce((n, s) => n + (s[p] || 0), 0);
+    return `<td style="padding:6px 8px;text-align:center;font-size:12px;font-weight:700;color:#ff8c42;">${col || '—'}</td>`;
+  }).join('');
+  const grandTotal = Object.values(stats).reduce((n, s) => n + SALES_PRODUCTS.reduce((m, p) => m + (s[p] || 0), 0), 0);
+
+  const periodLabel = periodStart === dateStr
+    ? 'No prior sales in period'
+    : `${new Date(periodStart + 'T12:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${new Date(dateStr + 'T12:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric'})}`;
+
+  return `
+  <tr><td style="background:#132744;padding:0 32px 24px;">
+    <div style="font-size:13px;font-weight:700;color:#ff8c42;text-transform:uppercase;letter-spacing:.06em;padding:20px 0 4px;">${title}</div>
+    <div style="font-size:11px;color:#6b8db5;margin-bottom:10px;">${periodLabel}</div>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+      <thead>
+        <tr style="background:#060e1c;">
+          <th style="padding:6px 8px;text-align:left;font-size:10px;color:#6b8db5;text-transform:uppercase;letter-spacing:.05em;font-weight:600;">Agent</th>
+          <th style="padding:6px 8px;text-align:left;font-size:10px;color:#6b8db5;text-transform:uppercase;letter-spacing:.05em;font-weight:600;">Team</th>
+          ${headerCols}
+          <th style="padding:6px 8px;text-align:center;font-size:10px;color:#6b8db5;text-transform:uppercase;letter-spacing:.05em;font-weight:600;">Total</th>
+        </tr>
+      </thead>
+      <tbody>${bodyRows}</tbody>
+      <tfoot>
+        <tr style="background:#060e1c;">
+          <td colspan="2" style="padding:6px 8px;font-size:11px;color:#6b8db5;font-weight:700;">Total</td>
+          ${totalCols}
+          <td style="padding:6px 8px;text-align:center;font-size:12px;font-weight:700;color:#ff8c42;">${grandTotal || '—'}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </td></tr>`;
+}
+
+function fmtCurrency(n) {
+  if (!n) return '—';
+  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+function agentPremiumTable(title, agentInfo, stats, periodStart, dateStr) {
+  const headerCols = SALES_PRODUCTS.map(p =>
+    `<th style="padding:6px 8px;text-align:center;font-size:10px;color:#6b8db5;text-transform:uppercase;letter-spacing:.05em;font-weight:600;white-space:nowrap;">${PRODUCT_LABELS[p].split('/')[0]}</th>`
+  ).join('');
+
+  const bodyRows = Object.entries(agentInfo)
+    .sort((a, b) => a[1].team.localeCompare(b[1].team) || a[1].name.localeCompare(b[1].name))
+    .map(([id, info]) => {
+      const s = stats[id] || {};
+      const rowTotal = SALES_PRODUCTS.reduce((n, p) => n + (s[p] || 0), 0);
+      const teamColor = info.team === 'sales' ? '#00d4ff' : '#00ff94';
+      const cells = SALES_PRODUCTS.map(p =>
+        `<td style="padding:6px 8px;border-bottom:1px solid #1e3a5f;text-align:center;font-size:11px;color:${s[p] ? '#e8f4fd' : '#3a5a7a'};">${fmtCurrency(s[p])}</td>`
+      ).join('');
+      return `<tr>
+        <td style="padding:6px 8px;border-bottom:1px solid #1e3a5f;font-size:12px;white-space:nowrap;">${info.name}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #1e3a5f;">
+          <span style="background:${teamColor}22;color:${teamColor};padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;text-transform:uppercase;">${info.team}</span>
+        </td>
+        ${cells}
+        <td style="padding:6px 8px;border-bottom:1px solid #1e3a5f;text-align:center;font-size:11px;font-weight:700;color:${rowTotal ? '#ff8c42' : '#3a5a7a'};">${fmtCurrency(rowTotal)}</td>
+      </tr>`;
+    }).join('');
+
+  const totalCols = SALES_PRODUCTS.map(p => {
+    const col = Object.values(stats).reduce((n, s) => n + (s[p] || 0), 0);
+    return `<td style="padding:6px 8px;text-align:center;font-size:11px;font-weight:700;color:#ff8c42;">${fmtCurrency(col)}</td>`;
+  }).join('');
+  const grandTotal = Object.values(stats).reduce((n, s) => n + SALES_PRODUCTS.reduce((m, p) => m + (s[p] || 0), 0), 0);
+
+  const periodLabel = `${new Date(periodStart + 'T12:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${new Date(dateStr + 'T12:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric'})}`;
+
+  return `
+  <tr><td style="background:#132744;padding:0 32px 24px;">
+    <div style="font-size:13px;font-weight:700;color:#ff8c42;text-transform:uppercase;letter-spacing:.06em;padding:20px 0 4px;">${title}</div>
+    <div style="font-size:11px;color:#6b8db5;margin-bottom:10px;">${periodLabel}</div>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+      <thead>
+        <tr style="background:#060e1c;">
+          <th style="padding:6px 8px;text-align:left;font-size:10px;color:#6b8db5;text-transform:uppercase;letter-spacing:.05em;font-weight:600;">Agent</th>
+          <th style="padding:6px 8px;text-align:left;font-size:10px;color:#6b8db5;text-transform:uppercase;letter-spacing:.05em;font-weight:600;">Team</th>
+          ${headerCols}
+          <th style="padding:6px 8px;text-align:center;font-size:10px;color:#6b8db5;text-transform:uppercase;letter-spacing:.05em;font-weight:600;">Total</th>
+        </tr>
+      </thead>
+      <tbody>${bodyRows}</tbody>
+      <tfoot>
+        <tr style="background:#060e1c;">
+          <td colspan="2" style="padding:6px 8px;font-size:11px;color:#6b8db5;font-weight:700;">Total</td>
+          ${totalCols}
+          <td style="padding:6px 8px;text-align:center;font-size:11px;font-weight:700;color:#ff8c42;">${fmtCurrency(grandTotal)}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </td></tr>`;
+}
+
+function agentRows(agentInfo, callStats, salesStats) {
+  return Object.entries(agentInfo)
     .sort((a, b) => a[1].team.localeCompare(b[1].team) || a[1].name.localeCompare(b[1].name))
     .map(([id, info]) => {
       const c = callStats[id];
@@ -210,7 +380,7 @@ function agentRows(callStats, salesStats) {
     }).join('');
 }
 
-function buildHtml(acct, dateLabel, callStats, salesStats, totalCalls, totalAnswered, totalTalkSecs, totalPolicies, totalVoicemails) {
+function buildHtml(acct, dateLabel, dateStr, agentInfo, callStats, salesStats, totalCalls, totalAnswered, totalTalkSecs, totalPolicies, totalVoicemails, mtdStats, ytdStats, mtdStart, ytdStart, mtdPremium, ytdPremium) {
   const company = acct.company_name || 'Your Team';
   return `<!DOCTYPE html>
 <html>
@@ -286,9 +456,14 @@ function buildHtml(acct, dateLabel, callStats, salesStats, totalCalls, totalAnsw
           <th style="padding:8px 12px;text-align:left;font-size:10px;color:#6b8db5;text-transform:uppercase;letter-spacing:.06em;font-weight:600;">Policies Issued</th>
         </tr>
       </thead>
-      <tbody>${agentRows(callStats, salesStats)}</tbody>
+      <tbody>${agentRows(agentInfo, callStats, salesStats)}</tbody>
     </table>
   </td></tr>
+
+  ${mtdStats ? agentSalesTable('Month-to-Date Policies by Agent &amp; Product', agentInfo, mtdStats, mtdStart, dateStr) : ''}
+  ${ytdStats ? agentSalesTable('Year-to-Date Policies by Agent &amp; Product', agentInfo, ytdStats, ytdStart, dateStr) : ''}
+  ${mtdPremium ? agentPremiumTable('Month-to-Date Written Premium by Agent &amp; Product', agentInfo, mtdPremium, mtdStart, dateStr) : ''}
+  ${ytdPremium ? agentPremiumTable('Year-to-Date Written Premium by Agent &amp; Product', agentInfo, ytdPremium, ytdStart, dateStr) : ''}
 
   <!-- Footer -->
   <tr><td style="background:#060e1c;border-radius:0 0 16px 16px;padding:20px 32px;border-top:1px solid #1e3a5f;">
