@@ -9,19 +9,6 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 
 const FROM_EMAIL = 'Boat Race <reports@the-boat-race.com>';
 
-const AGENT_INFO = {
-  ashley:  { name:'Ashley McEniry',    team:'service' },
-  fiona:   { name:'Fiona Rodriguez',   team:'service' },
-  jocelyn: { name:'Jocelyn Hernandez', team:'service' },
-  joseph:  { name:'Joseph Underwood',  team:'sales'   },
-  peyton:  { name:'Peyton Tooze',      team:'sales'   },
-  susan:   { name:'Susan Navarro',     team:'sales'   },
-  tiffany: { name:'Tiffany Dabe',      team:'sales'   },
-  tracy:   { name:'Tracy Ankrah',      team:'service' },
-  amin:    { name:'Amin Kalas',        team:'sales'   },
-  andy:    { name:'Andy Rose',         team:'service' },
-  russel:  { name:'Russel Williams',   team:'service' },
-};
 
 const SALES_PRODUCTS = ['wl','ul','term','health','auto','fire'];
 const PRODUCT_LABELS = { wl:'Whole Life', ul:'Universal Life', term:'Term', health:'Health', auto:'Auto', fire:'Home/Fire' };
@@ -165,17 +152,17 @@ async function buildReport(userId, dateStr, dateLabel, acct) {
   const calls = callsRes.data;
   const sales = salesRes.data;
 
-  // Build agent info from live race_data — falls back to hardcoded AGENT_INFO if row missing
-  const agentInfo = { ...AGENT_INFO };
+  // Build agent info from live race_data — source of truth for name and team
+  const agentInfo = {};
   for (const row of (raceRes.data || [])) {
-    if (agentInfo[row.agent_id]) agentInfo[row.agent_id] = { name: agentInfo[row.agent_id].name, team: row.team };
+    agentInfo[row.agent_id] = { name: row.name, team: row.team };
   }
 
   const hasData = (calls?.length || 0) > 0 || (sales?.length || 0) > 0;
 
   // Aggregate daily calls per agent
   const callStats = {};
-  for (const id of Object.keys(AGENT_INFO)) callStats[id] = { placed: 0, answered: 0, talkSecs: 0 };
+  for (const id of Object.keys(agentInfo)) callStats[id] = { placed: 0, answered: 0, talkSecs: 0 };
   let totalCalls = 0, totalAnswered = 0, totalTalkSecs = 0, totalVoicemails = 0;
   for (const row of (calls || [])) {
     if (row.disposition === 'voicemail') { totalVoicemails++; continue; }
@@ -189,7 +176,7 @@ async function buildReport(userId, dateStr, dateLabel, acct) {
 
   // Aggregate daily sales per agent
   const salesStats = {};
-  for (const id of Object.keys(AGENT_INFO)) salesStats[id] = {};
+  for (const id of Object.keys(agentInfo)) salesStats[id] = {};
   let totalPolicies = 0;
   for (const row of (sales || [])) {
     if (!row.agent_id || !salesStats[row.agent_id]) continue;
@@ -210,9 +197,9 @@ async function buildReport(userId, dateStr, dateLabel, acct) {
 function aggregateSalesByAgentProduct(rows) {
   if (!rows) return null;
   const stats = {};
-  for (const id of Object.keys(AGENT_INFO)) stats[id] = {};
   for (const row of rows) {
-    if (!row.agent_id || !stats[row.agent_id] || !row.product) continue;
+    if (!row.agent_id || !row.product) continue;
+    if (!stats[row.agent_id]) stats[row.agent_id] = {};
     stats[row.agent_id][row.product] = (stats[row.agent_id][row.product] || 0) + 1;
   }
   return stats;
@@ -221,11 +208,11 @@ function aggregateSalesByAgentProduct(rows) {
 function aggregatePremiumByAgentProduct(rows) {
   if (!rows) return null;
   const stats = {};
-  for (const id of Object.keys(AGENT_INFO)) stats[id] = {};
   for (const row of rows) {
-    if (!row.agent_id || !stats[row.agent_id] || !row.product) continue;
+    if (!row.agent_id || !row.product) continue;
     const amt = parseFloat(row.written_premium) || 0;
     if (!amt) continue;
+    if (!stats[row.agent_id]) stats[row.agent_id] = {};
     stats[row.agent_id][row.product] = (stats[row.agent_id][row.product] || 0) + amt;
   }
   return stats;

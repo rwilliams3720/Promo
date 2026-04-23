@@ -5,20 +5,6 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
-const AGENT_INFO = {
-  ashley:  { name:'Ashley McEniry',    team:'service' },
-  fiona:   { name:'Fiona Rodriguez',   team:'service' },
-  jocelyn: { name:'Jocelyn Hernandez', team:'service' },
-  joseph:  { name:'Joseph Underwood',  team:'sales'   },
-  peyton:  { name:'Peyton Tooze',      team:'sales'   },
-  susan:   { name:'Susan Navarro',     team:'sales'   },
-  tiffany: { name:'Tiffany Dabe',      team:'sales'   },
-  tracy:   { name:'Tracy Ankrah',      team:'service' },
-  amin:    { name:'Amin Kalas',        team:'sales'   },
-  andy:    { name:'Andy Rose',         team:'service' },
-  russel:  { name:'Russel Williams',   team:'service' },
-};
-
 const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 export default async function handler(req, res) {
@@ -30,6 +16,14 @@ export default async function handler(req, res) {
   if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
 
   try {
+    // Fetch agent name/team from race_data for this account
+    const { data: raceRows } = await supabase
+      .from('race_data')
+      .select('agent_id,name,team')
+      .eq('user_id', user.id);
+    const agentMeta = {};
+    for (const r of (raceRows || [])) agentMeta[r.agent_id] = { name: r.name, team: r.team };
+
     const PAGE = 1000;
     const logs = [];
     let from = 0;
@@ -88,7 +82,7 @@ export default async function handler(req, res) {
       }
 
       if (!isPlaced && !isAnswered) continue;
-      if (!agent_id || !AGENT_INFO[agent_id]) continue;
+      if (!agent_id) continue;
 
       for (const [map, key] of [[daily,dayKey],[weekly,weekKey],[monthly,monKey],[yearly,yearKey]]) {
         if (!map[key]) map[key] = {};
@@ -109,7 +103,7 @@ export default async function handler(req, res) {
         let totPlaced = 0, totAnswered = 0, totTalkMin = 0;
         for (const [id, s] of Object.entries(agents)) {
           if (id === '__race') continue;
-          const info   = AGENT_INFO[id];
+          const info   = agentMeta[id] || { name: id, team: 'sales' };
           const avgMin = s.talkCalls > 0 ? Math.round((s.talkMin/s.talkCalls)*100)/100 : 0;
           const maxMin = Math.round(s.maxSecs/60*100)/100;
           totPlaced   += s.placed;

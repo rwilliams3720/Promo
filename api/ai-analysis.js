@@ -4,19 +4,6 @@ import { createClient } from '@supabase/supabase-js';
 const supabase  = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const AGENT_INFO = {
-  ashley:  { name:'Ashley McEniry',    team:'service' },
-  fiona:   { name:'Fiona Rodriguez',   team:'service' },
-  jocelyn: { name:'Jocelyn Hernandez', team:'service' },
-  joseph:  { name:'Joseph Underwood',  team:'sales'   },
-  peyton:  { name:'Peyton Tooze',      team:'sales'   },
-  susan:   { name:'Susan Navarro',     team:'sales'   },
-  tiffany: { name:'Tiffany Dabe',      team:'sales'   },
-  tracy:   { name:'Tracy Ankrah',      team:'service' },
-  amin:    { name:'Amin Kalas',        team:'sales'   },
-  andy:    { name:'Andy Rose',         team:'service' },
-  russel:  { name:'Russel Williams',   team:'service' },
-};
 
 const MONTH_ABBR   = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const CACHE_TTL_MS = 5 * 24 * 60 * 60 * 1000; // 5 days
@@ -90,11 +77,17 @@ export default async function handler(req, res) {
       from += PAGE;
     }
 
-    const { data: sales } = await supabase
-      .from('sales_log')
-      .select('agent_id,product,sale_date')
-      .eq('user_id', user.id)
-      .gte('sale_date', cutoffStr);
+    const [{ data: sales }, { data: raceRows }] = await Promise.all([
+      supabase.from('sales_log')
+        .select('agent_id,product,sale_date')
+        .eq('user_id', user.id)
+        .gte('sale_date', cutoffStr),
+      supabase.from('race_data')
+        .select('agent_id,name,team')
+        .eq('user_id', user.id),
+    ]);
+    const agentMeta = {};
+    for (const r of (raceRows || [])) agentMeta[r.agent_id] = { name: r.name, team: r.team };
 
     // Aggregate into monthly, weekly, agent, and rolling-90 buckets
     const monthly  = {};
@@ -119,7 +112,7 @@ export default async function handler(req, res) {
       if (row.disposition === 'voicemail') { m.voicemail++; w.vm++; r90.vm++; }
       if (row.disposition === 'missed')    { m.missed++; w.ms++; r90.ms++; }
 
-      if (!AGENT_INFO[row.agent_id]) continue;
+      if (!row.agent_id) continue;
       if (!agents[row.agent_id]) agents[row.agent_id] = { placed:0, answered:0, talkMin:0, policies:0 };
       const ag = agents[row.agent_id];
       if (row.disposition === 'placed')   { ag.placed++;   ag.talkMin += (row.talk_secs||0)/60; }
@@ -128,7 +121,7 @@ export default async function handler(req, res) {
 
     const r90pol = { pol: 0 };
     for (const row of (sales || [])) {
-      if (!AGENT_INFO[row.agent_id]) continue;
+      if (!row.agent_id) continue;
       if (!agents[row.agent_id]) agents[row.agent_id] = { placed:0, answered:0, talkMin:0, policies:0 };
       agents[row.agent_id].policies++;
       r90pol.pol++;
@@ -175,10 +168,9 @@ export default async function handler(req, res) {
     }).join('\n');
 
     const agentText = Object.entries(agents)
-      .filter(([id]) => AGENT_INFO[id])
       .sort((a, b) => b[1].placed - a[1].placed)
       .map(([id, s]) => {
-        const info = AGENT_INFO[id];
+        const info = agentMeta[id] || { name: id, team: 'sales' };
         return `${info.name} (${info.team}): ${s.placed} placed, ${s.answered} answered, ${Math.round(s.talkMin)}min talk, ${s.policies} policies`;
       }).join('\n');
 
@@ -241,7 +233,7 @@ End with ONE sentence (no heading) summarizing the single most important finding
       })),
       r90:  { p: r90.p, a: r90.a, tk: Math.round(r90.tk), vm: r90.vm, ms: r90.ms, pol: r90pol.pol },
       ag:   Object.fromEntries(
-        Object.entries(agents).filter(([id]) => AGENT_INFO[id])
+        Object.entries(agents)
           .map(([id, v]) => [id, { p: v.placed, a: v.answered, pol: v.policies }])
       ),
       // Extract the last sentence as the note (the "single most important finding" sentence)

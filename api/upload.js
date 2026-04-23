@@ -28,52 +28,10 @@ async function fetchAllPages(client, table, columns, userId) {
   return rows;
 }
 
-const AGENT_INFO = {
-  ashley:  { name:'Ashley McEniry',    team:'service' },
-  fiona:   { name:'Fiona Rodriguez',   team:'service' },
-  jocelyn: { name:'Jocelyn Hernandez', team:'service' },
-  joseph:  { name:'Joseph Underwood',  team:'sales'   },
-  peyton:  { name:'Peyton Tooze',      team:'sales'   },
-  susan:   { name:'Susan Navarro',     team:'sales'   },
-  tiffany: { name:'Tiffany Dabe',      team:'sales'   },
-  tracy:   { name:'Tracy Ankrah',      team:'service' },
-  amin:    { name:'Amin Kalas',        team:'sales'   },
-  andy:    { name:'Andy Rose',         team:'service' },
-  russel:  { name:'Russel Williams',   team:'service' },
-};
-
-const ALL_AGENT_IDS = Object.keys(AGENT_INFO);
-
-const CALL_AGENT_MAP = {
-  'Ashley Foreman':    { id:'ashley',  name:'Ashley McEniry',    team:'service' },
-  'Fiona Rodriguez':   { id:'fiona',   name:'Fiona Rodriguez',   team:'service' },
-  'Jocelyn Hernandez': { id:'jocelyn', name:'Jocelyn Hernandez', team:'service' },
-  'Joseph Underwood':  { id:'joseph',  name:'Joseph Underwood',  team:'sales'   },
-  'Peyton Tooze':      { id:'peyton',  name:'Peyton Tooze',      team:'sales'   },
-  'Susan Navarro':     { id:'susan',   name:'Susan Navarro',     team:'sales'   },
-  'Tiffany Dabe':      { id:'tiffany', name:'Tiffany Dabe',      team:'sales'   },
-  'Tracy Ankrah':      { id:'tracy',   name:'Tracy Ankrah',      team:'service' },
-  'Amin Kalas':        { id:'amin',    name:'Amin Kalas',        team:'sales'   },
-  'Andy Rose':         { id:'andy',    name:'Andy Rose',         team:'service' },
-  'Russel Williams':   { id:'russel',  name:'Russel Williams',   team:'service' },
-};
-
-const SALES_AGENT_MAP = {
-  'joseph Underwood':  { id:'joseph',  team:'sales'   },
-  'Joseph Underwood':  { id:'joseph',  team:'sales'   },
-  'Susan Navarro':     { id:'susan',   team:'sales'   },
-  'Peyton Tooze':      { id:'peyton',  team:'sales'   },
-  'Tiffany Dabe':      { id:'tiffany', team:'sales'   },
-  'Amin Kalas':        { id:'amin',    team:'sales'   },
-  'Ashley McEniry':    { id:'ashley',  team:'service' },
-  'Ashley Foreman':    { id:'ashley',  team:'service' },
-  'Fiona Rodriguez':   { id:'fiona',   team:'service' },
-  'FIONA RODRIGUEZ':   { id:'fiona',   team:'service' },
-  'Jocelyn Hernandez': { id:'jocelyn', team:'service' },
-  'Tracy Ankrah':      { id:'tracy',   team:'service' },
-  'Andy Rose':         { id:'andy',    team:'service' },
-  'Russel Williams':   { id:'russel',  team:'service' },
-};
+// Agent IDs are slugs of the display name: "Jane Smith" → "jane_smith"
+function slugify(name) {
+  return String(name).toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '').replace(/^_+|_+$/g, '');
+}
 
 // Synonyms for sales report column detection — ordered by priority
 const SALES_COL_SYNONYMS = {
@@ -92,7 +50,6 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  // Resolve user from JWT
   const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
   const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
@@ -186,7 +143,14 @@ async function processCallUpload(rows, userId) {
       if (!classified.newLogRows.length) {
         return { success: true, message: `No calls found in ${dataMonth}.`, new: 0, skipped: classified.duplicatesSkipped };
       }
-      const totals = aggregateFromLog(classified.newLogRows);
+      // Build agentMeta from race_data + newly discovered agents
+      const { data: existingRD } = await supabase.from('race_data').select('agent_id,name,team').eq('user_id', userId);
+      const agentMeta = {};
+      for (const r of (existingRD || [])) agentMeta[r.agent_id] = { name: r.name, team: r.team };
+      for (const [id, name] of Object.entries(classified.discoveredAgents)) {
+        if (!agentMeta[id]) agentMeta[id] = { name, team: 'sales' };
+      }
+      const totals = aggregateFromLog(classified.newLogRows, agentMeta);
       await archiveCallStatsToHistorical(dataMonth, totals, userId);
       return { success: true, message: `${dataMonth} call data archived. Current race (${storedMonth}) unchanged.`, archived: true };
     }
@@ -216,14 +180,20 @@ async function processCallUpload(rows, userId) {
     if (logErr) return { success: false, error: 'call_log write failed: ' + logErr.message };
   }
 
+  // Seed race_data rows for any newly discovered agents
+  const { error: seedErr } = await ensureRaceDataRows(userId, classified.discoveredAgents);
+  if (seedErr) return { success: false, error: 'race_data seed failed: ' + seedErr.message };
+
+  // Fetch race_data for agentMeta (name/team) after seeding
+  const { data: raceRows } = await supabase.from('race_data').select('agent_id,name,team').eq('user_id', userId);
+  const agentMeta = {};
+  for (const r of (raceRows || [])) agentMeta[r.agent_id] = { name: r.name, team: r.team };
+
   const allLog = await fetchAllPages(supabase, 'call_log', 'agent_id,disposition,talk_secs,call_dt', userId);
   const allLogRows = allLog.map(r => [
     '', r.agent_id || '', r.disposition, r.talk_secs ? r.talk_secs / 60 : 0, r.call_dt || '', ''
   ]);
-  const totals = aggregateFromLog(allLogRows);
-
-  const { error: seedErr } = await ensureRaceDataRows(userId);
-  if (seedErr) return { success: false, error: 'race_data seed failed: ' + seedErr.message };
+  const totals = aggregateFromLog(allLogRows, agentMeta);
 
   const now = new Date().toISOString();
   for (const id in totals.agents) {
@@ -236,11 +206,12 @@ async function processCallUpload(rows, userId) {
       last_updated: now,
     }).eq('user_id', userId).eq('agent_id', id);
   }
+  // Apply race-wide deductions to all agents for this account
   await supabase.from('race_data').update({
     race_wide_missed:    totals.raceWide.missed,
     race_wide_voicemail: totals.raceWide.voicemails,
     last_updated:        now,
-  }).eq('user_id', userId).in('agent_id', ALL_AGENT_IDS);
+  }).eq('user_id', userId);
 
   return {
     success:  true,
@@ -271,13 +242,11 @@ async function processSalesUpload(rows, userId, columnMap) {
   // Resolve column indices: use provided columnMap first, then auto-detect
   const colIdx = {};
   if (columnMap) {
-    // columnMap: { product: 'Line of Business', written_by: 'Producer', ... }
     for (const [field, headerName] of Object.entries(columnMap)) {
       const idx = headers.findIndex(h => h.toLowerCase() === String(headerName).toLowerCase());
       if (idx !== -1) colIdx[field] = idx;
     }
   }
-  // Fill in any missing fields via synonym auto-detect
   for (const [field, synonyms] of Object.entries(SALES_COL_SYNONYMS)) {
     if (colIdx[field] !== undefined) continue;
     for (const syn of synonyms) {
@@ -286,17 +255,14 @@ async function processSalesUpload(rows, userId, columnMap) {
     }
   }
 
-  // If required columns still missing, ask frontend for mapping
   const required = ['product', 'written_by', 'written_date'];
   const missing  = required.filter(f => colIdx[f] === undefined);
   if (missing.length > 0) {
     return { needsMapping: true, headers, missing };
   }
 
-  // Detect month from data dates for scoped replace
   const salesMonth = detectSalesMonth(rows, headerIdx, colIdx.written_date);
 
-  // Month-scoped replace: delete all rows for this user+month, then re-insert
   if (salesMonth) {
     const [monthName, yearStr] = salesMonth.split(' ');
     const monthIdx = MONTH_NAMES.indexOf(monthName);
@@ -314,7 +280,7 @@ async function processSalesUpload(rows, userId, columnMap) {
     }
   }
 
-  const classified = classifySales(rows, headerIdx, colIdx, {});  // fresh — deleted old rows
+  const classified = classifySales(rows, headerIdx, colIdx, {});
 
   if (classified.newLogRows.length > 0) {
     const logInserts = classified.newLogRows.map(r => ({
@@ -329,12 +295,13 @@ async function processSalesUpload(rows, userId, columnMap) {
     if (sLogErr) return { success: false, error: 'sales_log write failed: ' + sLogErr.message };
   }
 
+  // Seed race_data rows for newly discovered agents before updating
+  const { error: sSeedErr } = await ensureRaceDataRows(userId, classified.discoveredAgents);
+  if (sSeedErr) return { success: false, error: 'race_data seed failed: ' + sSeedErr.message };
+
   const allSales = await fetchAllPages(supabase, 'sales_log', 'agent_id,product', userId);
   const allSalesRows = allSales.map(r => ['', r.agent_id || 'skip', r.product || 'other', '', '']);
-  const agentTotals   = aggregateSalesFromLog(allSalesRows);
-
-  const { error: sSeedErr } = await ensureRaceDataRows(userId);
-  if (sSeedErr) return { success: false, error: 'race_data seed failed: ' + sSeedErr.message };
+  const agentTotals  = aggregateSalesFromLog(allSalesRows);
 
   const now = new Date().toISOString();
   for (const id in agentTotals) {
@@ -357,12 +324,15 @@ async function processSalesUpload(rows, userId, columnMap) {
 
 
 // ─── RACE DATA SEED ─────────────────────────────────────────────
-async function ensureRaceDataRows(userId) {
-  const rows = ALL_AGENT_IDS.map(id => ({
+// discoveredAgents: { [agentId]: displayName }
+// ignoreDuplicates preserves existing name/team set by prior uploads or user
+async function ensureRaceDataRows(userId, discoveredAgents) {
+  if (!discoveredAgents || !Object.keys(discoveredAgents).length) return { error: null };
+  const rows = Object.entries(discoveredAgents).map(([id, name]) => ({
     user_id:             userId,
     agent_id:            id,
-    name:                AGENT_INFO[id].name,
-    team:                AGENT_INFO[id].team,
+    name,
+    team:                'sales',
     wl: 0, ul: 0, term: 0, health: 0, auto: 0, fire: 0,
     placed: 0, answered: 0, missed: 0, voicemail: 0,
     talk_min: 0, avg_min: 0,
@@ -456,7 +426,7 @@ async function resetRaceScores(userId) {
     wl:0, ul:0, term:0, health:0, auto:0, fire:0,
     placed:0, answered:0, missed:0, voicemail:0,
     talk_min:0, avg_min:0, race_wide_missed:0, race_wide_voicemail:0,
-  }).eq('user_id', userId).in('agent_id', ALL_AGENT_IDS);
+  }).eq('user_id', userId);
   await supabase.from('call_log').delete().eq('user_id', userId);
   await supabase.from('sales_log').delete().eq('user_id', userId);
 }
@@ -465,13 +435,14 @@ async function resetRaceScores(userId) {
 // ─── CALL CLASSIFICATION ────────────────────────────────────────
 function classifyCalls(data, knownHashes) {
   const newLogRows = [];
+  const discoveredAgents = {};
   let duplicatesSkipped = 0;
 
   let headerIdx = -1;
   for (let i = 0; i < data.length; i++) {
     if (data[i].join('|').includes('Call Direction')) { headerIdx = i; break; }
   }
-  if (headerIdx === -1) return { newLogRows: [], duplicatesSkipped: 0 };
+  if (headerIdx === -1) return { newLogRows: [], duplicatesSkipped: 0, discoveredAgents: {}, colsFound: {} };
 
   const headers = data[headerIdx].map(h => String(h).trim());
   const dtCol   = findCol(headers, ['Origination Date','Start Time','Start Date','Call Date','Date/Time','Date Time','Timestamp','Call Start','Ring Time','DateTime','Date']);
@@ -528,9 +499,9 @@ function classifyCalls(data, knownHashes) {
     if (category === 'placed' || category === 'answered') {
       const cleanName = cleanExtName(ext);
       if (!cleanName) continue;
-      const agentInfo = CALL_AGENT_MAP[cleanName];
-      if (!agentInfo) continue;
-      agentId = agentInfo.id;
+      agentId = slugify(cleanName);
+      if (!agentId) continue;
+      discoveredAgents[agentId] = cleanName;
     }
 
     const talkMin = Math.round((talkSecs / 60) * 10) / 10;
@@ -541,22 +512,15 @@ function classifyCalls(data, knownHashes) {
   const colsFound = { dtCol, extCol, dirCol, talkCol, durCol, dispCol,
     dtHeader:  dtCol  !== -1 ? headers[dtCol]  : null,
     extHeader: extCol !== -1 ? headers[extCol] : null };
-  return { newLogRows, duplicatesSkipped, colsFound };
+  return { newLogRows, duplicatesSkipped, discoveredAgents, colsFound };
 }
 
 
 // ─── CALL AGGREGATION ───────────────────────────────────────────
-function aggregateFromLog(logRows) {
+// agentMeta: { [agentId]: { name, team } } — from race_data
+function aggregateFromLog(logRows, agentMeta = {}) {
   const agents   = {};
   const raceWide = { missed: 0, voicemails: 0 };
-
-  for (const name in CALL_AGENT_MAP) {
-    const info = CALL_AGENT_MAP[name];
-    if (!agents[info.id]) agents[info.id] = {
-      id: info.id, name: info.name, team: info.team,
-      placed: 0, answered: 0, talkMin: 0, talkCalls: 0,
-    };
-  }
 
   for (const row of logRows) {
     const agentId  = row[1];
@@ -567,10 +531,18 @@ function aggregateFromLog(logRows) {
     if (category === 'missed')    { raceWide.missed++;     continue; }
     if (category === 'skip' || category === 'internal' || category === 'other') continue;
 
-    const s = agents[agentId];
-    if (!s) continue;
+    if (!agentId || agentId === 'skip') continue;
 
-    if (category === 'placed')   s.placed++;
+    if (!agents[agentId]) {
+      const meta = agentMeta[agentId] || {};
+      agents[agentId] = {
+        id: agentId, name: meta.name || agentId, team: meta.team || 'sales',
+        placed: 0, answered: 0, talkMin: 0, talkCalls: 0,
+      };
+    }
+
+    const s = agents[agentId];
+    if (category === 'placed')        s.placed++;
     else if (category === 'answered') s.answered++;
     s.talkMin  += talkMin;
     if (talkMin * 60 >= 10) s.talkCalls++;
@@ -588,6 +560,7 @@ function aggregateFromLog(logRows) {
 // ─── SALES CLASSIFICATION ───────────────────────────────────────
 function classifySales(data, headerIdx, colIdx, knownHashes) {
   const newLogRows = [];
+  const discoveredAgents = {};
   let duplicatesSkipped = 0;
 
   const productCol  = colIdx.product         ?? -1;
@@ -618,35 +591,27 @@ function classifySales(data, headerIdx, colIdx, knownHashes) {
       continue;
     }
 
-    let agentInfo = SALES_AGENT_MAP[agent];
-    if (!agentInfo) {
-      const lower = agent.toLowerCase();
-      for (const key in SALES_AGENT_MAP) {
-        if (key.toLowerCase() === lower) { agentInfo = SALES_AGENT_MAP[key]; break; }
-      }
-    }
-    if (!agentInfo) continue;
+    const agentId = slugify(agent);
+    if (!agentId) continue;
+    discoveredAgents[agentId] = agent;
 
-    newLogRows.push([hash, agentInfo.id, category, dateOnly(date), writtenPremium]);
+    newLogRows.push([hash, agentId, category, dateOnly(date), writtenPremium]);
   }
 
-  return { newLogRows, duplicatesSkipped };
+  return { newLogRows, duplicatesSkipped, discoveredAgents };
 }
 
 
 // ─── SALES AGGREGATION ──────────────────────────────────────────
 function aggregateSalesFromLog(logRows) {
   const agents = {};
-  for (const name in SALES_AGENT_MAP) {
-    const info = SALES_AGENT_MAP[name];
-    if (!agents[info.id]) agents[info.id] = { id: info.id, wl:0,ul:0,term:0,health:0,auto:0,fire:0 };
-  }
   for (const row of logRows) {
     const agentId  = String(row[1]);
     const category = String(row[2]);
-    if (category === 'other' || category === 'skip' || agentId === 'skip') continue;
+    if (category === 'other' || category === 'skip' || agentId === 'skip' || !agentId) continue;
+    if (!agents[agentId]) agents[agentId] = { id: agentId, wl:0, ul:0, term:0, health:0, auto:0, fire:0 };
     const s = agents[agentId];
-    if (s && s[category] !== undefined) s[category]++;
+    if (s[category] !== undefined) s[category]++;
   }
   return agents;
 }
