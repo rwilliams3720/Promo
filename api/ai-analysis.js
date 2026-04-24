@@ -77,7 +77,7 @@ export default async function handler(req, res) {
       from += PAGE;
     }
 
-    const [{ data: sales }, { data: raceRows }] = await Promise.all([
+    const [{ data: sales }, { data: raceRows }, { data: histMonths }, { data: histWins }] = await Promise.all([
       supabase.from('sales_log')
         .select('agent_id,product,sale_date')
         .eq('user_id', user.id)
@@ -85,15 +85,57 @@ export default async function handler(req, res) {
       supabase.from('race_data')
         .select('agent_id,name,team')
         .eq('user_id', user.id),
+      supabase.from('historical_months')
+        .select('month,placed,answered,talk_min,voicemail,missed,policies')
+        .eq('user_id', user.id),
+      supabase.from('historical_wins')
+        .select('month,agent_id,name,team,placed,answered,talk_min,wl,ul,term,health,auto,fire,missed,voicemail,rank')
+        .eq('user_id', user.id),
     ]);
     const agentMeta = {};
     for (const r of (raceRows || [])) agentMeta[r.agent_id] = { name: r.name, team: r.team };
+    // Fill in names for archived agents no longer in race_data
+    for (const r of (histWins || [])) {
+      if (!agentMeta[r.agent_id]) agentMeta[r.agent_id] = { name: r.name, team: r.team };
+    }
 
     // Aggregate into monthly, weekly, agent, and rolling-90 buckets
+    // Seed monthly from historical_months (archived data that no longer exists in call_log)
     const monthly  = {};
     const weekly   = {};
     const agents   = {};
     const r90      = { p:0, a:0, tk:0, vm:0, ms:0 };
+
+    const monthNameToNum = { Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11 };
+
+    for (const hm of (histMonths || [])) {
+      monthly[hm.month] = {
+        placed:   hm.placed   || 0,
+        answered: hm.answered || 0,
+        talkMin:  hm.talk_min || 0,
+        voicemail:hm.voicemail|| 0,
+        missed:   hm.missed   || 0,
+        policies: hm.policies || 0,
+      };
+      // Add historical months within the 90-day window to r90 rolling totals.
+      // Use last day of the month as the reference — if any day in the month falls
+      // after the cutoff it contributes (monthly-granularity approximation).
+      const parts = hm.month.split(' ');
+      if (parts.length === 2) {
+        const mo = monthNameToNum[parts[0]];
+        const yr = parseInt(parts[1]);
+        if (!isNaN(mo) && !isNaN(yr)) {
+          const lastDayOfMonth = new Date(Date.UTC(yr, mo + 1, 0));
+          if (lastDayOfMonth >= cutoff) {
+            r90.p  += hm.placed   || 0;
+            r90.a  += hm.answered || 0;
+            r90.tk += hm.talk_min || 0;
+            r90.vm += hm.voicemail|| 0;
+            r90.ms += hm.missed   || 0;
+          }
+        }
+      }
+    }
 
     for (const row of calls) {
       const dtStr = String(row.call_dt).includes('T') ? String(row.call_dt).split('T')[0] : String(row.call_dt);
@@ -174,45 +216,101 @@ export default async function handler(req, res) {
         return `${info.name} (${info.team}): ${s.placed} placed, ${s.answered} answered, ${Math.round(s.talkMin)}min talk, ${s.policies} policies`;
       }).join('\n');
 
-    // Build history comparison context
+    // Build per-agent historical breakdown from historical_wins (one row per agent per archived month)
+    const agentHistory = {};
+    for (const row of (histWins || [])) {
+      if (!agentHistory[row.agent_id]) {
+        agentHistory[row.agent_id] = { name: row.name, team: row.team, months: {} };
+      }
+      const policies = (row.wl||0) + (row.ul||0) + (row.term||0) + (row.health||0) + (row.auto||0) + (row.fire||0);
+      // Normalize "January 2026" → "Jan 2026" so lookups against sortedMonths always match
+      const normalizedMonth = row.month.slice(0, 3) + ' ' + row.month.split(' ')[1];
+      agentHistory[row.agent_id].months[normalizedMonth] = {
+        placed:   row.placed   || 0,
+        answered: row.answered || 0,
+        talkMin:  Math.round(row.talk_min || 0),
+        policies,
+        rank:     row.rank || 0,
+      };
+    }
+
+    const agentHistoryText = Object.entries(agentHistory)
+      .map(([id, ag]) => {
+        const monthLines = sortedMonths
+          .filter(m => ag.months[m])
+          .map(m => {
+            const v = ag.months[m];
+            return `${m}: ${v.placed}p ${v.answered}a ${v.talkMin}min ${v.policies}pol #${v.rank}`;
+          }).join(' | ');
+        return monthLines ? `${ag.name} (${ag.team}): ${monthLines}` : null;
+      })
+      .filter(Boolean)
+      .join('\n');
+
+    // Build history comparison context from prior AI snapshot
     let historyContext = '';
     const prevKey = acct.ai_history_key;
     if (prevKey?.ts) {
       const daysAgo = Math.round((Date.now() - new Date(prevKey.ts).getTime()) / 86400000);
       const prevR90 = prevKey.r90 || {};
       const prevNote = prevKey.note || '';
-      const prevMonthLines = Object.entries(prevKey.m || {}).slice(-3)
-        .map(([mon, v]) => `${mon}: ${v.p} placed, ${v.a} answered, ${v.pol} policies`).join('\n');
+      const prevAgLines = Object.entries(prevKey.ag || {}).slice(0, 8)
+        .map(([id, v]) => {
+          const name = agentMeta[id]?.name || id;
+          return `${name}: ${v.p} placed, ${v.a} answered, ${v.pol} policies`;
+        }).join('\n');
+      const prevMonthLines = Object.entries(prevKey.m || {})
+        .map(([mon, v]) => `${mon}: ${v.p} placed, ${v.a} answered, ${v.pol} policies, ${v.vm} VM, ${v.ms} missed`).join('\n');
       historyContext = `
-PREVIOUS ANALYSIS CONTEXT (${daysAgo} days ago):
-Rolling 90-day at that time: ${prevR90.p||0} placed, ${prevR90.a||0} answered, ${Math.round(prevR90.tk||0)}min talk, ${prevR90.vm||0} voicemails, ${prevR90.ms||0} missed, ${prevR90.pol||0} policies
-Recent months at that time:
-${prevMonthLines || 'none'}
-Previous AI assessment: ${prevNote}
 
-Using this history, identify: areas of improvement, areas of decline, and areas for monitoring (week-over-week, month-over-month, and rolling 90-day trends).`;
+PRIOR SNAPSHOT (${daysAgo} days ago):
+Team rolling 90-day then: ${prevR90.p||0} placed, ${prevR90.a||0} answered, ${Math.round(prevR90.tk||0)}min talk, ${prevR90.vm||0} VM, ${prevR90.ms||0} missed, ${prevR90.pol||0} policies
+Monthly breakdown then:
+${prevMonthLines || 'none'}
+Individual agents then:
+${prevAgLines || 'none'}
+Prior AI assessment: ${prevNote}`;
     }
 
-    const company = acct.company_name || 'the team';
-    const prompt = `You are a sales performance coach analyzing call center data for ${company}. Provide a concise, actionable analysis in plain text (no markdown headers or bullets).
+    const dataRange = sortedMonths.length > 0
+      ? `${sortedMonths[0]} through ${sortedMonths[sortedMonths.length - 1]} (${sortedMonths.length} month${sortedMonths.length !== 1 ? 's' : ''})`
+      : 'no historical data';
 
-MONTHLY TREND (last 90 days):
+    const company = acct.company_name || 'the team';
+    const prompt = `You are a sales performance coach analyzing call center data for ${company}. Write in plain text — no markdown headers, no bullet points.
+
+DATA RANGE: ${dataRange}
+
+MONTHLY TREND (all available history, oldest to newest):
 ${monthlyText || 'No data'}
 
 WEEKLY TREND (last 8 weeks):
 ${weeklyText || 'No data'}
 
-AGENT SUMMARY (last 90 days):
+AGENT DETAIL — current active period (placed, answered, talk min, policies):
 ${agentText || 'No data'}
+
+AGENT HISTORICAL BREAKDOWN — archived months (placed p, answered a, talk min, policies pol, team rank #):
+${agentHistoryText || 'No archived agent data yet'}
 ${historyContext}
 
-In 4-5 short paragraphs, cover: (1) overall trend and volume health${prevKey ? ', including improvements and declines vs previous analysis' : ''}, (2) top performers and what sets them apart, (3) agents who need coaching and why, (4) specific recommendations the manager can act on this week. Be direct and specific — use names and numbers.
+Write exactly 5 paragraphs:
 
-End with ONE sentence (no heading) summarizing the single most important finding for the record.`;
+1. TEAM TRENDS — Scan all available months and explicitly call out: (a) what is IMPROVING (rising placed/answered/policies, improving handle rate, falling VM/missed), (b) what is a CONCERN (declining volume, rising missed or voicemail, shrinking talk time), and (c) what to MONITOR (mixed or inconsistent signals). Name specific months and numbers.
+
+2. INDIVIDUAL STANDOUTS — Using both current and archived months, name the top 2-3 performers. Call out specific month-over-month improvements by name and number (e.g. "Tracy grew from 31 placed in Mar to 44 in Apr"). How do they compare to the rest of the team?
+
+3. COACHING PRIORITIES — Using both current and archived months, name the bottom 2-3 agents. For each, show their trend across months — are they declining, flat, or recovering? Name the single metric most holding them back.
+
+4. WEEKLY SIGNALS — What does the week-over-week data reveal that the monthly view masks? Call out any sharp drops, recovery trends, or outlier weeks by name.
+
+5. THIS WEEK'S ACTIONS — Give the manager 2-3 concrete, specific actions to take this week. Use agent names and target numbers where possible.${prevKey ? '\n\nWhere the prior snapshot is available, explicitly compare current vs. prior figures for both team and individual agents — name who improved, who declined, and who needs watching.' : ''}
+
+End with ONE sentence (no heading) naming the single most critical finding for the record.`;
 
     const message = await anthropic.messages.create({
       model:      'claude-haiku-4-5-20251001',
-      max_tokens: 700,
+      max_tokens: 1000,
       messages:   [{ role: 'user', content: prompt }],
     });
 
@@ -220,10 +318,10 @@ End with ONE sentence (no heading) summarizing the single most important finding
     const payload  = { insights, chartData };
     const now      = new Date().toISOString();
 
-    // Build compact history key — abbreviated keys to minimize storage
+    // Build compact history key for next analysis comparison
     const histKey = {
       ts:   now,
-      m:    Object.fromEntries(sortedMonths.slice(-3).map(mon => {
+      m:    Object.fromEntries(sortedMonths.slice(-6).map(mon => {
         const v = monthly[mon];
         return [mon, { p: v.placed, a: v.answered, tk: Math.round(v.talkMin), vm: v.voicemail, ms: v.missed, pol: v.policies }];
       })),
@@ -236,7 +334,6 @@ End with ONE sentence (no heading) summarizing the single most important finding
         Object.entries(agents)
           .map(([id, v]) => [id, { p: v.placed, a: v.answered, pol: v.policies }])
       ),
-      // Extract the last sentence as the note (the "single most important finding" sentence)
       note: insights.split(/(?<=[.!?])\s+/).filter(Boolean).slice(-1)[0]?.slice(0, 200) || '',
     };
 

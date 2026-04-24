@@ -479,7 +479,18 @@
 
   <!-- ── TAB: PERFORMANCE ── -->
   <div id="tab-perf" style="display:none">
-    <div class="panel">
+    <div id="perf-trial-teaser" style="display:none">
+      <div class="panel" style="text-align:center;padding:3rem 2rem;">
+        <div style="font-size:2rem;margin-bottom:1rem;">📊</div>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:1.6rem;letter-spacing:.04em;margin-bottom:.75rem;">Call Performance</div>
+        <p style="font-size:14px;color:var(--muted);max-width:480px;margin:0 auto 1.5rem;line-height:1.7;">
+          Get a full breakdown of every agent's call activity — placed, answered, voicemail, missed, and talk time — filtered by day, week, month, or year. Includes a voicemail heatmap to identify peak missed-call windows.
+          Powered by your uploaded call data, refreshed every upload.
+        </p>
+        <button class="btn btn-primary" onclick="goToAccountTab()">Upgrade to Pro</button>
+      </div>
+    </div>
+    <div id="perf-table-panel" class="panel">
       <div class="panel-title">Call Performance</div>
       <div class="perf-controls">
         <select class="perf-select" id="perf-period" onchange="populatePerfDates();renderPerf()">
@@ -527,7 +538,7 @@
 
   <!-- ── TAB: ANALYSIS ── -->
   <div id="tab-analysis" style="display:none">
-    <div class="panel">
+    <div class="panel" id="analysis-charts-panel">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.2rem;">
         <div class="panel-title" style="margin:0">Performance Trends</div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
@@ -656,6 +667,31 @@
         <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Permanently deletes all call logs, sales logs, race data, and resets the current month for your account. Use this to re-test fresh uploads. This cannot be undone.</p>
         <button class="btn" style="background:var(--danger);color:#fff;" onclick="confirmResetMyData(this)">Delete All My Data</button>
         <div id="sandbox-reset-msg" style="font-size:13px;margin-top:10px;display:none"></div>
+      </div>
+    </div>
+
+    <!-- Danger Zone — non-admin only, right-aligned below main panel -->
+    <div id="danger-zone-section" style="display:none;justify-content:flex-start;margin-top:1.5rem;">
+      <div style="border:1px solid rgba(255,77,109,.3);border-radius:12px;padding:1.5rem 1.75rem;background:rgba(255,77,109,.04);max-width:500px;width:100%;">
+        <div style="font-size:10px;font-weight:700;color:var(--danger);text-transform:uppercase;letter-spacing:.12em;margin-bottom:1.25rem;">Danger Zone</div>
+
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1.5rem;padding-bottom:1.1rem;border-bottom:1px solid rgba(255,77,109,.15);margin-bottom:1.1rem;">
+          <div>
+            <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px;">Delete All Data</div>
+            <div style="font-size:12px;color:var(--muted);line-height:1.5;">Clears all call logs, sales, race data, and history. Your account and subscription remain active.</div>
+          </div>
+          <button class="btn btn-danger" style="white-space:nowrap;flex-shrink:0;" onclick="confirmDeleteData(this)">Delete Data</button>
+        </div>
+        <div id="delete-data-msg" style="font-size:13px;margin-bottom:1rem;display:none"></div>
+
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1.5rem;">
+          <div>
+            <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px;">Delete Account</div>
+            <div style="font-size:12px;color:var(--muted);line-height:1.5;">Permanently removes your account and all data. Any active Stripe subscription is cancelled immediately. Cannot be undone.</div>
+          </div>
+          <button class="btn btn-danger" style="white-space:nowrap;flex-shrink:0;" onclick="confirmDeleteAccount(this)">Delete Account</button>
+        </div>
+        <div id="delete-account-msg" style="font-size:13px;margin-top:10px;display:none"></div>
       </div>
     </div>
   </div>
@@ -953,7 +989,7 @@ async function checkAccountAndShow(session) {
 
     if (_isAdmin) document.getElementById('adminTab').style.display = '';
     const isPremium = acct.plan === 'premium' && !isLocked && _acctStatus !== 'trial';
-    const showAnalysis = isPremium || _isAdmin || _acctStatus === 'trial';
+    const showAnalysis = isPremium || _isAdmin || _acctStatus === 'trial' || (!isLocked && _acctStatus !== 'trial');
     document.getElementById('analysisTab').style.display = showAnalysis ? '' : 'none';
 
     buildColumnMapUI();
@@ -971,7 +1007,7 @@ async function checkAccountAndShow(session) {
 
   await loadRaceData().catch(e => console.error('loadRaceData:', e));
   await loadHistory().catch(e => console.error('loadHistory:', e));
-  await loadPerf();
+  if (_isAdmin || (['pro','premium'].includes(_currentPlan) && !_trialExpired && ['paid','deferred'].includes(_acctStatus))) await loadPerf();
 }
 
 // ── LOGIN / SIGNUP / AUTH ────────────────────────────────────────────────────
@@ -1096,10 +1132,24 @@ function showTab(name, btn) {
   if (name === 'race') loadRaceData();
   if (name === 'account') loadAccountTab();
   if (name === 'adminpanel') loadAdminPanel();
-  if (name === 'perf') loadPerf();
+  if (name === 'perf') {
+    const perfFullAccess = _isAdmin || (['pro','premium'].includes(_currentPlan) && !_trialExpired && ['paid','deferred'].includes(_acctStatus));
+    if (!perfFullAccess) {
+      document.getElementById('perf-trial-teaser').style.display = '';
+      document.getElementById('perf-table-panel').style.display = 'none';
+      document.getElementById('heatmap-panel').style.display = 'none';
+      document.getElementById('heatmap-upsell').style.display = 'none';
+      return;
+    }
+    document.getElementById('perf-trial-teaser').style.display = 'none';
+    document.getElementById('perf-table-panel').style.display = '';
+    loadPerf();
+  }
   if (name === 'history') loadHistory();
   if (name === 'analysis') {
-    if (_acctStatus === 'trial' && !_isAdmin) { renderAnalysisTrialTeaser(); return; }
+    const analysisFullAccess = _isAdmin || (_currentPlan === 'premium' && !_trialExpired && ['paid','deferred'].includes(_acctStatus));
+    if (!analysisFullAccess) { renderAnalysisTrialTeaser(); return; }
+    document.getElementById('analysis-charts-panel').style.display = '';
     document.getElementById('analysis-refresh-btn').style.display = '';
     updateAnalysisBtn();
     displayCachedAnalysis();
@@ -1431,10 +1481,15 @@ function handleFile(type, input) {
         return;
       }
 
+      if (json.archived) {
+        logEl.innerHTML = `<span class="warn">${json.message}</span>`
+          + `<br><span class="warn">Historical data saved — live race and current month unchanged.</span>`;
+        return;
+      }
+
       logEl.innerHTML = `<span class="ok">${json.message || 'Upload complete'}</span>`
         + (json.new != null ? `<br><span>${json.new} new record${json.new !== 1 ? 's' : ''} inserted</span>` : '')
-        + (json.skipped ? `<br><span class="warn">${json.skipped} duplicate${json.skipped !== 1 ? 's' : ''} skipped</span>` : '')
-;
+        + (json.skipped ? `<br><span class="warn">${json.skipped} duplicate${json.skipped !== 1 ? 's' : ''} skipped</span>` : '');
 
       document.getElementById('last-upload-time').textContent = new Date().toLocaleString();
       await loadRaceData();
@@ -1524,7 +1579,7 @@ async function loadPerf() {
     console.log('[perf] call_log rows returned:', _perfData._debug?.rowCount ?? 'unknown');
     populatePerfDates();
     renderPerf();
-    const heatmapAllowed = _isAdmin || ['pro','premium'].includes(_currentPlan);
+    const heatmapAllowed = _isAdmin || (['pro','premium'].includes(_currentPlan) && !_trialExpired && ['paid','deferred'].includes(_acctStatus));
     document.getElementById('heatmap-panel').style.display  = heatmapAllowed ? '' : 'none';
     document.getElementById('heatmap-upsell').style.display = heatmapAllowed ? 'none' : '';
     if (heatmapAllowed) { populateVmDates(); renderVmHeatmap(); }
@@ -1786,6 +1841,7 @@ function displayCachedAnalysis() {
 }
 
 function renderAnalysisTrialTeaser() {
+  document.getElementById('analysis-charts-panel').style.display = 'none';
   document.getElementById('analysis-refresh-btn').style.display = 'none';
   document.getElementById('analysis-email-btn').style.display = 'none';
   document.getElementById('analysis-body').innerHTML = `
@@ -2031,6 +2087,7 @@ async function loadAccountTab() {
     if (el) el.value = (_columnMap[f] || '');
   });
 
+  document.getElementById('danger-zone-section').style.display  = _isAdmin ? 'none' : 'flex';
   document.getElementById('sandbox-reset-section').style.display = _isAdmin ? '' : 'none';
 }
 
@@ -2050,6 +2107,8 @@ async function confirmResetMyData(btn) {
     await Promise.all([
       _supabase.from('call_log').delete().eq('user_id', _userId),
       _supabase.from('sales_log').delete().eq('user_id', _userId),
+      _supabase.from('historical_wins').delete().eq('user_id', _userId),
+      _supabase.from('historical_months').delete().eq('user_id', _userId),
     ]);
     await _supabase.from('race_data').delete().eq('user_id', _userId);
     await _supabase.from('race_config').delete().eq('user_id', _userId).eq('key', 'current_month');
@@ -2071,6 +2130,85 @@ async function confirmResetMyData(btn) {
     btn.disabled = false;
     btn.dataset.confirming = '';
     btn.textContent = 'Delete All My Data';
+  }
+}
+
+async function confirmDeleteData(btn) {
+  const msg = document.getElementById('delete-data-msg');
+  if (btn.dataset.confirming !== 'yes') {
+    btn.dataset.confirming = 'yes';
+    btn.textContent = 'Confirm Delete';
+    setTimeout(() => { btn.dataset.confirming = ''; btn.textContent = 'Delete Data'; }, 5000);
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = 'Deleting…';
+  msg.style.display = 'none';
+  try {
+    await Promise.all([
+      _supabase.from('call_log').delete().eq('user_id', _userId),
+      _supabase.from('sales_log').delete().eq('user_id', _userId),
+      _supabase.from('historical_wins').delete().eq('user_id', _userId),
+      _supabase.from('historical_months').delete().eq('user_id', _userId),
+    ]);
+    await _supabase.from('race_data').delete().eq('user_id', _userId);
+    await _supabase.from('race_config').update({ value: '' }).eq('user_id', _userId).eq('key', 'current_month');
+    _raceData = []; _history = []; _perfData = null;
+    _lsRemove('br-analysis-data');
+    _analysisAt = null;
+    document.getElementById('analysis-body').innerHTML = '<div style="color:var(--muted);font-size:13px;">Click <strong>Analyze</strong> to generate insights.</div>';
+    document.getElementById('analysis-email-btn').style.display = 'none';
+    document.getElementById('analysis-msg').style.display = 'none';
+    loadRaceData();
+    msg.style.display = 'block';
+    msg.style.color = 'var(--accent2)';
+    msg.textContent = 'All data deleted. Ready for a fresh upload.';
+  } catch(e) {
+    msg.style.display = 'block';
+    msg.style.color = 'var(--danger)';
+    msg.textContent = 'Error: ' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.dataset.confirming = '';
+    btn.textContent = 'Delete Data';
+  }
+}
+
+async function confirmDeleteAccount(btn) {
+  const msg = document.getElementById('delete-account-msg');
+  if (btn.dataset.confirming !== 'yes') {
+    btn.dataset.confirming = 'yes';
+    btn.textContent = 'Confirm — this will erase everything';
+    setTimeout(() => {
+      if (btn.dataset.confirming === 'yes') {
+        btn.dataset.confirming = '';
+        btn.textContent = 'Delete My Account';
+      }
+    }, 5000);
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = 'Deleting…';
+  msg.style.display = 'none';
+  try {
+    const r = await fetch('/api/delete-account', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + _session.access_token },
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Delete failed');
+    await _supabase.auth.signOut();
+    showScreen('login');
+    const liMsg = document.getElementById('li-msg');
+    liMsg.style.display = 'block';
+    liMsg.className = 'auth-msg';
+    liMsg.textContent = 'Your account has been deleted.';
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = 'Delete My Account';
+    msg.style.display = 'block';
+    msg.style.color = 'var(--danger)';
+    msg.textContent = err.message;
   }
 }
 
@@ -2226,6 +2364,7 @@ function renderAdminTable(rows) {
           ${['trial','paid','deferred','past_due','cancelled'].map(s =>
             `<option value="${s}"${s===r.status?' selected':''}>${s}</option>`).join('')}
         </select>
+        ${!r.is_admin ? `<button class="btn btn-danger" style="font-size:11px;padding:4px 8px;" onclick="adminDeleteUser('${r.user_id}','${(r.email||'').replace(/'/g,"\\'")}',this)">Delete</button>` : ''}
       </td>
     </tr>`).join('') || '<tr><td colspan="11" style="color:var(--muted);text-align:center;padding:20px">No accounts</td></tr>';
 }
@@ -2248,16 +2387,77 @@ async function adminSave(uid, field, value) {
   await loadAdminPanel();
 }
 
+async function adminDeleteUser(uid, email, btn) {
+  if (!_isAdmin) return;
+  if (btn.dataset.confirming !== 'yes') {
+    btn.dataset.confirming = 'yes';
+    btn.textContent = 'Confirm?';
+    btn.style.background = 'var(--danger)';
+    btn.style.color = '#fff';
+    setTimeout(() => {
+      if (btn.dataset.confirming === 'yes') {
+        btn.dataset.confirming = '';
+        btn.textContent = 'Delete';
+        btn.style.background = '';
+        btn.style.color = '';
+      }
+    }, 5000);
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = '…';
+  try {
+    const r = await fetch('/api/delete-account', {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetUserId: uid }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Delete failed');
+    await loadAdminPanel();
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = 'Delete';
+    alert('Delete failed: ' + err.message);
+  }
+}
+
 // ── ARCHIVE / RESET ───────────────────────────────────────────────────────────
 async function confirmArchive() {
   if (!confirm('Archive current month results to history and reset the race? This cannot be undone.')) return;
 
   const { data: rdRows } = await _supabase.from('race_data').select('*').eq('user_id', _userId);
   const { data: rcRow  } = await _supabase.from('race_config').select('value').eq('user_id', _userId).eq('key','current_month').single();
-  const month = rcRow?.value || new Date().toISOString().slice(0,7);
+
+  const _ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  // Derive month label — prefer race_config, fall back to most common month in call_log
+  let rawMonth = rcRow?.value || '';
+  if (!rawMonth) {
+    const { data: recentCalls } = await _supabase
+      .from('call_log')
+      .select('call_dt')
+      .eq('user_id', _userId)
+      .limit(500);
+    if (recentCalls?.length) {
+      const freq = {};
+      for (const r of recentCalls) {
+        const d = new Date(String(r.call_dt).split('T')[0] + 'T12:00:00Z');
+        if (isNaN(d.getTime())) continue;
+        const k = `${_ABBR[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+        freq[k] = (freq[k] || 0) + 1;
+      }
+      rawMonth = Object.entries(freq).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+    }
+  }
+  if (!rawMonth) rawMonth = new Date().toISOString().slice(0, 7);
+
+  // Normalize ISO "2026-04" → "Apr 2026" if needed
+  const _isoM = rawMonth.match(/^(\d{4})-(\d{2})$/);
+  const month = _isoM ? _ABBR[parseInt(_isoM[2])-1] + ' ' + _isoM[1] : rawMonth;
 
   if (rdRows?.length) {
-    const agents = rdRows.map((ag, i) => {
+    const agents = rdRows.map((ag) => {
       const sc = calcScore(ag);
       return { ...ag, ...sc };
     }).sort((a,b) => b.total - a.total);
@@ -2283,13 +2483,27 @@ async function confirmArchive() {
 
     await _supabase.from('historical_wins').delete().eq('user_id', _userId).eq('month', month);
     await _supabase.from('historical_wins').insert(histRows);
+
+    // Write monthly call/sales aggregates for trend chart persistence
+    const placed   = rdRows.reduce((s, ag) => s + (ag.placed||0), 0);
+    const answered = rdRows.reduce((s, ag) => s + (ag.answered||0), 0);
+    const talkMin  = rdRows.reduce((s, ag) => s + (ag.talk_min||0), 0);
+    const voicemail = rdRows[0]?.race_wide_voicemail || 0;
+    const missed   = rdRows[0]?.race_wide_missed || 0;
+    const { count: salesCount } = await _supabase.from('sales_log')
+      .select('*', { count: 'exact', head: true }).eq('user_id', _userId);
+
+    await _supabase.from('historical_months').upsert({
+      user_id: _userId, month,
+      placed, answered,
+      talk_min: Math.round(talkMin),
+      voicemail, missed,
+      policies: salesCount || 0,
+    }, { onConflict: 'user_id,month' });
   }
 
-  await _supabase.from('race_data').update({
-    wl:0,ul:0,term:0,health:0,auto:0,fire:0,
-    placed:0,answered:0,missed:0,voicemail:0,
-    talk_min:0,avg_min:0,race_wide_missed:0,race_wide_voicemail:0
-  }).eq('user_id', _userId);
+  // Delete all agents from race so next upload builds a fresh roster
+  await _supabase.from('race_data').delete().eq('user_id', _userId);
 
   await _supabase.from('call_log').delete().eq('user_id', _userId);
   await _supabase.from('sales_log').delete().eq('user_id', _userId);

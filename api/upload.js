@@ -423,6 +423,38 @@ async function archiveCallStatsToHistorical(month, totals, userId) {
     talk_min: s.talkMin, avg_min: s.avgMin,
     race_wide_missed: rwMissed, race_wide_voicemail: rwVm,
   })));
+
+  // Write team-level totals to historical_months so trend chart and AI analysis include this month.
+  // "January 2026" → "Jan 2026" to match the abbreviated format used everywhere else.
+  const abbrevMonth = month.slice(0, 3) + ' ' + month.split(' ')[1];
+  const placed   = Object.values(totals.agents).reduce((s, a) => s + (a.placed  || 0), 0);
+  const answered = Object.values(totals.agents).reduce((s, a) => s + (a.answered|| 0), 0);
+  const talkMin  = Object.values(totals.agents).reduce((s, a) => s + (a.talkMin || 0), 0);
+
+  // Check if sales for this month were already uploaded and count them
+  const moIdx = MONTH_NAMES.indexOf(month.split(' ')[0]);
+  const yr    = parseInt(month.split(' ')[1]);
+  let policies = 0;
+  if (moIdx >= 0 && yr > 0) {
+    const monthStart = `${yr}-${String(moIdx + 1).padStart(2, '0')}-01`;
+    const nextMoYr   = moIdx === 11 ? yr + 1 : yr;
+    const nextMoNum  = moIdx === 11 ? 1 : moIdx + 2;
+    const nextMoStart = `${nextMoYr}-${String(nextMoNum).padStart(2, '0')}-01`;
+    const { count } = await supabase.from('sales_log')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .gte('sale_date', monthStart)
+      .lt('sale_date', nextMoStart);
+    policies = count || 0;
+  }
+
+  await supabase.from('historical_months').upsert({
+    user_id: userId, month: abbrevMonth,
+    placed, answered,
+    talk_min: Math.round(talkMin),
+    voicemail: rwVm, missed: rwMissed,
+    policies,
+  }, { onConflict: 'user_id,month' });
 }
 
 async function resetRaceScores(userId) {
