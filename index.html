@@ -3058,7 +3058,12 @@ async function loadAgencyMembers() {
                   ${m.status}
                 </span>
               </td>
-              <td style="padding:6px 8px;border-bottom:1px solid var(--border2);text-align:right;">
+              <td style="padding:6px 8px;border-bottom:1px solid var(--border2);text-align:right;white-space:nowrap;">
+                ${m.status === 'invited' ? `<button onclick="resendInvite('${m.id}', '${m.email}', this)"
+                        style="background:none;border:1px solid rgba(255,255,255,.15);color:var(--muted);
+                               border-radius:5px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;margin-right:6px;">
+                  Resend
+                </button>` : ''}
                 <button onclick="removeMember('${m.id}', this)"
                         style="background:none;border:1px solid rgba(255,77,109,.3);color:var(--danger);
                                border-radius:5px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">
@@ -3108,6 +3113,25 @@ async function sendTeamInvite(btn) {
     msg.style.color = 'var(--danger)'; msg.textContent = 'Error: ' + e.message;
   } finally {
     btn.disabled = false;
+  }
+}
+
+async function resendInvite(memberId, email, btn) {
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    const res  = await fetch('/api/invite?action=resend', {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ memberId }),
+    });
+    const data = await res.json();
+    if (!res.ok) { alert(data.error || 'Failed to resend invite.'); return; }
+    btn.textContent = 'Sent!';
+    setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 3000);
+  } catch(e) {
+    alert('Error: ' + e.message);
+    btn.disabled = false; btn.textContent = orig;
   }
 }
 

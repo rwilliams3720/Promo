@@ -98,8 +98,9 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, email: member.email });
   }
 
-  // ── POST — create or re-send invite (account owner only) ────────────────────
+  // ── POST — create, re-send, or resend-by-id invite (account owner only) ──────
   if (req.method === 'POST') {
+    const action    = req.query?.action || '';
     const authToken = (req.headers.authorization || '').replace('Bearer ', '').trim();
     if (!authToken) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -110,6 +111,59 @@ export default async function handler(req, res) {
       .from('accounts').select('company_name, plan, status').eq('user_id', user.id).single();
     if (!ownerAcct)
       return res.status(403).json({ error: 'Only account owners can invite team members.' });
+
+    // Resend existing invite by memberId
+    if (action === 'resend') {
+      const { memberId } = req.body || {};
+      if (!memberId) return res.status(400).json({ error: 'memberId required.' });
+
+      const newToken  = crypto.randomUUID();
+      const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+
+      const { data: member, error: fetchErr } = await supabase
+        .from('account_members')
+        .select('email, role')
+        .eq('id', memberId)
+        .eq('owner_user_id', user.id)
+        .eq('status', 'invited')
+        .single();
+      if (fetchErr || !member) return res.status(404).json({ error: 'Invite not found or already accepted.' });
+
+      await supabase.from('account_members')
+        .update({ invite_token: newToken, invite_expires_at: expiresAt })
+        .eq('id', memberId);
+
+      const company   = ownerAcct.company_name || 'your team';
+      const roleLabel = ROLE_LABELS[member.role] || member.role;
+      const inviteUrl = `${BASE_URL}/app?invite=${newToken}`;
+
+      const { error: emailErr } = await resend.emails.send({
+        from:    FROM,
+        to:      member.email,
+        subject: `You've been invited to view ${company}'s Boat Race dashboard`,
+        html: `
+          <div style="font-family:sans-serif;max-width:460px;margin:0 auto;padding:28px;background:#0a1628;color:#e8f4fd;border-radius:14px;">
+            <div style="font-family:monospace;font-size:26px;font-weight:900;letter-spacing:.04em;margin-bottom:18px;">
+              BOAT <span style="color:#00d4ff;">RACE</span>
+            </div>
+            <h2 style="font-size:17px;margin:0 0 10px;color:#e8f4fd;">You've been invited</h2>
+            <p style="font-size:14px;color:#a0b4c8;margin-bottom:22px;line-height:1.5;">
+              <strong style="color:#e8f4fd;">${company}</strong> has invited you to view their
+              Boat Race sales dashboard as <strong style="color:#00d4ff;">${roleLabel}</strong>.
+            </p>
+            <a href="${inviteUrl}"
+               style="display:inline-block;background:#00d4ff;color:#060e1c;font-weight:700;
+                      padding:12px 28px;border-radius:8px;text-decoration:none;font-size:15px;">
+              Accept Invite &amp; Set Up Access
+            </a>
+            <p style="font-size:12px;color:#6b8db5;margin-top:22px;">This link expires in 7 days.</p>
+          </div>`,
+      });
+
+      if (emailErr)
+        return res.status(200).json({ ok: true, emailWarning: 'Token refreshed but email failed: ' + emailErr.message });
+      return res.status(200).json({ ok: true });
+    }
 
     const { email, role, custom_tabs } = req.body || {};
     if (!email || !role) return res.status(400).json({ error: 'Email and role are required.' });
