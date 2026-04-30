@@ -13,20 +13,21 @@ const FROM_EMAIL = 'Boat Race <reports@the-boat-race.com>';
 const SALES_PRODUCTS = ['wl','ul','term','health','auto','fire'];
 const PRODUCT_LABELS = { wl:'Whole Life', ul:'Universal Life', term:'Term', health:'Health', auto:'Auto', fire:'Home/Fire' };
 
-// Return yesterday's date string (YYYY-MM-DD) and label in the given IANA timezone.
-function yesterdayInTz(timezone) {
+// Return a date string (YYYY-MM-DD) and label offset by `offsetDays` from today in the given timezone.
+// offsetDays = 0 → today, -1 → yesterday
+function dateInTz(timezone, offsetDays) {
   const tz = timezone || 'UTC';
-  const now = new Date();
-  // Get today's date in the user's timezone as YYYY-MM-DD (en-CA locale gives ISO format).
-  const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(now);
+  const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date());
   const [y, m, d] = todayStr.split('-').map(Number);
-  const yest = new Date(Date.UTC(y, m - 1, d - 1));
-  const dateStr   = yest.toISOString().split('T')[0];
-  const dateLabel = yest.toLocaleDateString('en-US', {
+  const target   = new Date(Date.UTC(y, m - 1, d + offsetDays));
+  const dateStr  = target.toISOString().split('T')[0];
+  const dateLabel = target.toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC',
   });
   return { dateStr, dateLabel };
 }
+const yesterdayInTz = tz => dateInTz(tz, -1);
+const todayInTz     = tz => dateInTz(tz,  0);
 
 // Return the current hour (0–23) in the given IANA timezone.
 function currentHourInTz(timezone) {
@@ -54,15 +55,21 @@ export default async function handler(req, res) {
     if (!adminRow?.is_admin) return res.status(403).json({ error: 'Forbidden' });
   }
 
-  // ?date=YYYY-MM-DD override for admin testing (skips delivery-hour check)
+  // ?date=YYYY-MM-DD override for admin testing (skips delivery-hour check and dedup)
   const override = (req.query?.date || '').match(/^\d{4}-\d{2}-\d{2}$/) ? req.query.date : null;
 
-  // Fetch all eligible accounts (pro or premium, active)
-  const { data: accounts, error: acctErr } = await supabase
+  // ?user_id=UUID — upload-triggered single-account send (cron secret required, uses today's date)
+  const targetUserId = (req.query?.user_id || '').trim() || null;
+  if (targetUserId && !isCron) return res.status(403).json({ error: 'Forbidden' });
+
+  // Fetch eligible accounts (pro or premium, active)
+  let accountQuery = supabase
     .from('accounts')
     .select('user_id,email,company_name,plan,status,trial_ends_at,timezone,report_hour,last_report_date')
     .in('plan', ['pro','premium'])
     .in('status', ['paid','deferred']);
+  if (targetUserId) accountQuery = accountQuery.eq('user_id', targetUserId);
+  const { data: accounts, error: acctErr } = await accountQuery;
   if (acctErr) return res.status(500).json({ error: acctErr.message });
 
   const results = [];
@@ -73,22 +80,27 @@ export default async function handler(req, res) {
     const tz         = acct.timezone    || 'America/Los_Angeles';
     const reportHour = acct.report_hour ?? 7;
 
-    // Calculate target date first (needed for dupe check)
+    // Calculate target date:
+    //   admin ?date= override → use that date
+    //   upload-triggered (?user_id) → today in account's timezone
+    //   cron → yesterday in account's timezone
     const { dateStr, dateLabel } = override
       ? { dateStr: override, dateLabel: new Date(override + 'T12:00:00Z').toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric', timeZone:'UTC' }) }
-      : yesterdayInTz(tz);
+      : targetUserId
+        ? todayInTz(tz)
+        : yesterdayInTz(tz);
 
-    // Skip if this date was already delivered (guards against cron retries and hour-change resends).
-    // Admin ?date= override bypasses this so manual test sends always go through.
+    // Skip if already delivered for this date.
+    // Admin ?date= override bypasses so manual test sends always go through.
     const lastSent = acct.last_report_date ? String(acct.last_report_date).split('T')[0] : null;
     if (!override && lastSent === dateStr) {
       results.push({ email: acct.email, status: 'skipped', reason: `already delivered for ${dateStr}` });
       continue;
     }
 
-    // When running as a cron (hourly), skip accounts whose delivery hour hasn't arrived yet.
-    // Admin ?date= override bypasses this check to allow on-demand testing.
-    if (!override && isCron) {
+    // Cron path only: skip accounts whose delivery hour hasn't arrived yet.
+    // Upload-triggered and admin override always proceed immediately.
+    if (!override && !targetUserId && isCron) {
       const userHour = currentHourInTz(tz);
       if (userHour !== reportHour) {
         results.push({ email: acct.email, status: 'skipped', reason: `delivery hour ${reportHour}, current ${userHour} ${tz}` });

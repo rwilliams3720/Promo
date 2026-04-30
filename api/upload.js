@@ -12,6 +12,15 @@ const supabase = createClient(
 const MONTH_NAMES = ['January','February','March','April','May','June',
                      'July','August','September','October','November','December'];
 
+function triggerDailyReport(userId) {
+  const host = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : 'http://localhost:3001';
+  fetch(`${host}/api/email-report?user_id=${encodeURIComponent(userId)}`, {
+    headers: { 'x-cron-secret': process.env.CRON_SECRET || '' },
+  }).catch(() => {});
+}
+
 async function fetchAllPages(client, table, columns, userId) {
   const PAGE = 1000;
   const rows = [];
@@ -55,7 +64,20 @@ export default async function handler(req, res) {
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
   const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
   if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
-  const userId = user.id;
+  // Resolve data owner — members with captain/chief_officer role upload on behalf of owner
+  let userId = user.id;
+  const { data: memberRow } = await supabase
+    .from('account_members')
+    .select('owner_user_id, role')
+    .eq('member_user_id', user.id)
+    .eq('status', 'active')
+    .single();
+  if (memberRow) {
+    if (!['captain','chief_officer'].includes(memberRow.role)) {
+      return res.status(403).json({ error: 'Uploads require Captain or Chief Officer access.' });
+    }
+    userId = memberRow.owner_user_id;
+  }
 
   try {
     const body      = req.body || {};
@@ -214,6 +236,7 @@ async function processCallUpload(rows, userId) {
     last_updated:        now,
   }).eq('user_id', userId);
 
+  triggerDailyReport(userId);
   return {
     success:  true,
     message:  classified.newLogRows.length ? 'Call report processed successfully.' : 'No new calls — race data recalculated.',
@@ -227,23 +250,21 @@ async function processCallUpload(rows, userId) {
 
 // ─── SALES UPLOAD ───────────────────────────────────────────────
 async function processSalesUpload(rows, userId, columnMap) {
-  // Auto-detect header row
+  // Auto-detect header row — find first row with ≥3 non-empty string cells
   let headerIdx = -1;
   for (let r = 0; r < Math.min(rows.length, 20); r++) {
-    const s = rows[r].join('|');
-    if (s.includes('Product') || s.includes('Written By') || s.includes('Agent') ||
-        s.includes('Producer') || s.includes('Line of Business')) {
-      headerIdx = r; break;
-    }
+    const stringCells = rows[r].filter(c => typeof c === 'string' && c.trim().length > 0);
+    if (stringCells.length >= 3) { headerIdx = r; break; }
   }
-  if (headerIdx === -1) return { success: false, error: 'No recognisable sales report header found.' };
+  if (headerIdx === -1) return { success: false, error: 'No recognizable sales report header found.' };
 
   const headers = rows[headerIdx].map(h => String(h).trim());
 
-  // Resolve column indices: use provided columnMap first, then auto-detect
+  // Resolve column indices: use provided columnMap first, then auto-detect via synonyms
   const colIdx = {};
   if (columnMap) {
     for (const [field, headerName] of Object.entries(columnMap)) {
+      if (field.startsWith('_')) continue; // skip internal keys like _types
       const idx = headers.findIndex(h => h.toLowerCase() === String(headerName).toLowerCase());
       if (idx !== -1) colIdx[field] = idx;
     }
@@ -256,10 +277,32 @@ async function processSalesUpload(rows, userId, columnMap) {
     }
   }
 
+  // Build suggested map: field → header name string (for frontend pre-selection)
+  const suggestedMap = {};
+  for (const [field, idx] of Object.entries(colIdx)) {
+    suggestedMap[field] = headers[idx];
+  }
+
   const required = ['product', 'written_by', 'written_date'];
   const missing  = required.filter(f => colIdx[f] === undefined);
+
+  // No saved columnMap — always ask user to verify detected assignments
+  if (!columnMap) {
+    return { needsMapping: true, headers, suggestedMap };
+  }
+
+  // Saved map provided but required fields still unresolved — ask user to fix gaps
   if (missing.length > 0) {
-    return { needsMapping: true, headers, missing };
+    return { needsMapping: true, headers, suggestedMap };
+  }
+
+  // Extract caller-provided type map (stored under _types key in columnMap)
+  const typeMap = columnMap._types || {};
+
+  // Classify rows first to detect ambiguous life-like types before any DB writes
+  const classified = classifySales(rows, headerIdx, colIdx, {}, typeMap);
+  if (Object.keys(classified.ambiguousTypes).length > 0) {
+    return { needsTypeMapping: true, unknownTypes: Object.values(classified.ambiguousTypes) };
   }
 
   // Remove any rows with malformed dates (pre-2000) caused by prior date-parsing bugs
@@ -284,7 +327,7 @@ async function processSalesUpload(rows, userId, columnMap) {
     }
   }
 
-  const classified = classifySales(rows, headerIdx, colIdx, {});
+  // classified already computed above (before DB writes)
 
   if (classified.newLogRows.length > 0) {
     const logInserts = classified.newLogRows.map(r => ({
@@ -296,7 +339,10 @@ async function processSalesUpload(rows, userId, columnMap) {
       written_premium: r[4] ?? null,
     }));
     const { error: sLogErr } = await supabase.from('sales_log').upsert(logInserts, { onConflict: 'user_id,hash', ignoreDuplicates: true });
-    if (sLogErr) return { success: false, error: 'sales_log write failed: ' + sLogErr.message };
+    if (sLogErr) {
+      console.error('sales_log upsert error:', JSON.stringify(sLogErr));
+      return { success: false, error: `sales_log write failed: ${sLogErr.message}${sLogErr.details ? ' — ' + sLogErr.details : ''}${sLogErr.code ? ' (code ' + sLogErr.code + ')' : ''}` };
+    }
   }
 
   // Seed race_data rows for newly discovered agents before updating
@@ -316,6 +362,7 @@ async function processSalesUpload(rows, userId, columnMap) {
     }).eq('user_id', userId).eq('agent_id', id);
   }
 
+  triggerDailyReport(userId);
   return {
     success: true,
     message: classified.newLogRows.length === 0
@@ -594,10 +641,12 @@ function aggregateFromLog(logRows, agentMeta = {}) {
 
 
 // ─── SALES CLASSIFICATION ───────────────────────────────────────
-function classifySales(data, headerIdx, colIdx, knownHashes) {
+function classifySales(data, headerIdx, colIdx, knownHashes, typeMap) {
+  typeMap = typeMap || {};
   const newLogRows = [];
   const discoveredAgents = {};
   let duplicatesSkipped = 0;
+  const ambiguousTypes = {};
 
   const productCol  = colIdx.product         ?? -1;
   const nameCol     = colIdx.policy_name     ?? -1;
@@ -624,20 +673,33 @@ function classifySales(data, headerIdx, colIdx, knownHashes) {
     const hash = sha256Short([agent, polName, product, dateOnly(date), details, hashPrem].join('|'));
     if (knownHashes[hash]) { duplicatesSkipped++; continue; }
 
-    const category = mapPolicyCategory(product, polType);
+    const category = mapPolicyCategory(product, polType, typeMap);
+
     if (category === 'other') {
-      newLogRows.push([hash, 'skip', 'other', dateOnly(date), null]);
+      if (product.toLowerCase().includes('life')) {
+        const typeKey = product + '|' + polType;
+        if (!ambiguousTypes[typeKey]) ambiguousTypes[typeKey] = { product, polType, count: 0 };
+        ambiguousTypes[typeKey].count++;
+      }
+      const agentId = slugify(agent);
+      newLogRows.push([hash, agentId || null, 'other', dateOnly(date), null]);
       continue;
     }
 
     const agentId = slugify(agent);
+
+    if (category === 'deposit') {
+      newLogRows.push([hash, agentId || null, 'deposit', dateOnly(date), writtenPremium]);
+      if (agentId) discoveredAgents[agentId] = agent;
+      continue;
+    }
+
     if (!agentId) continue;
     discoveredAgents[agentId] = agent;
-
     newLogRows.push([hash, agentId, category, dateOnly(date), writtenPremium]);
   }
 
-  return { newLogRows, duplicatesSkipped, discoveredAgents };
+  return { newLogRows, duplicatesSkipped, discoveredAgents, ambiguousTypes };
 }
 
 
@@ -647,7 +709,7 @@ function aggregateSalesFromLog(logRows) {
   for (const row of logRows) {
     const agentId  = String(row[1]);
     const category = String(row[2]);
-    if (category === 'other' || category === 'skip' || agentId === 'skip' || !agentId) continue;
+    if (category === 'other' || category === 'skip' || category === 'deposit' || agentId === 'skip' || !agentId) continue;
     if (!agents[agentId]) agents[agentId] = { id: agentId, wl:0, ul:0, term:0, health:0, auto:0, fire:0 };
     const s = agents[agentId];
     if (s[category] !== undefined) s[category]++;
@@ -703,7 +765,10 @@ function findCol(headers, keywords) {
   return -1;
 }
 
-function mapPolicyCategory(product, policyType) {
+function mapPolicyCategory(product, policyType, typeMap) {
+  const typeKey = String(product).trim() + '|' + String(policyType).trim();
+  if (typeMap && typeMap[typeKey]) return typeMap[typeKey];
+
   const p = String(product    || '').toLowerCase().trim();
   const t = String(policyType || '').toLowerCase().trim();
   if (p.includes('whole') || p === 'wl')                                        return 'wl';
@@ -712,6 +777,7 @@ function mapPolicyCategory(product, policyType) {
   if (p.includes('health') || p.includes('med'))                                return 'health';
   if (p.includes('auto') || p.includes('vehicle') || p.includes('car'))        return 'auto';
   if (p.includes('fire') || p.includes('home') || p.includes('property'))      return 'fire';
+  if (p.includes('deposit'))                                                     return 'deposit';
   if (t.includes('whole') || t === 'wl')                                        return 'wl';
   if (t.includes('universal') || t === 'ul')                                    return 'ul';
   if (t.includes('term'))                                                        return 'term';

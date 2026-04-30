@@ -140,11 +140,20 @@
   .deduct-box{background:rgba(255,77,109,.07);border:1px solid rgba(255,77,109,.2);border-radius:12px;padding:14px 18px;margin-top:14px;}
 
   /* SCORING */
-  .score-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;}
+  .score-grid{display:flex;flex-direction:column;gap:10px;}
+  .score-grid-inner{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;}
+  .score-section-title{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;padding-bottom:6px;border-bottom:1px solid var(--border);}
   .score-field{display:flex;flex-direction:column;gap:5px;}
   .score-field label{font-size:12px;color:var(--muted);}
   .score-field input{padding:8px 12px;background:var(--deep);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;font-family:'DM Mono',monospace;outline:none;width:100%;}
   .score-field input:focus{border-color:var(--accent);}
+  .score-cat-row{display:flex;align-items:center;gap:10px;padding:3px 0;}
+  .score-cat-row label{flex:1;font-size:13px;color:var(--text);display:flex;align-items:center;gap:7px;cursor:pointer;}
+  .score-cat-row input[type=number]{width:72px;padding:6px 8px;background:var(--deep);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:'DM Mono',monospace;outline:none;}
+  .score-cat-row input[type=number]:focus{border-color:var(--accent);}
+  .score-cat-row input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent);cursor:pointer;flex-shrink:0;}
+  .cat-label-input{background:var(--deep);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:3px 7px;width:100px;font-family:inherit;outline:none;}
+  .cat-label-input:focus{border-color:var(--accent);}
   .btn{padding:9px 22px;border-radius:9px;border:none;cursor:pointer;font-size:13px;font-weight:600;font-family:'DM Sans',sans-serif;transition:all .2s;}
   .btn-primary{background:var(--accent);color:var(--deep);}
   .btn-primary:hover{opacity:.85;}
@@ -360,6 +369,23 @@
     <div class="auth-field"><label>CONFIRM PASSWORD</label><input id="rc-pass2" type="password" placeholder="Repeat password" autocomplete="new-password"></div>
     <button class="auth-btn" onclick="handlePasswordReset()">Update Password</button>
     <div id="rc-msg" class="auth-msg" style="display:none"></div>
+  </div>
+</div>
+
+<!-- ── AUTH: INVITE ACCEPT ── -->
+<div id="screen-invite" class="auth-wrap" style="display:none">
+  <div class="auth-box">
+    <div class="auth-logo">BOAT <span>RACE</span></div>
+    <p class="auth-subtitle" id="invite-company-msg">You've been invited to view a dashboard</p>
+    <div class="auth-field"><label>YOUR NAME</label><input id="invite-name" type="text" placeholder="Jane Smith" autocomplete="name"></div>
+    <div class="auth-field"><label>EMAIL</label><input id="invite-email" type="email" disabled style="opacity:.6;cursor:not-allowed;"></div>
+    <div class="auth-field"><label>CREATE PASSWORD</label><input id="invite-pass" type="password" placeholder="At least 8 characters" autocomplete="new-password"></div>
+    <div class="auth-field"><label>CONFIRM PASSWORD</label><input id="invite-pass2" type="password" placeholder="Repeat password" autocomplete="new-password" onkeydown="if(event.key==='Enter')acceptInvite()"></div>
+    <button class="auth-btn" id="invite-btn" onclick="acceptInvite()">Set Up My Access</button>
+    <div id="invite-msg" class="auth-msg" style="display:none"></div>
+    <div class="auth-footer">
+      <button class="auth-link" onclick="showScreen('login')">Already have an account? Sign in</button>
+    </div>
   </div>
 </div>
 
@@ -663,6 +689,59 @@
         <button class="btn btn-primary" onclick="saveColumnMap()">Save Mapping</button>
         <div id="colmap-msg" style="font-size:13px;margin-top:10px;color:var(--accent2);display:none"></div>
       </div>
+      <!-- Agency Management — shown to account owners only -->
+      <div class="acct-section" id="agency-mgmt-section" style="display:none">
+        <h3>Agency Management</h3>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:1.25rem;">
+          Invite team members to view your dashboard. Assign a role to control which tabs they can access.
+        </p>
+        <div id="agency-members-list" style="margin-bottom:1.5rem;"></div>
+        <div style="background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:1rem 1.1rem;">
+          <div style="font-size:12px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.85rem;">Invite a Team Member</div>
+          <div class="acct-field"><label>EMAIL ADDRESS</label><input id="ag-invite-email" type="email" placeholder="teammate@agency.com" style="max-width:320px;"></div>
+          <div class="acct-field" style="margin-bottom:.6rem;">
+            <label>ACCESS ROLE</label>
+            <select id="ag-invite-role" onchange="toggleCustomTabsUI()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;max-width:320px;outline:none;">
+              <option value="bosun">Bosun — Race tab only</option>
+              <option value="chief_officer">Chief Officer — Scoring, Manage &amp; Performance</option>
+              <option value="captain">Captain — Full dashboard access</option>
+              <option value="custom">Custom — Choose specific tabs</option>
+            </select>
+          </div>
+          <div id="ag-custom-tabs-wrap" style="display:none;margin-bottom:.75rem;">
+            <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px;">WHICH TABS</label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <label style="font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" value="race" class="ag-tab-cb"> Race</label>
+              <label style="font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" value="scoring" class="ag-tab-cb"> Scoring</label>
+              <label style="font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" value="manage" class="ag-tab-cb"> Manage</label>
+              <label style="font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" value="perf" class="ag-tab-cb"> Performance</label>
+              <label style="font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" value="analysis" class="ag-tab-cb"> Analysis</label>
+              <label style="font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" value="history" class="ag-tab-cb"> History</label>
+            </div>
+          </div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:.85rem;" id="ag-role-desc">
+            Can view the Race tab only — scores, rankings, and team standings.
+          </div>
+          <button class="btn btn-primary" onclick="sendTeamInvite(this)">Send Invite</button>
+          <div id="ag-invite-msg" style="font-size:13px;margin-top:10px;display:none"></div>
+        </div>
+      </div>
+
+      <!-- Member account view (shown instead of owner sections for sub-users) -->
+      <div id="member-account-panel" style="display:none">
+        <div class="acct-section">
+          <h3>Your Access</h3>
+          <div class="acct-info-grid" id="member-info-grid"></div>
+        </div>
+        <div class="acct-section">
+          <h3>Change Password</h3>
+          <div class="acct-field"><label>NEW PASSWORD</label><input id="mac-newpass" type="password" placeholder="New password" autocomplete="new-password"></div>
+          <div class="acct-field"><label>CONFIRM PASSWORD</label><input id="mac-confpass" type="password" placeholder="Confirm password" autocomplete="new-password"></div>
+          <button class="btn btn-primary" onclick="changeMemberPassword()">Update Password</button>
+          <div id="mac-pw-msg" style="font-size:13px;margin-top:10px;display:none"></div>
+        </div>
+      </div>
+
       <div class="acct-section" id="sandbox-reset-section" style="display:none;border-top:2px solid var(--danger);padding-top:1.2rem;">
         <h3 style="color:var(--danger)">Sandbox — Reset My Data</h3>
         <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Permanently deletes all call logs, sales logs, race data, and resets the current month for your account. Use this to re-test fresh uploads. This cannot be undone.</p>
@@ -727,12 +806,24 @@
 <!-- ── COLUMN MAPPER MODAL ── -->
 <div class="modal-overlay" id="col-mapper-modal">
   <div class="modal-box">
-    <div class="modal-title">Map Sales Columns</div>
-    <p style="font-size:13px;color:var(--muted);margin-bottom:1.2rem;">We couldn't auto-detect all required columns. Map them manually:</p>
+    <div class="modal-title">Confirm Sales Columns</div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:1.2rem;">Verify the detected column assignments below. Required fields are marked with *.</p>
     <div id="col-mapper-fields"></div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeColMapper()">Cancel</button>
       <button class="btn btn-primary" onclick="submitColMapper()">Apply & Upload</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="type-mapper-modal">
+  <div class="modal-box">
+    <div class="modal-title">Classify Policy Types</div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:1.2rem;">These policy types couldn't be automatically classified. Select a scoring category for each:</p>
+    <div id="type-mapper-fields"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeTypeMapper()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitTypeMapper()">Apply & Upload</button>
     </div>
   </div>
 </div>
@@ -751,15 +842,22 @@ let _trialExpired = false;
 let _currentPlan = 'basic';
 let _selectedPlan = null;
 let _columnMap  = {};
-let _pendingUploadData = null;
-let _pendingUploadType = null;
-let _uploadInProgress  = false;
+let _pendingUploadData   = null;
+let _pendingUploadType   = null;
+let _pendingUnknownTypes = null;
+let _uploadInProgress    = false;
 let _perfData = null;
 let _session  = null;
 let _adminRows = [];
 let _raceData  = [];
 let _processingToken = null;
 let _analysisAt = null; // ai_analysis_at from accounts table — authoritative per-account timer
+let _isMember         = false;  // true when logged in as a team member (not account owner)
+let _memberRole       = null;   // 'captain'|'chief_officer'|'bosun'|'custom'
+let _memberCustomTabs = [];     // allowed tab names for custom role
+let _ownerUserId      = null;   // owner's user_id when _isMember is true
+let _ownerCompany     = '';     // owner's company name shown in header
+let _dataUserId       = null;   // use for all data queries (= _ownerUserId || _userId)
 
 const PLAN_PRICES = { basic: 25, pro: 35, premium: 50 };
 const PLAN_FEATURES = {
@@ -790,11 +888,16 @@ const COLORS = ['#00d4ff','#00ff94','#ffd166','#ff8c42','#b0bec5','#ff4d6d','#a7
 const AGENT_COLORS = {};
 
 const DEFAULT_SCORING = {
-  wl:5,ul:4,term:3,health:3,auto:2,fire:2,
-  placed_sales:8,placed_service:6,answered_sales:4,answered_service:3,
-  talk_per_min:0.5,avg_min:1,missed_deduct:-2,voicemail_deduct:-1
+  wl:5, ul:4, term:3, health:3, auto:2, fire:2, deposit:0, other:0, other2:0, other3:0, other4:0, other5:0,
+  placed_sales:8, placed_service:6, answered_sales:4, answered_service:3,
+  talk_per_min:0.5, avg_min:1, missed_deduct:-2, voicemail_deduct:-1,
+  wl_enabled:1, ul_enabled:1, term_enabled:1, health_enabled:1, auto_enabled:1, fire_enabled:1,
+  deposit_enabled:0, other_enabled:0, other2_enabled:0, other3_enabled:0, other4_enabled:0, other5_enabled:0,
 };
 let SCORING = {...DEFAULT_SCORING};
+let CAT_LABELS = { deposit:'Deposit', other:'Other', other2:'Other 2', other3:'Other 3', other4:'Other 4', other5:'Other 5' };
+let _raceWideMissed = 0;
+let _raceWideVm     = 0;
 
 // ── INIT ─────────────────────────────────────────────────────────────────────
 // localStorage helpers — persistSession:false means Supabase never writes its own keys,
@@ -886,7 +989,7 @@ async function init() {
 
 // ── AUTH HELPERS ─────────────────────────────────────────────────────────────
 function showScreen(name) {
-  ['login','signup','forgot','recovery','app'].forEach(s => {
+  ['login','signup','forgot','recovery','app','invite'].forEach(s => {
     const el = document.getElementById('screen-' + s);
     if (el) el.style.display = (s === name) ? (s === 'app' ? 'block' : 'flex') : 'none';
   });
@@ -898,6 +1001,7 @@ function showScreen(name) {
 
 function showLoginOrSignup() {
   const params = new URLSearchParams(window.location.search);
+  if (params.get('invite')) { loadInviteScreen(params.get('invite')); return; }
   const signup = params.get('signup') === 'true';
   showScreen(signup ? 'signup' : 'login');
   if (signup) {
@@ -926,28 +1030,63 @@ async function checkAccountAndShow(session) {
     _userId    = session.user.id;
     _userEmail = session.user.email;
 
-    const { data: acct, error: acctErr } = await _supabase
+    const { data: acct } = await _supabase
       .from('accounts')
       .select('*')
       .eq('user_id', _userId)
       .single();
+
     if (acct) {
+      _dataUserId  = _userId;
       _isAdmin     = acct.is_admin || false;
       _acctStatus  = acct.status   || 'trial';
       _currentPlan = acct.plan     || 'basic';
       _columnMap   = acct.sales_column_map || {};
       _analysisAt  = acct.ai_analysis_at   || null;
-
       if (_acctStatus === 'trial' && acct.trial_ends_at) {
         if (new Date(acct.trial_ends_at) < new Date()) {
           _acctStatus   = 'past_due';
           _trialExpired = true;
         }
       }
+    } else {
+      // No account row — check if this user is an invited team member
+      const { data: member } = await _supabase
+        .from('account_members')
+        .select('owner_user_id, role, custom_tabs, status')
+        .eq('member_user_id', _userId)
+        .eq('status', 'active')
+        .single();
+      if (member) {
+        _isMember         = true;
+        _memberRole       = member.role;
+        _memberCustomTabs = member.custom_tabs || [];
+        _ownerUserId      = member.owner_user_id;
+        _dataUserId       = _ownerUserId;
+        const { data: ownerAcct } = await _supabase
+          .from('accounts')
+          .select('company_name, plan, status, trial_ends_at')
+          .eq('user_id', _ownerUserId)
+          .single();
+        if (ownerAcct) {
+          _ownerCompany = ownerAcct.company_name || '';
+          _currentPlan  = ownerAcct.plan         || 'basic';
+          _acctStatus   = ownerAcct.status        || 'trial';
+          if (_acctStatus === 'trial' && ownerAcct.trial_ends_at && new Date(ownerAcct.trial_ends_at) < new Date()) {
+            _acctStatus = 'past_due'; _trialExpired = true;
+          }
+        }
+      } else {
+        showScreen('login');
+        showMsg('li-msg', 'No account found. Please sign up or use a valid invite link.');
+        return;
+      }
     }
 
     showScreen('app');
-    document.getElementById('user-info').textContent = _userEmail;
+    document.getElementById('user-info').textContent = _isMember
+      ? (_ownerCompany ? `${_ownerCompany} · ${_memberRole.replace('_',' ')}` : _userEmail)
+      : _userEmail;
 
     // Handle return from Stripe Checkout
     const _urlParams = new URLSearchParams(window.location.search);
@@ -964,10 +1103,10 @@ async function checkAccountAndShow(session) {
     const banner = document.getElementById('restrict-banner');
     const msg    = document.getElementById('restrict-msg');
 
-    const isLocked = _trialExpired || _acctStatus === 'past_due' || _acctStatus === 'cancelled';
+    // Members are never locked out — their access follows the owner's account status
+    const isLocked = !_isMember && (_trialExpired || _acctStatus === 'past_due' || _acctStatus === 'cancelled');
 
     if (isLocked) {
-      // Lock to Account tab only — no dashboard access
       document.querySelectorAll('.tab').forEach(t => {
         const isAccount = (t.getAttribute('onclick') || '').includes("'account'");
         t.style.display = isAccount ? '' : 'none';
@@ -984,16 +1123,17 @@ async function checkAccountAndShow(session) {
         ? 'Your payment is past due. Update your payment method below to restore access.'
         : 'Your trial has expired. Subscribe below to continue.';
     } else {
-      // Full access — deferred treated same as paid
       banner.style.display = 'none';
+      if (_isMember) {
+        applyMemberTabGating();
+      } else {
+        if (_isAdmin) document.getElementById('adminTab').style.display = '';
+        const isPremium = acct && acct.plan === 'premium' && !isLocked && _acctStatus !== 'trial';
+        const showAnalysis = isPremium || _isAdmin || _acctStatus === 'trial' || (!isLocked && _acctStatus !== 'trial');
+        document.getElementById('analysisTab').style.display = showAnalysis ? '' : 'none';
+        buildColumnMapUI();
+      }
     }
-
-    if (_isAdmin) document.getElementById('adminTab').style.display = '';
-    const isPremium = acct.plan === 'premium' && !isLocked && _acctStatus !== 'trial';
-    const showAnalysis = isPremium || _isAdmin || _acctStatus === 'trial' || (!isLocked && _acctStatus !== 'trial');
-    document.getElementById('analysisTab').style.display = showAnalysis ? '' : 'none';
-
-    buildColumnMapUI();
   } catch(e) {
     showScreen('login');
     showMsg('li-msg', 'Sign-in error: ' + e.message);
@@ -1057,15 +1197,18 @@ async function handleSignup() {
   const btn = document.querySelector('#screen-signup .auth-btn');
   if (btn) btn.disabled = true;
   try {
-    const { data, error } = await _supabase.auth.signUp({
-      email, password: pass,
-      options: { data: { company_name: company, contact_name: contact, phone, plan, agent_count: agents, referral_source: referral } }
+    const res = await fetch('/api/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: pass, company_name: company, contact_name: contact, phone, plan, agent_count: agents, referral_source: referral }),
     });
-    if (error) return showMsg('su-msg', error.message);
-    // Supabase returns a user with empty identities when the email already exists
-    if (data?.user?.identities?.length === 0) {
-      return showMsg('su-msg',
-        'An account with this email already exists. <button class="auth-link" onclick="showScreen(\'login\')" style="font-size:inherit;display:inline;">Sign in here</button>.');
+    const result = await res.json();
+    if (!res.ok) {
+      if (result.error === 'already_exists') {
+        return showMsg('su-msg',
+          'An account with this email already exists. <button class="auth-link" onclick="showScreen(\'login\')" style="font-size:inherit;display:inline;">Sign in here</button>.');
+      }
+      return showMsg('su-msg', result.error || 'Signup failed. Please try again.');
     }
     showMsg('su-msg', 'Account created! Taking you to sign in…', 'ok');
     setTimeout(() => showScreen('login'), 2000);
@@ -1107,9 +1250,12 @@ async function handleSignOut() {
   _currentPlan = 'basic';
   _selectedPlan = null;
   _columnMap = {};
+  CAT_LABELS = { deposit:'Deposit', other:'Other', other2:'Other 2', other3:'Other 3', other4:'Other 4', other5:'Other 5' };
   _perfData = null;
   _adminRows = [];
   _analysisAt = null;
+  _isMember = false; _memberRole = null; _memberCustomTabs = [];
+  _ownerUserId = null; _ownerCompany = ''; _dataUserId = null;
   _uploadInProgress = false;
   document.getElementById('ul-calls').innerHTML = '';
   document.getElementById('ul-sales').innerHTML = '';
@@ -1125,6 +1271,7 @@ function goToAccountTab() {
 
 function showTab(name, btn) {
   if (_trialExpired && name !== 'account') return;
+  if (_isMember && name !== 'account' && !getAllowedTabs().includes(name)) return;
   document.querySelectorAll('[id^="tab-"]').forEach(el => el.style.display = 'none');
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   const tab = document.getElementById('tab-' + name);
@@ -1159,12 +1306,15 @@ function showTab(name, btn) {
 
 // ── LOAD RACE DATA ────────────────────────────────────────────────────────────
 async function loadRaceData() {
-  if (!_userId) return;
+  if (!_dataUserId) return;
 
-  const [rdRes, scRes, rcRes] = await Promise.all([
-    _supabase.from('race_data').select('*').eq('user_id', _userId),
-    _supabase.from('scoring_config').select('config_key,config_value').eq('user_id', _userId),
-    _supabase.from('race_config').select('key,value').eq('user_id', _userId),
+  const [rdRes, scRes, rcRes, vmRes, msRes, slRes] = await Promise.all([
+    _supabase.from('race_data').select('*').eq('user_id', _dataUserId),
+    _supabase.from('scoring_config').select('config_key,config_value').eq('user_id', _dataUserId),
+    _supabase.from('race_config').select('key,value').eq('user_id', _dataUserId),
+    _supabase.from('call_log').select('*', { count: 'exact', head: true }).eq('user_id', _dataUserId).eq('disposition', 'voicemail'),
+    _supabase.from('call_log').select('*', { count: 'exact', head: true }).eq('user_id', _dataUserId).eq('disposition', 'missed'),
+    _supabase.from('sales_log').select('agent_id,product').eq('user_id', _dataUserId).in('product', ['deposit','other','other2','other3','other4','other5']),
   ]);
 
   if (rdRes.error) console.error('race_data read error:', rdRes.error);
@@ -1173,14 +1323,32 @@ async function loadRaceData() {
 
   if (scRes.data && scRes.data.length) {
     scRes.data.forEach(r => {
-      if (r.config_key in SCORING) SCORING[r.config_key] = parseFloat(r.config_value) || 0;
+      if (r.config_key.endsWith('_label')) {
+        const cat = r.config_key.slice(0, -6);
+        if (cat in CAT_LABELS && r.config_value) CAT_LABELS[cat] = r.config_value;
+      } else if (r.config_key in SCORING) {
+        SCORING[r.config_key] = parseFloat(r.config_value) || 0;
+      }
     });
   }
+
+  _raceWideVm     = vmRes.count || 0;
+  _raceWideMissed = msRes.count || 0;
 
   const month = (rcRes.data || []).find(r => r.key === 'current_month')?.value || '';
   document.getElementById('header-month').textContent = month || 'No race data uploaded';
 
-  _raceData = rdRes.data || [];
+  const EXTRA_CATS = ['deposit','other','other2','other3','other4','other5'];
+  const depOthCounts = {};
+  (slRes.data || []).forEach(r => {
+    if (!r.agent_id || !EXTRA_CATS.includes(r.product)) return;
+    if (!depOthCounts[r.agent_id]) depOthCounts[r.agent_id] = Object.fromEntries(EXTRA_CATS.map(c => [c, 0]));
+    depOthCounts[r.agent_id][r.product]++;
+  });
+  _raceData = (rdRes.data || []).map(ag => ({
+    ...ag,
+    ...Object.fromEntries(EXTRA_CATS.map(c => [c, depOthCounts[ag.agent_id]?.[c] || 0])),
+  }));
   buildScoringUI();
   renderRace(_raceData);
 }
@@ -1195,13 +1363,24 @@ function fmtMins(m) {
 
 function calcScore(ag) {
   const svc = ag.team === 'service';
-  const polPts = (ag.wl||0)*SCORING.wl + (ag.ul||0)*SCORING.ul + (ag.term||0)*SCORING.term +
-    (ag.health||0)*SCORING.health + (ag.auto||0)*SCORING.auto + (ag.fire||0)*SCORING.fire;
+  const polPts =
+    (SCORING.wl_enabled      ? (ag.wl     ||0)*SCORING.wl      : 0) +
+    (SCORING.ul_enabled      ? (ag.ul     ||0)*SCORING.ul      : 0) +
+    (SCORING.term_enabled    ? (ag.term   ||0)*SCORING.term    : 0) +
+    (SCORING.health_enabled  ? (ag.health ||0)*SCORING.health  : 0) +
+    (SCORING.auto_enabled    ? (ag.auto   ||0)*SCORING.auto    : 0) +
+    (SCORING.fire_enabled    ? (ag.fire   ||0)*SCORING.fire    : 0) +
+    (SCORING.deposit_enabled ? (ag.deposit||0)*SCORING.deposit : 0) +
+    (SCORING.other_enabled   ? (ag.other  ||0)*SCORING.other   : 0) +
+    (SCORING.other2_enabled  ? (ag.other2 ||0)*SCORING.other2  : 0) +
+    (SCORING.other3_enabled  ? (ag.other3 ||0)*SCORING.other3  : 0) +
+    (SCORING.other4_enabled  ? (ag.other4 ||0)*SCORING.other4  : 0) +
+    (SCORING.other5_enabled  ? (ag.other5 ||0)*SCORING.other5  : 0);
   const plPts  = (ag.placed||0)   * (svc ? SCORING.placed_service  : SCORING.placed_sales);
   const ansPts = (ag.answered||0) * (svc ? SCORING.answered_service : SCORING.answered_sales);
   const talkPts= (ag.talk_min||0)*SCORING.talk_per_min + (ag.avg_min||0)*SCORING.avg_min;
   const gross  = Math.round(polPts + plPts + ansPts + talkPts);
-  const deduct = Math.round((ag.race_wide_missed||0)*SCORING.missed_deduct + (ag.race_wide_voicemail||0)*SCORING.voicemail_deduct);
+  const deduct = Math.round(_raceWideMissed*SCORING.missed_deduct + _raceWideVm*SCORING.voicemail_deduct);
   return { gross, deduct, total: Math.max(0, gross + deduct) };
 }
 
@@ -1224,8 +1403,8 @@ function renderRace(data) {
   agents.sort((a, b) => b.total - a.total);
   const maxScore = agents[0]?.total || 1;
   const maxDeduct = Math.max(...agents.map(a => Math.abs(a.deduct)), 1);
-  const rwMissed  = data[0]?.race_wide_missed   || 0;
-  const rwVm      = data[0]?.race_wide_voicemail || 0;
+  const rwMissed  = _raceWideMissed;
+  const rwVm      = _raceWideVm;
 
   // Stats row
   const totalPlaced   = agents.reduce((s, a) => s + (a.placed||0), 0);
@@ -1264,8 +1443,15 @@ function renderRace(data) {
     const dedW = maxDeduct > 0 ? (Math.abs(sc.deduct) / maxDeduct * 100) : 0;
     const rankClass = rankClasses[i] || 'rank-other';
     const svc = ag.team === 'service';
-    const polPts = (ag.wl||0)*SCORING.wl + (ag.ul||0)*SCORING.ul + (ag.term||0)*SCORING.term +
-      (ag.health||0)*SCORING.health + (ag.auto||0)*SCORING.auto + (ag.fire||0)*SCORING.fire;
+    const polPts =
+      (SCORING.wl_enabled      ? (ag.wl     ||0)*SCORING.wl      : 0) +
+      (SCORING.ul_enabled      ? (ag.ul     ||0)*SCORING.ul      : 0) +
+      (SCORING.term_enabled    ? (ag.term   ||0)*SCORING.term    : 0) +
+      (SCORING.health_enabled  ? (ag.health ||0)*SCORING.health  : 0) +
+      (SCORING.auto_enabled    ? (ag.auto   ||0)*SCORING.auto    : 0) +
+      (SCORING.fire_enabled    ? (ag.fire   ||0)*SCORING.fire    : 0) +
+      (SCORING.deposit_enabled ? (ag.deposit||0)*SCORING.deposit : 0) +
+      (SCORING.other_enabled   ? (ag.other  ||0)*SCORING.other   : 0);
     return `<div class="race-row">
       <div class="race-rank ${rankClass}">${i+1}</div>
       <div>
@@ -1275,12 +1461,18 @@ function renderRace(data) {
           <span class="team-badge ${svc?'badge-service':'badge-sales'}">${ag.team}</span>
         </div>
         <div class="pill-row">
-          ${ag.wl?`<span class="pill">WL×${ag.wl}</span>`:''}
-          ${ag.ul?`<span class="pill">UL×${ag.ul}</span>`:''}
-          ${ag.term?`<span class="pill">T×${ag.term}</span>`:''}
-          ${ag.health?`<span class="pill">H×${ag.health}</span>`:''}
-          ${ag.auto?`<span class="pill">A×${ag.auto}</span>`:''}
-          ${ag.fire?`<span class="pill">F×${ag.fire}</span>`:''}
+          ${ag.wl     && SCORING.wl_enabled      ?`<span class="pill">WL×${ag.wl}</span>`:''}
+          ${ag.ul     && SCORING.ul_enabled      ?`<span class="pill">UL×${ag.ul}</span>`:''}
+          ${ag.term   && SCORING.term_enabled    ?`<span class="pill">T×${ag.term}</span>`:''}
+          ${ag.health && SCORING.health_enabled  ?`<span class="pill">H×${ag.health}</span>`:''}
+          ${ag.auto   && SCORING.auto_enabled    ?`<span class="pill">A×${ag.auto}</span>`:''}
+          ${ag.fire   && SCORING.fire_enabled    ?`<span class="pill">F×${ag.fire}</span>`:''}
+          ${(ag.deposit||0) && SCORING.deposit_enabled ?`<span class="pill">${CAT_LABELS.deposit}×${ag.deposit}</span>`:''}
+          ${(ag.other  ||0) && SCORING.other_enabled  ?`<span class="pill">${CAT_LABELS.other}×${ag.other}</span>`:''}
+          ${(ag.other2 ||0) && SCORING.other2_enabled ?`<span class="pill">${CAT_LABELS.other2}×${ag.other2}</span>`:''}
+          ${(ag.other3 ||0) && SCORING.other3_enabled ?`<span class="pill">${CAT_LABELS.other3}×${ag.other3}</span>`:''}
+          ${(ag.other4 ||0) && SCORING.other4_enabled ?`<span class="pill">${CAT_LABELS.other4}×${ag.other4}</span>`:''}
+          ${(ag.other5 ||0) && SCORING.other5_enabled ?`<span class="pill">${CAT_LABELS.other5}×${ag.other5}</span>`:''}
         </div>
         <div class="race-bar-bg" style="margin-top:6px">
           <div class="race-bar-fill" style="width:${barW}%;background:linear-gradient(90deg,${ag.color}88,${ag.color})">
@@ -1320,15 +1512,22 @@ function renderRace(data) {
       <div class="podium-block podium-3" style="height:100px">3</div>
     </div>`:''}`;
 
-  // Key
-  const keyItems = [
-    {label:'Whole Life',key:'wl',color:'#00d4ff'},
-    {label:'Universal Life',key:'ul',color:'#a78bfa'},
-    {label:'Term',key:'term',color:'#60a5fa'},
-    {label:'Health',key:'health',color:'#34d399'},
-    {label:'Auto',key:'auto',color:'#fbbf24'},
-    {label:'Fire',key:'fire',color:'#fb923c'},
-  ];
+  // Key — only show enabled categories
+  const ALL_KEY_ITEMS = [
+    {key:'wl',     color:'#00d4ff', label:'Whole Life'},
+    {key:'ul',     color:'#a78bfa', label:'Universal Life'},
+    {key:'term',   color:'#60a5fa', label:'Term'},
+    {key:'health', color:'#34d399', label:'Health'},
+    {key:'auto',   color:'#fbbf24', label:'Auto'},
+    {key:'fire',   color:'#fb923c', label:'Fire'},
+    {key:'deposit',color:'#f87171'},
+    {key:'other',  color:'#94a3b8'},
+    {key:'other2', color:'#e879f9'},
+    {key:'other3', color:'#4ade80'},
+    {key:'other4', color:'#facc15'},
+    {key:'other5', color:'#38bdf8'},
+  ].map(k => ({ ...k, label: CAT_LABELS[k.key] || k.label }));
+  const keyItems = ALL_KEY_ITEMS.filter(k => SCORING[k.key + '_enabled']);
   document.getElementById('key-grid').innerHTML = keyItems.map(k =>
     `<div class="key-item"><div class="key-dot" style="background:${k.color}"></div>
     <div><div class="key-type">${k.label}</div><div class="key-pts">${SCORING[k.key]} pts each</div></div></div>`
@@ -1345,18 +1544,35 @@ function renderRace(data) {
 
 // ── SCORING UI ────────────────────────────────────────────────────────────────
 function buildScoringUI() {
-  const fields = [
-    ['wl','Whole Life pts'],['ul','Universal Life pts'],['term','Term pts'],
-    ['health','Health pts'],['auto','Auto pts'],['fire','Fire pts'],
+  const fixedCats    = [['wl','Whole Life'],['ul','Universal Life'],['term','Term'],['health','Health'],['auto','Auto'],['fire','Fire']];
+  const flexCats     = ['deposit','other','other2','other3','other4','other5'];
+  const callFields   = [
     ['placed_sales','Placed (sales)'],['placed_service','Placed (service)'],
     ['answered_sales','Answered (sales)'],['answered_service','Answered (service)'],
     ['talk_per_min','Talk pts/min'],['avg_min','Avg min pts'],
     ['missed_deduct','Missed deduct'],['voicemail_deduct','Voicemail deduct'],
   ];
-  document.getElementById('score-grid').innerHTML = fields.map(([k,lbl]) =>
+  const fixedRows = fixedCats.map(([k, lbl]) => `
+    <div class="score-cat-row">
+      <label><input type="checkbox" id="sc-${k}_enabled" ${SCORING[k+'_enabled'] ? 'checked' : ''}>${lbl}</label>
+      <input type="number" id="sc-${k}" step="0.1" value="${SCORING[k]}" placeholder="pts">
+    </div>`).join('');
+  const flexRows = flexCats.map(k => `
+    <div class="score-cat-row">
+      <label><input type="checkbox" id="sc-${k}_enabled" ${SCORING[k+'_enabled'] ? 'checked' : ''}>
+        <input type="text" id="sc-${k}_label" class="cat-label-input" value="${CAT_LABELS[k]}" placeholder="Label">
+      </label>
+      <input type="number" id="sc-${k}" step="0.1" value="${SCORING[k]}" placeholder="pts">
+    </div>`).join('');
+  const callRows = callFields.map(([k, lbl]) =>
     `<div class="score-field"><label>${lbl}</label>
-    <input type="number" id="sc-${k}" step="0.1" value="${SCORING[k]}"></div>`
+     <input type="number" id="sc-${k}" step="0.1" value="${SCORING[k]}"></div>`
   ).join('');
+  document.getElementById('score-grid').innerHTML = `
+    <div class="score-section-title">Policy Categories</div>
+    ${fixedRows}${flexRows}
+    <div class="score-section-title">Call Activity</div>
+    <div class="score-grid-inner">${callRows}</div>`;
   buildTeamToggleUI();
 }
 
@@ -1377,9 +1593,10 @@ function buildTeamToggleUI() {
 }
 
 async function setAgentTeam(agentId, team, btn) {
+  if (_isMember && _memberRole !== 'captain') return;
   const { error } = await _supabase.from('race_data')
     .update({ team })
-    .eq('user_id', _userId)
+    .eq('user_id', _dataUserId)
     .eq('agent_id', agentId);
   const msg = document.getElementById('team-assign-msg');
   msg.style.display = 'block';
@@ -1400,13 +1617,24 @@ async function setAgentTeam(agentId, team, btn) {
 
 async function saveScoring() {
   if (!_userId) return;
+  if (_isMember && _memberRole !== 'captain') return;
   const fields = Object.keys(DEFAULT_SCORING);
   fields.forEach(k => {
-    const val = parseFloat(document.getElementById('sc-'+k)?.value);
-    if (!isNaN(val)) SCORING[k] = val;
+    if (k.endsWith('_enabled')) {
+      const cb = document.getElementById('sc-' + k);
+      if (cb) SCORING[k] = cb.checked ? 1 : 0;
+    } else {
+      const val = parseFloat(document.getElementById('sc-'+k)?.value);
+      if (!isNaN(val)) SCORING[k] = val;
+    }
   });
 
-  const rows = fields.map(k => ({ user_id: _userId, config_key: k, config_value: String(SCORING[k]) }));
+  const rows = fields.map(k => ({ user_id: _dataUserId, config_key: k, config_value: String(SCORING[k]) }));
+  Object.keys(CAT_LABELS).forEach(k => {
+    const input = document.getElementById('sc-' + k + '_label');
+    if (input && input.value.trim()) CAT_LABELS[k] = input.value.trim();
+    rows.push({ user_id: _dataUserId, config_key: k + '_label', config_value: CAT_LABELS[k] });
+  });
   const { error } = await _supabase.from('scoring_config')
     .upsert(rows, { onConflict: 'user_id,config_key' });
 
@@ -1472,8 +1700,16 @@ function handleFile(type, input) {
       if (json.needsMapping) {
         _pendingUploadData = raw;
         _pendingUploadType = type;
-        openColMapper(json.headers, json.missing);
+        openColMapper(json.headers, json.suggestedMap);
         logEl.innerHTML = '<span class="warn">Column mapping required — see modal.</span>';
+        return;
+      }
+
+      if (json.needsTypeMapping) {
+        _pendingUploadData = raw;
+        _pendingUploadType = type;
+        openTypeMapper(json.unknownTypes);
+        logEl.innerHTML = '<span class="warn">Policy type classification required — see modal.</span>';
         return;
       }
 
@@ -1506,19 +1742,26 @@ function handleFile(type, input) {
 }
 
 // ── COLUMN MAPPER MODAL ───────────────────────────────────────────────────────
-function openColMapper(headers, missing) {
+const REQUIRED_FIELDS = new Set(['product', 'written_by', 'written_date']);
+
+function openColMapper(headers, suggestedMap) {
+  suggestedMap = suggestedMap || {};
   const container = document.getElementById('col-mapper-fields');
-  container.innerHTML = (missing || COL_FIELDS).map(field => `
+  container.innerHTML = COL_FIELDS.map(field => {
+    const suggested = suggestedMap[field] || '';
+    const required  = REQUIRED_FIELDS.has(field);
+    return `
     <div class="modal-field">
       <div class="field-label-row">
-        <label>${FIELD_LABELS[field] || field}</label>
+        <label>${FIELD_LABELS[field] || field}${required ? ' <span style="color:var(--accent2)">*</span>' : ''}</label>
         ${FIELD_HINTS[field] ? `<span class="info-tip" data-tip="${FIELD_HINTS[field]}">i</span>` : ''}
       </div>
       <select class="admin-select" id="cm-${field}" style="width:100%;padding:9px 12px;font-size:13px;">
-        <option value="">— select column —</option>
-        ${(headers||[]).map(h => `<option value="${h}">${h}</option>`).join('')}
+        <option value="">— not mapped —</option>
+        ${(headers||[]).map(h => `<option value="${h}"${h === suggested ? ' selected' : ''}>${h}</option>`).join('')}
       </select>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   document.getElementById('col-mapper-modal').classList.add('open');
 }
 
@@ -1526,6 +1769,88 @@ function closeColMapper() {
   document.getElementById('col-mapper-modal').classList.remove('open');
   _pendingUploadData = null;
   _pendingUploadType = null;
+}
+
+// ── TYPE MAPPER MODAL ─────────────────────────────────────────────────────────
+function getCategoryOptions() {
+  return [
+    ['',       '— skip —'],
+    ['wl',     'Whole Life (WL)'],
+    ['ul',     'Universal Life (UL)'],
+    ['term',   'Term'],
+    ['health', 'Health'],
+    ['auto',   'Auto'],
+    ['fire',   'Fire / Property'],
+    ['deposit', CAT_LABELS.deposit],
+    ['other',   CAT_LABELS.other],
+    ['other2',  CAT_LABELS.other2],
+    ['other3',  CAT_LABELS.other3],
+    ['other4',  CAT_LABELS.other4],
+    ['other5',  CAT_LABELS.other5],
+  ];
+}
+
+function openTypeMapper(unknownTypes) {
+  _pendingUnknownTypes = unknownTypes;
+  const container = document.getElementById('type-mapper-fields');
+  container.innerHTML = unknownTypes.map(({ product, polType, count }, idx) => `
+    <div class="modal-field">
+      <div class="field-label-row">
+        <label>${product}${polType ? ' — ' + polType : ''} <span style="color:var(--muted);font-size:12px">(${count} ${count === 1 ? 'row' : 'rows'})</span></label>
+      </div>
+      <select class="admin-select" data-idx="${idx}" style="width:100%;padding:9px 12px;font-size:13px;">
+        ${getCategoryOptions().map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}
+      </select>
+    </div>`).join('');
+  document.getElementById('type-mapper-modal').classList.add('open');
+}
+
+function closeTypeMapper() {
+  document.getElementById('type-mapper-modal').classList.remove('open');
+  _pendingUploadData   = null;
+  _pendingUploadType   = null;
+  _pendingUnknownTypes = null;
+}
+
+async function submitTypeMapper() {
+  const types = {};
+  document.querySelectorAll('#type-mapper-fields select').forEach(sel => {
+    const { product, polType } = _pendingUnknownTypes[parseInt(sel.dataset.idx)];
+    if (sel.value) types[product + '|' + polType] = sel.value;
+  });
+
+  _columnMap._types = { ...(_columnMap._types || {}), ...types };
+  await _supabase.from('accounts').update({ sales_column_map: _columnMap }).eq('user_id', _userId);
+
+  const pendingData = _pendingUploadData;
+  const pendingType = _pendingUploadType;
+  closeTypeMapper();
+
+  if (!pendingData || !pendingType) return;
+  const logEl = document.getElementById('ul-' + pendingType);
+  try {
+    const hdrs = authHeaders();
+    const res  = await fetch('/api/upload', {
+      method: 'POST',
+      headers: { ...hdrs, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: pendingType, data: pendingData, columnMap: _columnMap }),
+    });
+    const json = await res.json();
+    if (!res.ok || json.success === false) {
+      logEl.innerHTML = `<span class="err">Error: ${json.error || 'Upload failed'}</span>`;
+      return;
+    }
+    logEl.innerHTML = `<span class="ok">${json.message || 'Upload complete'}</span>`
+      + (json.new != null ? `<br><span>${json.new} new record${json.new !== 1 ? 's' : ''} inserted</span>` : '')
+      + (json.skipped ? `<br><span class="warn">${json.skipped} duplicate${json.skipped !== 1 ? 's' : ''} skipped</span>` : '');
+    document.getElementById('last-upload-time').textContent = new Date().toLocaleString();
+    await loadRaceData();
+  } catch(err) {
+    logEl.innerHTML = `<span class="err">Error: ${err.message}</span>`;
+  } finally {
+    _uploadInProgress = false;
+    ['calls','sales'].forEach(t => { const fi = document.getElementById('fi-'+t); if (fi) fi.disabled = false; });
+  }
 }
 
 async function submitColMapper() {
@@ -1800,10 +2125,19 @@ function updateAnalysisBtn() {
 }
 
 function displayCachedAnalysis() {
+  // If server cache was cleared (e.g. after archive), discard stale browser cache on any browser/login
+  if (!_analysisAt) {
+    _lsRemove('br-analysis-data');
+    return;
+  }
   const cached = _lsGet('br-analysis-data');
   if (cached) {
     try {
       const data = JSON.parse(cached);
+      if (data.userId && data.userId !== _userId) {
+        _lsRemove('br-analysis-data');
+        // fall through to server fetch below
+      } else {
       if (data.chartData) renderAnalysisCharts(data.chartData);
       if (data.insights) {
         const paragraphs = data.insights.split(/\n\n+/).filter(Boolean);
@@ -1816,8 +2150,9 @@ function displayCachedAnalysis() {
         msg.style.color = 'var(--muted)';
         msg.textContent = `Generated ${new Date(data.cachedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
       }
+      return;
+      } // end userId match block
     } catch(e) { /* stale or corrupt — fall through to server fetch */ }
-    return;
   }
 
   // No local cache but account has a prior analysis — fetch it from server silently.
@@ -1832,7 +2167,7 @@ function displayCachedAnalysis() {
       document.getElementById('analysis-body').innerHTML = paragraphs.map(p => `<p>${p.trim()}</p>`).join('');
       document.getElementById('analysis-email-btn').style.display = '';
       const cachedAt = data.cachedAt || _analysisAt;
-      _lsSet('br-analysis-data', JSON.stringify({ insights: data.insights, chartData: data.chartData, cachedAt }));
+      _lsSet('br-analysis-data', JSON.stringify({ userId: _userId, insights: data.insights, chartData: data.chartData, cachedAt }));
       const msg = document.getElementById('analysis-msg');
       msg.style.display = 'block';
       msg.style.color = 'var(--muted)';
@@ -1887,7 +2222,7 @@ async function runAnalysis() {
     if (!data.cached) {
       const nowIso = new Date().toISOString();
       _analysisAt = nowIso;
-      _lsSet('br-analysis-data', JSON.stringify({ insights: data.insights, chartData: data.chartData, cachedAt: nowIso }));
+      _lsSet('br-analysis-data', JSON.stringify({ userId: _userId, insights: data.insights, chartData: data.chartData, cachedAt: nowIso }));
     }
 
     const source = data.cached
@@ -2024,8 +2359,12 @@ async function loadHistory() {
 // ── ACCOUNT TAB ───────────────────────────────────────────────────────────────
 async function loadAccountTab() {
   if (!_userId) return;
+  if (_isMember) { loadMemberAccountTab(); return; }
   const { data: acct } = await _supabase.from('accounts').select('*').eq('user_id', _userId).single();
   if (!acct) return;
+  // Show agency management section for account owners (non-admin or admin)
+  const agencySection = document.getElementById('agency-mgmt-section');
+  if (agencySection) { agencySection.style.display = ''; loadAgencyMembers(); }
 
   const isSubscribed = ['paid','deferred'].includes(acct.status);
   const planName     = (acct.plan || 'basic').charAt(0).toUpperCase() + (acct.plan || 'basic').slice(1);
@@ -2325,8 +2664,9 @@ async function saveColumnMap() {
     const val = document.getElementById('cmap-' + f)?.value.trim();
     if (val) map[f] = val;
   });
+  if (_columnMap._types) map._types = _columnMap._types;
   _columnMap = map;
-  const { error } = await _supabase.from('accounts').update({ sales_column_map: map }).eq('user_id', _userId);
+  const { error } = await _supabase.from('accounts').update({ sales_column_map: _columnMap }).eq('user_id', _userId);
   const msg = document.getElementById('colmap-msg');
   msg.style.display = 'block';
   if (error) { msg.style.color='var(--danger)'; msg.textContent='Error: '+error.message; }
@@ -2425,10 +2765,11 @@ async function adminDeleteUser(uid, email, btn) {
 
 // ── ARCHIVE / RESET ───────────────────────────────────────────────────────────
 async function confirmArchive() {
+  if (_isMember && _memberRole !== 'captain') return;
   if (!confirm('Archive current month results to history and reset the race? This cannot be undone.')) return;
 
-  const { data: rdRows } = await _supabase.from('race_data').select('*').eq('user_id', _userId);
-  const { data: rcRow  } = await _supabase.from('race_config').select('value').eq('user_id', _userId).eq('key','current_month').single();
+  const { data: rdRows } = await _supabase.from('race_data').select('*').eq('user_id', _dataUserId);
+  const { data: rcRow  } = await _supabase.from('race_config').select('value').eq('user_id', _dataUserId).eq('key','current_month').single();
 
   const _ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -2453,9 +2794,13 @@ async function confirmArchive() {
   }
   if (!rawMonth) rawMonth = new Date().toISOString().slice(0, 7);
 
-  // Normalize ISO "2026-04" → "Apr 2026" if needed
-  const _isoM = rawMonth.match(/^(\d{4})-(\d{2})$/);
-  const month = _isoM ? _ABBR[parseInt(_isoM[2])-1] + ' ' + _isoM[1] : rawMonth;
+  // Normalize to abbreviated "Mon YYYY" — handles ISO "2026-04", full "March 2026", or already-abbrev "Mar 2026"
+  const _isoM  = rawMonth.match(/^(\d{4})-(\d{2})$/);
+  const _FULL  = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const _fullIdx = _FULL.indexOf(rawMonth.split(' ')[0]);
+  const month = _isoM    ? _ABBR[parseInt(_isoM[2])-1] + ' ' + _isoM[1]
+              : _fullIdx >= 0 ? _ABBR[_fullIdx] + ' ' + rawMonth.split(' ')[1]
+              : rawMonth;
 
   if (rdRows?.length) {
     const agents = rdRows.map((ag) => {
@@ -2464,7 +2809,7 @@ async function confirmArchive() {
     }).sort((a,b) => b.total - a.total);
 
     const histRows = agents.map((ag, i) => ({
-      user_id: _userId,
+      user_id: _dataUserId,
       month,
       rank: i + 1,
       agent_id: ag.agent_id,
@@ -2478,24 +2823,24 @@ async function confirmArchive() {
       placed: ag.placed||0, answered: ag.answered||0,
       missed: ag.missed||0, voicemail: ag.voicemail||0,
       talk_min: ag.talk_min||0, avg_min: ag.avg_min||0,
-      race_wide_missed: ag.race_wide_missed||0,
-      race_wide_voicemail: ag.race_wide_voicemail||0,
+      race_wide_missed: _raceWideMissed,
+      race_wide_voicemail: _raceWideVm,
     }));
 
-    await _supabase.from('historical_wins').delete().eq('user_id', _userId).eq('month', month);
+    await _supabase.from('historical_wins').delete().eq('user_id', _dataUserId).eq('month', month);
     await _supabase.from('historical_wins').insert(histRows);
 
     // Write monthly call/sales aggregates for trend chart persistence
     const placed   = rdRows.reduce((s, ag) => s + (ag.placed||0), 0);
     const answered = rdRows.reduce((s, ag) => s + (ag.answered||0), 0);
     const talkMin  = rdRows.reduce((s, ag) => s + (ag.talk_min||0), 0);
-    const voicemail = rdRows[0]?.race_wide_voicemail || 0;
-    const missed   = rdRows[0]?.race_wide_missed || 0;
+    const voicemail = _raceWideVm;
+    const missed    = _raceWideMissed;
     const { count: salesCount } = await _supabase.from('sales_log')
-      .select('*', { count: 'exact', head: true }).eq('user_id', _userId);
+      .select('*', { count: 'exact', head: true }).eq('user_id', _dataUserId);
 
     await _supabase.from('historical_months').upsert({
-      user_id: _userId, month,
+      user_id: _dataUserId, month,
       placed, answered,
       talk_min: Math.round(talkMin),
       voicemail, missed,
@@ -2504,15 +2849,294 @@ async function confirmArchive() {
   }
 
   // Delete all agents from race so next upload builds a fresh roster
-  await _supabase.from('race_data').delete().eq('user_id', _userId);
+  await _supabase.from('race_data').delete().eq('user_id', _dataUserId);
 
-  await _supabase.from('call_log').delete().eq('user_id', _userId);
-  await _supabase.from('sales_log').delete().eq('user_id', _userId);
-  await _supabase.from('race_config').update({ value: '' }).eq('user_id', _userId).eq('key','current_month');
+  await _supabase.from('call_log').delete().eq('user_id', _dataUserId);
+  await _supabase.from('sales_log').delete().eq('user_id', _dataUserId);
+  await _supabase.from('race_config').update({ value: '' }).eq('user_id', _dataUserId).eq('key','current_month');
+
+  // Invalidate analysis cache so the next Analyze reflects the newly archived month
+  await _supabase.from('accounts').update({ ai_analysis_cache: null, ai_analysis_at: null }).eq('user_id', _dataUserId);
+  _lsRemove('br-analysis-data');
+  _analysisAt = null;
 
   await loadRaceData();
   await loadHistory();
   alert('Month archived and race reset.');
+}
+
+// ── MEMBER TAB GATING ────────────────────────────────────────────────────────
+function getAllowedTabs() {
+  if (!_isMember) return null;
+  switch (_memberRole) {
+    case 'captain':       return ['race','scoring','manage','perf','analysis','history'];
+    case 'chief_officer': return ['scoring','manage','perf','history'];
+    case 'bosun':         return ['race','history'];
+    case 'custom':        return _memberCustomTabs.length ? _memberCustomTabs : ['race'];
+    default:              return ['race'];
+  }
+}
+
+function applyMemberTabGating() {
+  const allowed = getAllowedTabs();
+  document.querySelectorAll('.tab').forEach(btn => {
+    const match   = (btn.getAttribute('onclick') || '').match(/'(\w+)'/);
+    const tabName = match ? match[1] : null;
+    if (!tabName || tabName === 'account') return;
+    btn.style.display = allowed.includes(tabName) ? '' : 'none';
+  });
+  // Hide admin tab always for members
+  const adminTab = document.getElementById('adminTab');
+  if (adminTab) adminTab.style.display = 'none';
+  // Show analysis tab only if captain/custom-with-analysis
+  const analysisTab = document.getElementById('analysisTab');
+  if (analysisTab) {
+    const showAnalysis = allowed.includes('analysis') &&
+      (_currentPlan === 'premium') && ['paid','deferred'].includes(_acctStatus);
+    analysisTab.style.display = showAnalysis ? '' : 'none';
+  }
+  // Default tab: first allowed tab
+  const defaultTab = allowed[0] || 'race';
+  const defaultBtn = document.querySelector(`.tab[onclick*="'${defaultTab}'"]`);
+  showTab(defaultTab, defaultBtn);
+}
+
+// ── INVITE ACCEPT FLOW ───────────────────────────────────────────────────────
+async function loadInviteScreen(token) {
+  showScreen('invite');
+  window._pendingInviteToken = token;
+  try {
+    const res  = await fetch(`/api/invite?token=${encodeURIComponent(token)}`);
+    const data = await res.json();
+    if (!res.ok || !data.valid) {
+      showScreen('login');
+      showMsg('li-msg', data.error || 'Invalid or expired invite link.');
+      return;
+    }
+    document.getElementById('invite-email').value       = data.email;
+    document.getElementById('invite-company-msg').textContent =
+      `You've been invited to view ${data.company}'s dashboard as ${data.roleLabel}.`;
+  } catch(e) {
+    showScreen('login');
+    showMsg('li-msg', 'Could not load invite: ' + e.message);
+  }
+}
+
+async function acceptInvite() {
+  const name  = (document.getElementById('invite-name').value  || '').trim();
+  const pass  = document.getElementById('invite-pass').value;
+  const pass2 = document.getElementById('invite-pass2').value;
+  const token = window._pendingInviteToken;
+
+  if (!name)          return showMsg('invite-msg', 'Please enter your name.');
+  if (pass.length < 8) return showMsg('invite-msg', 'Password must be at least 8 characters.');
+  if (pass !== pass2) return showMsg('invite-msg', 'Passwords do not match.');
+
+  const btn = document.getElementById('invite-btn');
+  btn.disabled = true;
+  showMsg('invite-msg', 'Setting up your access…', 'ok');
+
+  try {
+    const res  = await fetch('/api/invite?action=accept', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ token, name, password: pass }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      if (data.error === 'already_exists') {
+        showMsg('invite-msg', 'An account with this email already exists. Please sign in instead.');
+      } else {
+        showMsg('invite-msg', data.error || 'Something went wrong.');
+      }
+      btn.disabled = false;
+      return;
+    }
+    // Auto-login with the credentials they just created
+    showMsg('invite-msg', 'Account created — signing you in…', 'ok');
+    const email = document.getElementById('invite-email').value;
+    const { error: signInErr } = await _supabase.auth.signInWithPassword({ email, password: pass });
+    if (signInErr) {
+      showMsg('invite-msg', 'Account created. Please sign in manually.');
+      setTimeout(() => showScreen('login'), 2000);
+    }
+    // onAuthStateChange will fire and call checkAccountAndShow
+  } catch(e) {
+    showMsg('invite-msg', 'Error: ' + e.message);
+    btn.disabled = false;
+  }
+}
+
+// ── MEMBER ACCOUNT TAB ───────────────────────────────────────────────────────
+function loadMemberAccountTab() {
+  // Hide all owner-specific sections
+  ['acct-info-grid-wrap','report-delivery-section','plan-upgrade-section',
+   'sandbox-reset-section','danger-zone-section','agency-mgmt-section',
+   'colmap-section'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  // Hide the first three acct-sections (Account Info, Contact Info, Report Delivery)
+  const sections = document.querySelectorAll('#tab-account .panel .acct-section');
+  sections.forEach(s => {
+    if (!s.id || s.id !== 'member-account-panel') s.style.display = 'none';
+  });
+  // Show member panel
+  const mp = document.getElementById('member-account-panel');
+  if (mp) {
+    mp.style.display = '';
+    const ROLE_LABELS = { captain:'Captain', chief_officer:'Chief Officer', bosun:'Bosun', custom:'Custom' };
+    document.getElementById('member-info-grid').innerHTML = `
+      <div class="acct-info-item"><div class="acct-info-label">Viewing</div><div class="acct-info-val">${_ownerCompany || '—'}</div></div>
+      <div class="acct-info-item"><div class="acct-info-label">Your Role</div><div class="acct-info-val" style="color:var(--accent);">${ROLE_LABELS[_memberRole] || _memberRole}</div></div>
+      <div class="acct-info-item"><div class="acct-info-label">Your Email</div><div class="acct-info-val" style="font-size:13px;">${_userEmail}</div></div>
+    `;
+  }
+}
+
+async function changeMemberPassword() {
+  const p1 = document.getElementById('mac-newpass').value;
+  const p2 = document.getElementById('mac-confpass').value;
+  const msg = document.getElementById('mac-pw-msg');
+  if (!p1 || p1.length < 8) { msg.style.display='block'; msg.style.color='var(--danger)'; msg.textContent='Password must be at least 8 characters.'; return; }
+  if (p1 !== p2)            { msg.style.display='block'; msg.style.color='var(--danger)'; msg.textContent='Passwords do not match.'; return; }
+  const { error } = await _supabase.auth.updateUser({ password: p1 });
+  msg.style.display = 'block';
+  if (error) { msg.style.color='var(--danger)'; msg.textContent='Error: ' + error.message; }
+  else       { msg.style.color='var(--accent2)'; msg.textContent='Password updated.'; document.getElementById('mac-newpass').value=''; document.getElementById('mac-confpass').value=''; }
+}
+
+// ── AGENCY MANAGEMENT ────────────────────────────────────────────────────────
+const ROLE_DESC = {
+  bosun:         'Can view the Race tab only — scores, rankings, and team standings.',
+  chief_officer: 'Can view Scoring, Manage, and Performance tabs.',
+  captain:       'Full dashboard access — all tabs except billing and account management.',
+  custom:        'Choose which specific tabs this person can access.',
+};
+const ROLE_LABEL = { captain:'Captain', chief_officer:'Chief Officer', bosun:'Bosun', custom:'Custom' };
+
+function toggleCustomTabsUI() {
+  const role = document.getElementById('ag-invite-role').value;
+  document.getElementById('ag-custom-tabs-wrap').style.display = role === 'custom' ? '' : 'none';
+  document.getElementById('ag-role-desc').textContent = ROLE_DESC[role] || '';
+}
+
+async function loadAgencyMembers() {
+  const container = document.getElementById('agency-members-list');
+  if (!container) return;
+  container.innerHTML = '<div style="font-size:13px;color:var(--muted);">Loading…</div>';
+  try {
+    const res  = await fetch('/api/members', { headers: authHeaders() });
+    const data = await res.json();
+    if (!res.ok) { container.innerHTML = `<div style="color:var(--danger);font-size:13px;">${data.error}</div>`; return; }
+    if (!data.length) { container.innerHTML = '<div style="font-size:13px;color:var(--muted);">No team members yet. Invite someone below.</div>'; return; }
+    container.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">
+            <th style="padding:5px 8px;text-align:left;border-bottom:1px solid var(--border);">Email</th>
+            <th style="padding:5px 8px;text-align:left;border-bottom:1px solid var(--border);">Role</th>
+            <th style="padding:5px 8px;text-align:left;border-bottom:1px solid var(--border);">Status</th>
+            <th style="padding:5px 8px;border-bottom:1px solid var(--border);"></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.map(m => `
+            <tr>
+              <td style="padding:6px 8px;border-bottom:1px solid var(--border2);font-family:'DM Mono',monospace;font-size:12px;">${m.email}</td>
+              <td style="padding:6px 8px;border-bottom:1px solid var(--border2);">
+                <select onchange="updateMemberRole('${m.id}', this.value)"
+                        style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:3px 6px;font-size:12px;outline:none;">
+                  ${['bosun','chief_officer','captain','custom'].map(r =>
+                    `<option value="${r}"${r===m.role?' selected':''}>${ROLE_LABEL[r]}</option>`
+                  ).join('')}
+                </select>
+              </td>
+              <td style="padding:6px 8px;border-bottom:1px solid var(--border2);">
+                <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;
+                  color:${m.status==='active'?'var(--accent2)':'var(--warn)'};">
+                  ${m.status}
+                </span>
+              </td>
+              <td style="padding:6px 8px;border-bottom:1px solid var(--border2);text-align:right;">
+                <button onclick="removeMember('${m.id}', this)"
+                        style="background:none;border:1px solid rgba(255,77,109,.3);color:var(--danger);
+                               border-radius:5px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">
+                  Remove
+                </button>
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`;
+  } catch(e) {
+    container.innerHTML = `<div style="color:var(--danger);font-size:13px;">Error loading members: ${e.message}</div>`;
+  }
+}
+
+async function sendTeamInvite(btn) {
+  const email = (document.getElementById('ag-invite-email').value || '').trim();
+  const role  = document.getElementById('ag-invite-role').value;
+  const msg   = document.getElementById('ag-invite-msg');
+
+  if (!email) { msg.style.display='block'; msg.style.color='var(--danger)'; msg.textContent='Email is required.'; return; }
+
+  let custom_tabs = null;
+  if (role === 'custom') {
+    custom_tabs = [...document.querySelectorAll('.ag-tab-cb:checked')].map(cb => cb.value);
+    if (!custom_tabs.length) { msg.style.display='block'; msg.style.color='var(--danger)'; msg.textContent='Select at least one tab for Custom access.'; return; }
+  }
+
+  btn.disabled = true;
+  msg.style.display = 'block'; msg.style.color = 'var(--muted)'; msg.textContent = 'Sending…';
+
+  try {
+    const res  = await fetch('/api/invite', {
+      method:  'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ email, role, custom_tabs }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      msg.style.color = 'var(--danger)'; msg.textContent = data.error || 'Failed to send invite.';
+    } else {
+      msg.style.color = 'var(--accent2)';
+      msg.textContent = data.emailWarning ? `Invite saved (email warning: ${data.emailWarning})` : `Invite sent to ${email}.`;
+      document.getElementById('ag-invite-email').value = '';
+      loadAgencyMembers();
+    }
+  } catch(e) {
+    msg.style.color = 'var(--danger)'; msg.textContent = 'Error: ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function removeMember(memberId, btn) {
+  if (!confirm('Remove this team member? They will lose access immediately.')) return;
+  btn.disabled = true;
+  try {
+    const res  = await fetch(`/api/members?memberId=${encodeURIComponent(memberId)}`, {
+      method: 'DELETE', headers: authHeaders(),
+    });
+    const data = await res.json();
+    if (!res.ok) { alert(data.error || 'Failed to remove member.'); btn.disabled = false; return; }
+    loadAgencyMembers();
+  } catch(e) {
+    alert('Error: ' + e.message); btn.disabled = false;
+  }
+}
+
+async function updateMemberRole(memberId, role) {
+  const res  = await fetch('/api/members', {
+    method:  'PATCH',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ memberId, role }),
+  });
+  if (!res.ok) {
+    const data = await res.json();
+    alert(data.error || 'Failed to update role.');
+    loadAgencyMembers(); // re-render to restore old value
+  }
 }
 
 // ── STARTUP ───────────────────────────────────────────────────────────────────

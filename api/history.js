@@ -14,10 +14,20 @@ export default async function handler(req, res) {
   if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
 
   try {
+    // Resolve data owner — if requester is a team member, use the owner's user_id
+    let dataUserId = user.id;
+    const { data: memberRow } = await supabase
+      .from('account_members')
+      .select('owner_user_id')
+      .eq('member_user_id', user.id)
+      .eq('status', 'active')
+      .single();
+    if (memberRow) dataUserId = memberRow.owner_user_id;
+
     const { data, error } = await supabase
       .from('historical_wins')
       .select('month,rank,agent_id,name,team,total_score,gross_score,deductions')
-      .eq('user_id', user.id)
+      .eq('user_id', dataUserId)
       .order('month', { ascending: false })
       .order('rank',  { ascending: true });
 

@@ -16,11 +16,21 @@ export default async function handler(req, res) {
   if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
 
   try {
+    // Resolve data owner — if requester is a team member, use the owner's user_id
+    let dataUserId = user.id;
+    const { data: memberRow } = await supabase
+      .from('account_members')
+      .select('owner_user_id')
+      .eq('member_user_id', user.id)
+      .eq('status', 'active')
+      .single();
+    if (memberRow) dataUserId = memberRow.owner_user_id;
+
     // Fetch agent name/team from race_data for this account
     const { data: raceRows } = await supabase
       .from('race_data')
       .select('agent_id,name,team')
-      .eq('user_id', user.id);
+      .eq('user_id', dataUserId);
     const agentMeta = {};
     for (const r of (raceRows || [])) agentMeta[r.agent_id] = { name: r.name, team: r.team };
 
@@ -31,7 +41,7 @@ export default async function handler(req, res) {
       const { data, error } = await supabase
         .from('call_log')
         .select('agent_id,disposition,talk_secs,call_dt,call_slot')
-        .eq('user_id', user.id)
+        .eq('user_id', dataUserId)
         .not('disposition', 'in', '(internal,other,skip)')
         .range(from, from + PAGE - 1);
       if (error) return res.status(500).json({ error: error.message });

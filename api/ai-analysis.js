@@ -25,14 +25,25 @@ export default async function handler(req, res) {
   const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
   if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
 
+  // Resolve data owner — if requester is a team member, use the owner's user_id
+  let dataUserId = user.id;
+  const { data: memberRow } = await supabase
+    .from('account_members')
+    .select('owner_user_id, role')
+    .eq('member_user_id', user.id)
+    .eq('status', 'active')
+    .single();
+  if (memberRow) dataUserId = memberRow.owner_user_id;
+
   const { data: acct, error: acctErr } = await supabase
     .from('accounts')
     .select('plan,status,trial_ends_at,company_name,is_admin,email,ai_analysis_cache,ai_analysis_at,ai_history_key')
-    .eq('user_id', user.id)
+    .eq('user_id', dataUserId)
     .single();
 
   if (acctErr || !acct) return res.status(500).json({ error: acctErr?.message || 'Account not found' });
 
+  // Members can access AI analysis if owner's plan qualifies; admin flag is owner's
   if (!acct.is_admin) {
     if (acct.plan !== 'premium') return res.status(403).json({ error: 'Premium plan required' });
     if (acct.status === 'trial')  return res.status(403).json({ error: 'Premium plan required' });
@@ -41,7 +52,7 @@ export default async function handler(req, res) {
 
   // Email current analysis
   if (req.query?.action === 'email') {
-    return handleEmailAnalysis(req, res, acct, user.id);
+    return handleEmailAnalysis(req, res, acct, dataUserId);
   }
 
   const force = req.query?.force === '1';
@@ -67,7 +78,7 @@ export default async function handler(req, res) {
       const { data, error } = await supabase
         .from('call_log')
         .select('agent_id,disposition,talk_secs,call_dt')
-        .eq('user_id', user.id)
+        .eq('user_id', dataUserId)
         .gte('call_dt', cutoffStr)
         .not('disposition', 'in', '(internal,other,skip)')
         .range(from, from + PAGE - 1);
@@ -80,17 +91,17 @@ export default async function handler(req, res) {
     const [{ data: sales }, { data: raceRows }, { data: histMonths }, { data: histWins }] = await Promise.all([
       supabase.from('sales_log')
         .select('agent_id,product,sale_date')
-        .eq('user_id', user.id)
+        .eq('user_id', dataUserId)
         .gte('sale_date', cutoffStr),
       supabase.from('race_data')
         .select('agent_id,name,team')
-        .eq('user_id', user.id),
+        .eq('user_id', dataUserId),
       supabase.from('historical_months')
         .select('month,placed,answered,talk_min,voicemail,missed,policies')
-        .eq('user_id', user.id),
+        .eq('user_id', dataUserId),
       supabase.from('historical_wins')
         .select('month,agent_id,name,team,placed,answered,talk_min,wl,ul,term,health,auto,fire,missed,voicemail,rank')
-        .eq('user_id', user.id),
+        .eq('user_id', dataUserId),
     ]);
     const agentMeta = {};
     for (const r of (raceRows || [])) agentMeta[r.agent_id] = { name: r.name, team: r.team };
@@ -108,8 +119,17 @@ export default async function handler(req, res) {
 
     const monthNameToNum = { Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11 };
 
+    // Full month names written by older versions of confirmArchive — normalize to abbreviated
+    const FULL_TO_ABBR = {
+      January:'Jan',February:'Feb',March:'Mar',April:'Apr',May:'May',June:'Jun',
+      July:'Jul',August:'Aug',September:'Sep',October:'Oct',November:'Nov',December:'Dec',
+    };
     for (const hm of (histMonths || [])) {
-      monthly[hm.month] = {
+      const rawParts = hm.month.split(' ');
+      const normMonth = (rawParts.length === 2 && FULL_TO_ABBR[rawParts[0]])
+        ? FULL_TO_ABBR[rawParts[0]] + ' ' + rawParts[1]
+        : hm.month;
+      monthly[normMonth] = {
         placed:   hm.placed   || 0,
         answered: hm.answered || 0,
         talkMin:  hm.talk_min || 0,
@@ -118,9 +138,7 @@ export default async function handler(req, res) {
         policies: hm.policies || 0,
       };
       // Add historical months within the 90-day window to r90 rolling totals.
-      // Use last day of the month as the reference — if any day in the month falls
-      // after the cutoff it contributes (monthly-granularity approximation).
-      const parts = hm.month.split(' ');
+      const parts = normMonth.split(' ');
       if (parts.length === 2) {
         const mo = monthNameToNum[parts[0]];
         const yr = parseInt(parts[1]);
@@ -341,7 +359,7 @@ End with ONE sentence (no heading) naming the single most critical finding for t
       ai_analysis_cache: payload,
       ai_analysis_at:    now,
       ai_history_key:    histKey,
-    }).eq('user_id', user.id).then(() => {});
+    }).eq('user_id', dataUserId).then(() => {});
 
     return res.status(200).json(payload);
   } catch (err) {

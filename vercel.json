@@ -10,9 +10,12 @@
     { "src": "api/stripe-webhook.js",  "use": "@vercel/node" },
     { "src": "api/stripe-portal.js",   "use": "@vercel/node" },
     { "src": "api/cleanup.js",         "use": "@vercel/node" },
+    { "src": "api/invite.js",          "use": "@vercel/node" },
+    { "src": "api/members.js",         "use": "@vercel/node" },
     { "src": "api/email-report.js", "use": "@vercel/node" },
     { "src": "api/ai-analysis.js",  "use": "@vercel/node" },
     { "src": "api/delete-account.js", "use": "@vercel/node" },
+    { "src": "api/signup.js",         "use": "@vercel/node" },
     { "src": "api/og.js",           "use": "@vercel/node" },
     { "src": "index.html",    "use": "@vercel/static" },
     { "src": "landing.html",  "use": "@vercel/static" },
@@ -30,9 +33,12 @@
     { "src": "/api/stripe-webhook",  "dest": "/api/stripe-webhook.js"  },
     { "src": "/api/stripe-portal",   "dest": "/api/stripe-portal.js"   },
     { "src": "/api/cleanup",      "dest": "/api/cleanup.js"      },
+    { "src": "/api/invite",       "dest": "/api/invite.js"       },
+    { "src": "/api/members",      "dest": "/api/members.js"      },
     { "src": "/api/email-report", "dest": "/api/email-report.js" },
     { "src": "/api/ai-analysis",    "dest": "/api/ai-analysis.js"    },
     { "src": "/api/delete-account", "dest": "/api/delete-account.js" },
+    { "src": "/api/signup",         "dest": "/api/signup.js"         },
     { "src": "/api/og",        "dest": "/api/og.js"      },
     { "src": "/favicon.svg",  "dest": "/favicon.svg"    },
     { "src": "/og.svg",       "dest": "/og.svg"         },
@@ -41,6 +47,7 @@
     { "src": "/(.*)",         "dest": "/index.html"     }
   ],
   "crons": [
-    { "path": "/api/cleanup", "schedule": "0 3 1 * *" }
+    { "path": "/api/cleanup",      "schedule": "0 3 1 * *" },
+    { "path": "/api/email-report", "schedule": "0 * * * *" }
   ]
 }
