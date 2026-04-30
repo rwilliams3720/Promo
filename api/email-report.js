@@ -65,7 +65,7 @@ export default async function handler(req, res) {
   // Fetch eligible accounts (pro or premium, active)
   let accountQuery = supabase
     .from('accounts')
-    .select('user_id,email,company_name,plan,status,trial_ends_at,timezone,report_hour,last_report_date')
+    .select('user_id,email,report_email,company_name,plan,status,trial_ends_at,timezone,report_hour,last_report_date')
     .in('plan', ['pro','premium'])
     .in('status', ['paid','deferred']);
   if (targetUserId) accountQuery = accountQuery.eq('user_id', targetUserId);
@@ -116,7 +116,7 @@ export default async function handler(req, res) {
       }
       const { error: sendErr } = await resend.emails.send({
         from:    FROM_EMAIL,
-        to:      acct.email,
+        to:      acct.report_email || acct.email,
         subject: `Boat Race Daily Report — ${dateLabel}`,
         html:    report.html,
       });

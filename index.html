@@ -629,7 +629,11 @@
       </div>
       <div class="acct-section" id="report-delivery-section" style="display:none">
         <h3>Report Delivery</h3>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Daily performance reports are sent to your account email. Set your timezone and preferred delivery hour.</p>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Daily performance reports and AI analysis emails are sent to your account email by default. If your work email blocks external senders, set an alternate delivery address below.</p>
+        <div class="acct-field">
+          <label>REPORT DELIVERY EMAIL <span style="color:var(--muted);font-weight:400;">(optional — overrides account email for all reports)</span></label>
+          <input id="ac-report-email" type="email" placeholder="personal@gmail.com" style="max-width:360px;">
+        </div>
         <div class="acct-field">
           <label>TIMEZONE</label>
           <select id="ac-timezone" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;width:100%;outline:none;">
@@ -2397,6 +2401,7 @@ async function loadAccountTab() {
     const hrSel = document.getElementById('ac-report-hour');
     tzSel.value = acct.timezone || 'America/Los_Angeles';
     hrSel.value = String(acct.report_hour ?? 7);
+    document.getElementById('ac-report-email').value = acct.report_email || '';
   }
 
   // Plan upgrade section
@@ -2588,11 +2593,12 @@ async function saveContactInfo() {
 }
 
 async function saveReportPrefs() {
-  const timezone    = document.getElementById('ac-timezone').value;
-  const report_hour = parseInt(document.getElementById('ac-report-hour').value, 10);
-  const msg         = document.getElementById('ac-report-msg');
-  msg.style.display = 'block';
-  const { error } = await _supabase.from('accounts').update({ timezone, report_hour }).eq('user_id', _userId);
+  const timezone     = document.getElementById('ac-timezone').value;
+  const report_hour  = parseInt(document.getElementById('ac-report-hour').value, 10);
+  const report_email = document.getElementById('ac-report-email').value.trim() || null;
+  const msg          = document.getElementById('ac-report-msg');
+  msg.style.display  = 'block';
+  const { error } = await _supabase.from('accounts').update({ timezone, report_hour, report_email }).eq('user_id', _userId);
   if (error) { msg.style.color='var(--danger)'; msg.textContent='Error: '+error.message; }
   else { msg.style.color='var(--accent2)'; msg.textContent='Report preferences saved.'; }
   setTimeout(() => { msg.style.display='none'; }, 3000);

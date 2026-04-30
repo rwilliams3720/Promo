@@ -37,7 +37,7 @@ export default async function handler(req, res) {
 
   const { data: acct, error: acctErr } = await supabase
     .from('accounts')
-    .select('plan,status,trial_ends_at,company_name,is_admin,email,ai_analysis_cache,ai_analysis_at,ai_history_key')
+    .select('plan,status,trial_ends_at,company_name,is_admin,email,report_email,ai_analysis_cache,ai_analysis_at,ai_history_key')
     .eq('user_id', dataUserId)
     .single();
 
@@ -380,7 +380,7 @@ async function handleEmailAnalysis(req, res, acct, userId) {
     ? new Date(acct.ai_analysis_at).toLocaleString('en-US', { month:'long', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' })
     : 'recently';
   const company   = acct.company_name || 'Your Team';
-  const toEmail   = acct.email;
+  const toEmail   = acct.report_email || acct.email;
 
   const paragraphs = insights.split(/\n\n+/).filter(Boolean)
     .map(p => `<p style="margin:0 0 14px;line-height:1.7;">${p.trim()}</p>`).join('');
