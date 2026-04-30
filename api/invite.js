@@ -83,6 +83,10 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: createErr.message });
     }
 
+    // Remove the accounts row the trigger auto-created — members are detected
+    // by the absence of an accounts row; having one would treat them as owners.
+    await supabase.from('accounts').delete().eq('user_id', newUser.user.id);
+
     const { error: linkErr } = await supabase
       .from('account_members')
       .update({ member_user_id: newUser.user.id, status: 'active', invite_token: null, invite_expires_at: null })
