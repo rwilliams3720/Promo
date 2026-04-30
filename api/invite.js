@@ -131,7 +131,7 @@ export default async function handler(req, res) {
 
     const company   = ownerAcct.company_name || 'your team';
     const roleLabel = ROLE_LABELS[role] || role;
-    const inviteUrl = `${BASE_URL}/?invite=${inviteToken}`;
+    const inviteUrl = `${BASE_URL}/app?invite=${inviteToken}`;
 
     const { error: emailErr } = await resend.emails.send({
       from:    FROM,
