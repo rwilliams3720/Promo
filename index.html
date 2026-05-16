@@ -5368,7 +5368,7 @@ async function cancelMemberAnalysis(btn) {
 }
 
 function renderMemberAnalysisSection(acct) {
-  const hasMa = acct.has_member_analysis || _hasMemberAnalysis || _isAdmin;
+  const hasMa = acct.has_member_analysis || _hasMemberAnalysis;
   document.getElementById('member-analysis-upsell').style.display = hasMa ? 'none' : '';
   document.getElementById('member-analysis-active').style.display = hasMa ? ''     : 'none';
   if (hasMa) {
