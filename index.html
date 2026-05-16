@@ -1346,6 +1346,11 @@ function _lsSet(k, v) { try { localStorage.setItem(k, v); }        catch(_) {} }
 function _lsRemove(k) { try { localStorage.removeItem(k); }        catch(_) {} }
 
 async function init() {
+  // Checklist is a public form — no auth needed. Short-circuit before any session
+  // restore so a logged-in user navigating to the link still sees the form, not the app.
+  const _initParams = new URLSearchParams(window.location.search);
+  if (_initParams.get('checklist')) { loadChecklistScreen(_initParams.get('checklist')); return; }
+
   try {
     const r = await fetch('/api/config');
     const cfg = await r.json();
