@@ -152,8 +152,11 @@
   .score-cat-row input[type=number]{width:72px;padding:6px 8px;background:var(--deep);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:'DM Mono',monospace;outline:none;}
   .score-cat-row input[type=number]:focus{border-color:var(--accent);}
   .score-cat-row input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent);cursor:pointer;flex-shrink:0;}
-  .cat-label-input{background:var(--deep);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:3px 7px;width:100px;font-family:inherit;outline:none;}
+  .cat-label-input{background:var(--deep);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:3px 7px;width:90px;font-family:inherit;outline:none;}
   .cat-label-input:focus{border-color:var(--accent);}
+  .sc-label-pick{background:var(--deep);border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;padding:3px 4px;max-width:110px;font-family:inherit;outline:none;cursor:pointer;}
+  .sc-label-pick:focus{border-color:var(--accent);}
+  .sc-label-pick option,.sc-label-pick optgroup{color:var(--text);background:var(--deep);}
   .btn{padding:9px 22px;border-radius:9px;border:none;cursor:pointer;font-size:13px;font-weight:600;font-family:'DM Sans',sans-serif;transition:all .2s;}
   .btn-primary{background:var(--accent);color:var(--deep);}
   .btn-primary:hover{opacity:.85;}
@@ -221,6 +224,11 @@
   /* ACCOUNT TAB */
   .acct-section{margin-bottom:2rem;}
   .acct-section h3{font-size:14px;font-weight:600;color:var(--accent);margin-bottom:1rem;text-transform:uppercase;letter-spacing:.06em;}
+  .acct-stab{background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);font-size:13px;font-weight:600;padding:10px 16px;cursor:pointer;margin-bottom:-1px;transition:color .15s,border-color .15s;letter-spacing:.02em;white-space:nowrap;}
+  .acct-stab:hover{color:var(--text);}
+  .acct-stab.active{color:var(--accent);border-bottom-color:var(--accent);}
+  .acct-pane{}
+  .btn-link{background:none;border:none;color:var(--accent);font-size:inherit;font-weight:600;cursor:pointer;padding:0;text-decoration:underline;}
   .acct-info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:1rem;}
   .acct-info-item{background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:12px 14px;}
   .acct-info-label{font-size:11px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;}
@@ -285,6 +293,8 @@
   .trial-expired-banner h3{color:var(--danger);font-family:'Bebas Neue',sans-serif;font-size:1.5rem;margin-bottom:.4rem;}
   .trial-expired-banner p{font-size:13px;color:var(--muted);}
 </style>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/themes/dark.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
   <script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body>
@@ -389,6 +399,67 @@
   </div>
 </div>
 
+<!-- ── CHECKLIST SCREEN (public, no auth) ── -->
+<div id="screen-checklist" style="display:none;flex-direction:column;align-items:center;justify-content:flex-start;min-height:100vh;padding:2rem 1rem;">
+  <div style="width:100%;max-width:700px;">
+    <div id="cl-header" style="text-align:center;margin-bottom:2rem;">
+      <div id="cl-agency-name" style="font-family:'Bebas Neue',sans-serif;font-size:2rem;letter-spacing:.06em;"></div>
+      <div style="font-size:13px;color:var(--muted);margin-top:4px;">New Customer Checklist</div>
+    </div>
+    <div id="cl-error" class="auth-msg" style="display:none;margin-bottom:1rem;"></div>
+
+    <div class="panel">
+      <div class="panel-title">Customer Info</div>
+      <div class="acct-field"><label>CUSTOMER FULL NAME <span style="color:var(--muted);font-weight:400;">(stored as first 2 initials + last name)</span></label>
+        <input id="cl-cust-name" type="text" placeholder="John Smith"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+        <div class="acct-field"><label>SUBMISSION DATE</label><input id="cl-sub-date" type="date"></div>
+        <div class="acct-field"><label>APPOINTMENT DATE</label><input id="cl-appt-date" type="date"></div>
+      </div>
+      <div class="acct-field"><label>SALESPERSON</label>
+        <select id="cl-salesperson" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;width:100%;max-width:320px;outline:none;">
+          <option value="">— Select Agent —</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="panel" id="cl-forms-panel">
+      <div class="panel-title">Forms Checklist</div>
+      <div id="cl-forms-table"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Sales</div>
+      <div id="cl-sales-rows"></div>
+      <button class="btn btn-secondary" style="margin-top:.75rem;" onclick="clAddSaleRow()">+ Add Sale</button>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:1rem;">
+      <button class="btn btn-primary" id="cl-submit-btn" onclick="clSubmit()">Submit Checklist</button>
+    </div>
+  </div>
+</div>
+
+<!-- Checklist email modal -->
+<div id="cl-email-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:2rem;max-width:600px;width:calc(100%-2rem);max-height:80vh;overflow-y:auto;">
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:1.4rem;letter-spacing:.04em;margin-bottom:1rem;color:var(--accent);">Checklist Submitted</div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Copy the email below and paste it into Outlook to send to the customer.</p>
+    <div style="background:var(--deep);border:1px solid var(--border);border-radius:8px;padding:1rem;margin-bottom:1rem;">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">SUBJECT</div>
+      <div id="cl-email-subject" style="font-size:13px;font-weight:600;margin-bottom:1rem;"></div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">BODY</div>
+      <pre id="cl-email-body" style="font-size:12px;font-family:'DM Mono',monospace;white-space:pre-wrap;line-height:1.6;"></pre>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button class="btn btn-primary" onclick="clCopyEmail()">Copy Email Body</button>
+      <button class="btn btn-secondary" onclick="clOpenMailto()">Open in Mail App</button>
+      <button class="btn btn-secondary" onclick="clNewSubmission()">New Submission</button>
+    </div>
+    <div id="cl-copy-msg" style="font-size:12px;color:var(--accent2);margin-top:8px;display:none;">Copied!</div>
+  </div>
+</div>
+
 <!-- ── APP SHELL ── -->
 <div id="screen-app" style="display:none">
 <main>
@@ -443,6 +514,15 @@
           <div class="key-grid" id="key-grid"></div>
           <div class="deduct-box" id="deduct-box"></div>
         </div>
+        <div class="panel" id="sales-tile-panel" style="display:none;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:.75rem;">
+            <div style="font-size:13px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.04em;">Sales by Agent</div>
+            <select id="sales-tile-loc-sel" onchange="onSalesTileLocationChange()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:3px 8px;font-size:11px;outline:none;display:none;">
+              <option value="all">All Locations</option>
+            </select>
+          </div>
+          <div id="sales-tile-content"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -467,6 +547,12 @@
 
   <!-- ── TAB: MANAGE ── -->
   <div id="tab-manage" style="display:none">
+    <!-- Mode indicator (hidden unless has add-on) -->
+    <div id="manage-mode-banner" style="display:none;background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:.75rem 1rem;margin-bottom:1rem;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+      <div style="font-size:13px;color:var(--muted);">Sales entry mode: <strong id="manage-mode-label" style="color:var(--text);">Upload</strong></div>
+      <button class="btn btn-secondary" style="font-size:12px;padding:5px 12px;" onclick=\"goToAccountTab('billing')\">Change Mode</button>
+    </div>
+
     <div class="panel" id="upload-panel-calls">
       <div class="panel-title">Upload Call Log</div>
       <div class="drop-zone" id="dz-calls"
@@ -495,6 +581,32 @@
       </div>
       <div class="upload-log" id="ul-sales"></div>
     </div>
+    <!-- Manual entry panel (shown when sales_entry_mode = 'manual') -->
+    <div class="panel" id="manual-entry-panel" style="display:none">
+      <div class="panel-title">Manual Sales Entry</div>
+      <div id="manual-sales-rows"></div>
+      <button class="btn btn-secondary" style="margin-top:.75rem;" onclick="manualAddRow()">+ Add Row</button>
+      <div style="display:flex;gap:10px;margin-top:.75rem;align-items:center;">
+        <button class="btn btn-primary" onclick="manualSubmitAll(this)">Save Entries</button>
+        <div id="manual-entry-msg" style="font-size:13px;display:none;"></div>
+      </div>
+    </div>
+
+    <!-- Sales log (shown if has add-on) -->
+    <div class="panel" id="checklist-subs-panel" style="display:none">
+      <div class="panel-title">Sales Log</div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:.6rem;">
+        <select id="sl-month-sel" onchange="onSalesLogMonthChange()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;"></select>
+        <select id="sl-year-sel" onchange="onSalesLogMonthChange()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;"></select>
+        <label style="font-size:12px;color:var(--text);display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;user-select:none;"><input type="checkbox" id="sl-all-year" onchange="onSalesLogAllYearChange()"> All Year</label>
+        <label style="font-size:12px;color:var(--text);display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;user-select:none;"><input type="checkbox" id="sl-show-unissued" onchange="onSalesLogFilterChange()"> Show unissued from other months</label>
+        <label style="font-size:12px;color:var(--text);display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;user-select:none;"><input type="checkbox" id="sl-show-hidden" onchange="onSalesLogFilterChange()"> Show hidden</label>
+        <button class="btn btn-secondary" style="margin-left:auto;padding:4px 12px;font-size:12px;white-space:nowrap;" onclick="downloadSalesLogXlsx()">↓ Download .xlsx</button>
+      </div>
+      <input id="sales-log-search" type="text" placeholder="Search customer, agent, product, subcategory…" oninput="filterSalesLog()" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;box-sizing:border-box;margin-bottom:.75rem;">
+      <div id="checklist-subs-list" style="font-size:13px;color:var(--muted);">Loading…</div>
+    </div>
+
     <div class="panel">
       <div class="panel-title">Race Controls</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
@@ -565,35 +677,60 @@
 
   <!-- ── TAB: ANALYSIS ── -->
   <div id="tab-analysis" style="display:none">
-    <div class="panel" id="analysis-charts-panel">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.2rem;">
-        <div class="panel-title" style="margin:0">Performance Trends</div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-          <button class="btn btn-secondary" id="analysis-refresh-btn" onclick="runAnalysis()">Analyze</button>
-          <button class="btn btn-secondary" id="analysis-email-btn" onclick="emailAnalysis()" style="display:none">Email Analysis</button>
+    <!-- Sub-tab nav -->
+    <div style="display:flex;gap:0;border-bottom:1px solid var(--border2);margin-bottom:1.25rem;overflow-x:auto;">
+      <button class="acct-stab active" id="analysis-stab-trends" onclick="showAnalysisSubTab('trends',this)" style="font-size:13px;">Team Trends</button>
+      <button class="acct-stab" id="analysis-stab-members" onclick="showAnalysisSubTab('members',this)" style="font-size:13px;">Team Member Analysis</button>
+    </div>
+
+    <!-- Sub-pane: Team Trends -->
+    <div id="analysis-pane-trends">
+      <div class="panel" id="analysis-charts-panel">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.2rem;">
+          <div class="panel-title" style="margin:0">Performance Trends</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <button class="btn btn-secondary" id="analysis-refresh-btn" onclick="runAnalysis()">Analyze</button>
+            <button class="btn btn-secondary" id="analysis-email-btn" onclick="emailAnalysis()" style="display:none">Email Analysis</button>
+          </div>
+        </div>
+        <div class="analysis-charts">
+          <div class="analysis-chart-box">
+            <div class="analysis-chart-title">Calls Placed, Answered &amp; Policies</div>
+            <canvas id="chart-calls"></canvas>
+          </div>
+          <div class="analysis-chart-box">
+            <div class="analysis-chart-title">Talk Time (min)</div>
+            <canvas id="chart-talk"></canvas>
+          </div>
+          <div class="analysis-chart-box">
+            <div class="analysis-chart-title">Voicemail &amp; Missed</div>
+            <canvas id="chart-vm"></canvas>
+          </div>
         </div>
       </div>
-      <div class="analysis-charts">
-        <div class="analysis-chart-box">
-          <div class="analysis-chart-title">Calls Placed, Answered &amp; Policies</div>
-          <canvas id="chart-calls"></canvas>
+      <div class="panel">
+        <div class="panel-title">AI Coaching Insights</div>
+        <div id="analysis-body">
+          <div style="color:var(--muted);font-size:13px;">Click <strong>Analyze</strong> to generate insights.</div>
         </div>
-        <div class="analysis-chart-box">
-          <div class="analysis-chart-title">Talk Time (min)</div>
-          <canvas id="chart-talk"></canvas>
-        </div>
-        <div class="analysis-chart-box">
-          <div class="analysis-chart-title">Voicemail &amp; Missed</div>
-          <canvas id="chart-vm"></canvas>
-        </div>
+        <div id="analysis-msg" style="font-size:12px;margin-top:8px;display:none"></div>
       </div>
     </div>
-    <div class="panel">
-      <div class="panel-title">AI Coaching Insights</div>
-      <div id="analysis-body">
-        <div style="color:var(--muted);font-size:13px;">Click <strong>Analyze</strong> to generate insights.</div>
+
+    <!-- Sub-pane: Team Member Analysis -->
+    <div id="analysis-pane-members" style="display:none">
+      <div class="panel" id="member-analysis-panel">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.2rem;">
+          <div class="panel-title" style="margin:0">Individual Agent Analysis</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <button class="btn btn-secondary" id="ma-refresh-btn" onclick="runMemberAnalysis()">Analyze</button>
+          </div>
+        </div>
+        <div id="ma-analysis-body">
+          <div style="color:var(--muted);font-size:13px;">Click <strong>Analyze</strong> to generate individual insights.</div>
+        </div>
+        <div id="ma-analysis-msg" style="font-size:12px;margin-top:8px;display:none"></div>
       </div>
-      <div id="analysis-msg" style="font-size:12px;margin-top:8px;display:none"></div>
     </div>
   </div>
 
@@ -616,122 +753,376 @@
   <!-- ── TAB: ACCOUNT ── -->
   <div id="tab-account" style="display:none">
     <div class="panel">
-      <div class="acct-section">
-        <h3>Account Info</h3>
-        <div class="acct-info-grid" id="acct-info-grid"></div>
+
+      <!-- Sub-tab nav — hidden for members by loadMemberAccountTab() -->
+      <div id="acct-subtab-nav" style="display:flex;gap:0;margin:-1.5rem -1.5rem 1.75rem;padding:0 1rem;border-bottom:1px solid var(--border);flex-wrap:wrap;">
+        <button class="acct-stab active" data-pane="profile" onclick="showAccountSubTab('profile',this)">Profile</button>
+        <button class="acct-stab" data-pane="billing" onclick="showAccountSubTab('billing',this)">Billing</button>
+        <button class="acct-stab" data-pane="sales" onclick="showAccountSubTab('sales',this)">Sales</button>
+        <button class="acct-stab" data-pane="team" onclick="showAccountSubTab('team',this)">Team</button>
+        <button class="acct-stab" data-pane="settings" onclick="showAccountSubTab('settings',this)">Settings</button>
       </div>
-      <div class="acct-section">
-        <h3>Contact Information</h3>
-        <div class="acct-field"><label>CONTACT NAME</label><input id="ac-contact" type="text" placeholder="Jane Smith"></div>
-        <div class="acct-field"><label>PHONE</label><input id="ac-phone" type="tel" placeholder="555-555-5555"></div>
-        <button class="btn btn-primary" onclick="saveContactInfo()">Save Contact Info</button>
-        <div id="ac-contact-msg" style="font-size:13px;margin-top:10px;display:none"></div>
-      </div>
-      <div class="acct-section" id="report-delivery-section" style="display:none">
-        <h3>Report Delivery</h3>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Daily performance reports and AI analysis emails are sent to your account email by default. If your work email blocks external senders, set an alternate delivery address below.</p>
-        <div class="acct-field">
-          <label>REPORT DELIVERY EMAIL <span style="color:var(--muted);font-weight:400;">(optional — overrides account email for all reports)</span></label>
-          <input id="ac-report-email" type="email" placeholder="personal@gmail.com" style="max-width:360px;">
+
+      <!-- ── PANE: Profile ── -->
+      <div id="acct-pane-profile" class="acct-pane">
+        <div class="acct-section">
+          <h3>Account Info</h3>
+          <div class="acct-info-grid" id="acct-info-grid"></div>
         </div>
-        <div class="acct-field">
-          <label>TIMEZONE</label>
-          <select id="ac-timezone" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;width:100%;outline:none;">
-            <optgroup label="United States">
-              <option value="America/New_York">Eastern (ET)</option>
-              <option value="America/Chicago">Central (CT)</option>
-              <option value="America/Denver">Mountain (MT)</option>
-              <option value="America/Phoenix">Mountain – no DST (AZ)</option>
-              <option value="America/Los_Angeles">Pacific (PT)</option>
-              <option value="America/Anchorage">Alaska (AKT)</option>
-              <option value="Pacific/Honolulu">Hawaii (HT)</option>
-            </optgroup>
-            <optgroup label="International">
-              <option value="UTC">UTC</option>
-              <option value="Europe/London">London (GMT/BST)</option>
-              <option value="Europe/Paris">Central Europe (CET/CEST)</option>
-              <option value="Asia/Tokyo">Tokyo (JST)</option>
-              <option value="Australia/Sydney">Sydney (AEST/AEDT)</option>
-            </optgroup>
-          </select>
+        <div class="acct-section" id="addons-overview-section">
+          <h3>Add-Ons</h3>
+          <div id="addons-overview"></div>
         </div>
-        <div class="acct-field">
-          <label>DELIVERY HOUR</label>
-          <select id="ac-report-hour" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;width:100%;outline:none;">
-            <option value="5">5:00 AM</option>
-            <option value="6">6:00 AM</option>
-            <option value="7">7:00 AM</option>
-            <option value="8">8:00 AM</option>
-            <option value="9">9:00 AM</option>
-            <option value="10">10:00 AM</option>
-            <option value="11">11:00 AM</option>
-            <option value="12">12:00 PM</option>
-          </select>
+        <div class="acct-section">
+          <h3>Contact Information</h3>
+          <div class="acct-field"><label>CONTACT NAME</label><input id="ac-contact" type="text" placeholder="Jane Smith"></div>
+          <div class="acct-field"><label>PHONE</label><input id="ac-phone" type="tel" placeholder="555-555-5555"></div>
+          <button class="btn btn-primary" onclick="saveContactInfo()">Save Contact Info</button>
+          <div id="ac-contact-msg" style="font-size:13px;margin-top:10px;display:none"></div>
         </div>
-        <button class="btn btn-primary" onclick="saveReportPrefs()">Save Report Preferences</button>
-        <div id="ac-report-msg" style="font-size:13px;margin-top:10px;display:none"></div>
-      </div>
-      <div class="acct-section" id="plan-upgrade-section">
-        <h3>Plan &amp; Billing</h3>
-        <p id="plan-billing-desc" style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Select a plan to start your subscription.</p>
-        <div class="plan-tier-grid" id="plan-tier-grid"></div>
-        <button class="btn btn-primary" id="plan-upgrade-btn" onclick="requestPlanUpgrade()" style="display:none">Subscribe — Checkout with Stripe</button>
-        <button class="btn btn-secondary" id="plan-portal-btn" onclick="openBillingPortal()" style="display:none;margin-top:.5rem;">Manage Billing &amp; Subscription</button>
-        <div id="ac-plan-msg" style="font-size:13px;margin-top:10px;display:none"></div>
-      </div>
-      <div class="acct-section">
-        <h3>Change Password</h3>
-        <div class="acct-field"><label>NEW PASSWORD</label><input id="ac-newpass" type="password" placeholder="New password" autocomplete="new-password"></div>
-        <div class="acct-field"><label>CONFIRM PASSWORD</label><input id="ac-confpass" type="password" placeholder="Confirm password" autocomplete="new-password"></div>
-        <button class="btn btn-primary" onclick="changePassword()">Update Password</button>
-        <div id="ac-pw-msg" style="font-size:13px;margin-top:10px;display:none"></div>
-      </div>
-      <div class="acct-section">
-        <h3>Sales Column Mapping</h3>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">If your sales file uses non-standard column names, map them here. Leave blank to use auto-detection.</p>
-        <div class="col-map-grid" id="col-map-grid"></div>
-        <button class="btn btn-primary" onclick="saveColumnMap()">Save Mapping</button>
-        <div id="colmap-msg" style="font-size:13px;margin-top:10px;color:var(--accent2);display:none"></div>
-      </div>
-      <!-- Agency Management — shown to account owners only -->
-      <div class="acct-section" id="agency-mgmt-section" style="display:none">
-        <h3>Agency Management</h3>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:1.25rem;">
-          Invite team members to view your dashboard. Assign a role to control which tabs they can access.
-        </p>
-        <div id="agency-members-list" style="margin-bottom:1.5rem;"></div>
-        <div style="background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:1rem 1.1rem;">
-          <div style="font-size:12px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.85rem;">Invite a Team Member</div>
-          <div class="acct-field"><label>EMAIL ADDRESS</label><input id="ag-invite-email" type="email" placeholder="teammate@agency.com" style="max-width:320px;"></div>
-          <div class="acct-field" style="margin-bottom:.6rem;">
-            <label>ACCESS ROLE</label>
-            <select id="ag-invite-role" onchange="toggleCustomTabsUI()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;max-width:320px;outline:none;">
-              <option value="bosun">Bosun — Race tab only</option>
-              <option value="chief_officer">Chief Officer — Scoring, Manage &amp; Performance</option>
-              <option value="captain">Captain — Full dashboard access</option>
-              <option value="custom">Custom — Choose specific tabs</option>
-            </select>
-          </div>
-          <div id="ag-custom-tabs-wrap" style="display:none;margin-bottom:.75rem;">
-            <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px;">WHICH TABS</label>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <label style="font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" value="race" class="ag-tab-cb"> Race</label>
-              <label style="font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" value="scoring" class="ag-tab-cb"> Scoring</label>
-              <label style="font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" value="manage" class="ag-tab-cb"> Manage</label>
-              <label style="font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" value="perf" class="ag-tab-cb"> Performance</label>
-              <label style="font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" value="analysis" class="ag-tab-cb"> Analysis</label>
-              <label style="font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" value="history" class="ag-tab-cb"> History</label>
-            </div>
-          </div>
-          <div style="font-size:12px;color:var(--muted);margin-bottom:.85rem;" id="ag-role-desc">
-            Can view the Race tab only — scores, rankings, and team standings.
-          </div>
-          <button class="btn btn-primary" onclick="sendTeamInvite(this)">Send Invite</button>
-          <div id="ag-invite-msg" style="font-size:13px;margin-top:10px;display:none"></div>
+        <div class="acct-section">
+          <h3>Change Password</h3>
+          <div class="acct-field"><label>NEW PASSWORD</label><input id="ac-newpass" type="password" placeholder="New password" autocomplete="new-password"></div>
+          <div class="acct-field"><label>CONFIRM PASSWORD</label><input id="ac-confpass" type="password" placeholder="Confirm password" autocomplete="new-password"></div>
+          <button class="btn btn-primary" onclick="changePassword()">Update Password</button>
+          <div id="ac-pw-msg" style="font-size:13px;margin-top:10px;display:none"></div>
         </div>
       </div>
 
-      <!-- Member account view (shown instead of owner sections for sub-users) -->
+      <!-- ── PANE: Billing ── -->
+      <div id="acct-pane-billing" class="acct-pane" style="display:none">
+        <div class="acct-section" id="plan-upgrade-section">
+          <h3>Plan &amp; Billing</h3>
+          <p id="plan-billing-desc" style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Select a plan to start your subscription.</p>
+          <div class="plan-tier-grid" id="plan-tier-grid"></div>
+          <button class="btn btn-primary" id="plan-upgrade-btn" onclick="requestPlanUpgrade()" style="display:none">Subscribe — Checkout with Stripe</button>
+          <button class="btn btn-secondary" id="plan-portal-btn" onclick="openBillingPortal()" style="display:none;margin-top:.5rem;">Manage Billing &amp; Subscription</button>
+          <div id="ac-plan-msg" style="font-size:13px;margin-top:10px;display:none"></div>
+        </div>
+
+        <!-- Sales Tracking Add-On — account owners only -->
+        <div class="acct-section" id="sales-addon-section" style="display:none">
+          <h3>Sales Tracking Add-On</h3>
+
+          <!-- Upsell (no add-on) -->
+          <div id="sales-addon-upsell" style="display:none">
+            <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Enable manual sales entry and a shareable checklist link your agents can use to log new customer sales — no login required.</p>
+            <div style="background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:1.2rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;">
+              <div>
+                <div style="font-size:15px;font-weight:700;color:var(--text);">Sales Tracking</div>
+                <div style="font-size:13px;color:var(--muted);">Manual entry · Checklist link · Subcategory tracking</div>
+              </div>
+              <div style="text-align:right;">
+                <div style="font-size:1.3rem;font-weight:700;color:var(--accent);">$25<span style="font-size:13px;color:var(--muted);font-weight:400;">/mo</span></div>
+                <button class="btn btn-primary" style="margin-top:6px;" onclick="purchaseSalesAddon(this)">Add to Plan</button>
+              </div>
+            </div>
+            <div id="addon-upsell-msg" style="font-size:13px;display:none;margin-top:6px;"></div>
+          </div>
+
+          <!-- Active status (has add-on) — config lives on Sales tab -->
+          <div id="sales-addon-active" style="display:none">
+            <div style="background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:1rem 1.2rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1.25rem;">
+              <div>
+                <div style="font-size:14px;font-weight:700;color:var(--text);">Sales Tracking <span style="font-size:11px;background:rgba(0,212,255,.12);color:var(--accent);padding:2px 8px;border-radius:4px;margin-left:6px;font-weight:600;">Active</span></div>
+                <div style="font-size:13px;color:var(--muted);margin-top:3px;">Manage agents, checklist, and product types on the <button class="btn-link" onclick="showAccountSubTab('sales',document.querySelector('[data-pane=sales]'))">Sales tab</button>.</div>
+              </div>
+              <div style="font-size:1.1rem;font-weight:700;color:var(--muted);">$25<span style="font-size:12px;font-weight:400;">/mo</span></div>
+            </div>
+            <div style="font-size:12px;font-weight:600;color:var(--danger);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem;">Remove Add-On</div>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Cancels the Sales Tracking subscription. Your existing sales data is preserved.</p>
+            <button class="btn" style="background:rgba(255,77,109,.12);color:var(--danger);border:1px solid rgba(255,77,109,.3);" onclick="cancelSalesAddon(this)">Remove Add-On</button>
+            <div id="addon-cancel-msg" style="font-size:13px;margin-top:8px;display:none;"></div>
+          </div>
+        </div>
+
+        <!-- Team Member Analysis Add-On — account owners only -->
+        <div class="acct-section" id="member-analysis-section" style="display:none">
+          <h3>Team Member Analysis Add-On</h3>
+
+          <!-- Upsell (no add-on) -->
+          <div id="member-analysis-upsell" style="display:none">
+            <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Get individual month-over-month coaching analysis for selected team members — trends, strengths, gaps, and group standings. Refreshes every 5 days.</p>
+            <div style="background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:1.2rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:.75rem;">
+              <div>
+                <div style="font-size:15px;font-weight:700;color:var(--text);">Team Member Analysis</div>
+                <div style="font-size:13px;color:var(--muted);">$10/head · per-seat billing · 5-day refresh</div>
+              </div>
+              <div style="text-align:right;">
+                <div style="font-size:13px;color:var(--muted);margin-bottom:6px;">
+                  <input type="number" id="ma-seat-count-new" min="1" max="50" value="1" style="width:52px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px;font-size:13px;text-align:center;" oninput="document.getElementById('ma-price-preview').textContent=Math.max(1,parseInt(this.value)||1)*10"> heads × $10 = $<span id="ma-price-preview">10</span>/mo
+                </div>
+                <button class="btn btn-primary" style="margin-top:4px;" onclick="purchaseMemberAnalysis(this)">Subscribe</button>
+              </div>
+            </div>
+            <div id="ma-upsell-msg" style="font-size:13px;display:none;margin-top:6px;"></div>
+          </div>
+
+          <!-- Active status (has add-on) -->
+          <div id="member-analysis-active" style="display:none">
+            <div style="background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:1rem 1.2rem;margin-bottom:1.25rem;">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+                <div>
+                  <div style="font-size:14px;font-weight:700;color:var(--text);">Team Member Analysis <span style="font-size:11px;background:rgba(0,212,255,.12);color:var(--accent);padding:2px 8px;border-radius:4px;margin-left:6px;font-weight:600;">Active</span></div>
+                  <div style="font-size:13px;color:var(--muted);margin-top:3px;">Configure agents on the <button class="btn-link" onclick="showAccountSubTab('sales',document.querySelector('[data-pane=sales]'))">Sales tab</button>.</div>
+                </div>
+                <div id="ma-active-price" style="font-size:1.1rem;font-weight:700;color:var(--muted);"></div>
+              </div>
+            </div>
+            <div style="margin-bottom:1.25rem;">
+              <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem;">Update Seat Count</div>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <input type="number" id="ma-seat-count-update" min="1" max="50" style="width:64px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;text-align:center;">
+                <button class="btn btn-secondary" onclick="updateMemberAnalysisCount(this)">Update</button>
+              </div>
+              <div id="ma-update-msg" style="font-size:13px;margin-top:6px;display:none;"></div>
+            </div>
+            <div style="font-size:12px;font-weight:600;color:var(--danger);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem;">Remove Add-On</div>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Cancels the Team Member Analysis subscription. Cached analysis data is preserved.</p>
+            <button class="btn" style="background:rgba(255,77,109,.12);color:var(--danger);border:1px solid rgba(255,77,109,.3);" onclick="cancelMemberAnalysis(this)">Remove Add-On</button>
+            <div id="ma-cancel-msg" style="font-size:13px;margin-top:8px;display:none;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── PANE: Sales ── -->
+      <div id="acct-pane-sales" class="acct-pane" style="display:none">
+
+        <!-- Locked (no add-on) -->
+        <div id="sales-pane-locked" style="display:none;padding:2rem 0;">
+          <p style="font-size:14px;color:var(--muted);margin-bottom:1.25rem;">Sales Tracking is not active on your account.</p>
+          <button class="btn btn-primary" onclick="showAccountSubTab('billing',document.querySelector('[data-pane=billing]'))">Add Sales Tracking — $25/mo</button>
+        </div>
+
+        <!-- Content (has add-on) -->
+        <div id="sales-pane-content" style="display:none">
+
+          <!-- Member Analysis Agent Selection (shown when member analysis add-on is active) -->
+          <div class="acct-section" id="ma-agents-section" style="display:none">
+            <h3>Team Member Analysis — Agent Selection</h3>
+            <p id="ma-agents-desc" style="font-size:13px;color:var(--muted);margin-bottom:.75rem;"></p>
+            <div id="ma-agent-picker" style="margin-bottom:.75rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px;"></div>
+            <button class="btn btn-primary" onclick="saveMemberAnalysisAgents(this)">Save Selection</button>
+            <div id="ma-agents-msg" style="font-size:13px;margin-top:8px;display:none;"></div>
+          </div>
+
+          <!-- Agent Roster -->
+          <div class="acct-section">
+            <h3>Agent Roster</h3>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Agents available in manual entry and checklist dropdowns. Upload mode auto-adds agents from your files.</p>
+            <div id="agent-roster-list" style="margin-bottom:.75rem;"></div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <input id="new-agent-name" type="text" placeholder="Agent display name" style="flex:1;max-width:260px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;">
+              <button class="btn btn-secondary" onclick="addAgentToRoster(this)">Add Agent</button>
+            </div>
+            <div id="agent-roster-msg" style="font-size:13px;margin-top:6px;display:none;"></div>
+          </div>
+
+          <!-- Locations -->
+          <div class="acct-section">
+            <h3>Locations</h3>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Named locations (offices, events, etc.) appear as an optional field in manual entry and on checklist forms — useful for tracking where a sale originated.</p>
+            <div id="locations-list" style="margin-bottom:.75rem;"></div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <input id="new-location-name" type="text" placeholder="e.g. Main Office" style="flex:1;max-width:280px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;">
+              <button class="btn btn-secondary" onclick="addLocation(this)">Add Location</button>
+            </div>
+            <div id="location-msg" style="font-size:13px;margin-top:6px;display:none;"></div>
+          </div>
+
+          <!-- Checklist Link -->
+          <div class="acct-section">
+            <h3>Checklist Link</h3>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Share this link with your agents. Anyone with the link can submit a checklist without logging in.</p>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <input id="ac-checklist-link" type="text" readonly style="flex:1;min-width:200px;background:var(--deep);border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:8px 10px;font-size:12px;font-family:'DM Mono',monospace;outline:none;">
+              <button class="btn btn-secondary" onclick="copyChecklistLink()">Copy Link</button>
+              <button class="btn btn-secondary" onclick="regenerateChecklistLink(this)">Regenerate</button>
+            </div>
+            <div id="ac-link-msg" style="font-size:12px;margin-top:6px;color:var(--accent2);display:none;"></div>
+          </div>
+
+          <!-- Entry Mode -->
+          <div class="acct-section">
+            <h3>Data Entry Mode</h3>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Controls how sales data enters the dashboard. Switching modes replaces current-month sales — archived months are unaffected.</p>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+              <button id="mode-btn-upload" class="btn btn-secondary" onclick="confirmSalesEntryMode('upload')">Upload (File)</button>
+              <button id="mode-btn-manual" class="btn btn-secondary" onclick="confirmSalesEntryMode('manual')">Manual / Checklist</button>
+            </div>
+            <div id="ac-mode-msg" style="font-size:12px;margin-top:6px;display:none;"></div>
+          </div>
+
+          <!-- Email Template -->
+          <div class="acct-section">
+            <h3>Checklist Email Template</h3>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Customize the confirmation email sent after each checklist submission.</p>
+            <div class="acct-field"><label>SUBJECT</label><input id="et-subject" type="text" placeholder="New Customer — Checklist Completed" style="max-width:420px;"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+              <div class="acct-field"><label>AGENCY NAME</label><input id="et-agency" type="text" placeholder="Williams Agency"></div>
+              <div class="acct-field"><label>BRAND COLOR</label><input id="et-color" type="color" style="width:80px;height:36px;padding:2px;border-radius:6px;border:1px solid var(--border);background:var(--deep);cursor:pointer;"></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;">
+              <div class="acct-field"><label>AGENT NAME</label><input id="et-agent-name" type="text" placeholder="Russel Williams"></div>
+              <div class="acct-field"><label>AGENT PHONE</label><input id="et-agent-phone" type="tel" placeholder="555-555-5555"></div>
+              <div class="acct-field"><label>AGENT EMAIL</label><input id="et-agent-email" type="email" placeholder="agent@agency.com"></div>
+            </div>
+            <div class="acct-field"><label>GREETING</label><textarea id="et-greeting" rows="2" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;resize:vertical;outline:none;" placeholder="Thank you for your business! Your agent has completed your new customer checklist."></textarea></div>
+            <div class="acct-field"><label>CLOSING</label><textarea id="et-footer" rows="2" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;resize:vertical;outline:none;" placeholder="If you have any questions, please don't hesitate to reach out."></textarea></div>
+            <button class="btn btn-primary" onclick="saveEmailTemplate(this)">Save Email Template</button>
+            <div id="et-msg" style="font-size:13px;margin-top:8px;display:none;"></div>
+          </div>
+
+          <!-- Form Types -->
+          <div class="acct-section">
+            <h3>Checklist Form Types</h3>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Customize which forms appear on your checklist link.</p>
+            <div id="form-types-list" style="margin-bottom:.75rem;"></div>
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:.5rem;">
+              <input id="new-form-key" type="text" placeholder="Key (e.g. MVR)" style="width:100px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;">
+              <input id="new-form-label" type="text" placeholder="Label (e.g. MVR Check)" style="flex:1;max-width:240px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;">
+              <button class="btn btn-secondary" onclick="addFormType()">Add</button>
+            </div>
+            <button class="btn btn-primary" onclick="saveFormTypes(this)">Save Form Types</button>
+            <div id="ft-msg" style="font-size:13px;margin-top:8px;display:none;"></div>
+          </div>
+
+          <!-- Product Types & Subcategories -->
+          <div class="acct-section">
+            <h3>Product Types &amp; Subcategories</h3>
+
+            <!-- Product Types -->
+            <div style="margin-bottom:1.5rem;">
+              <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Product Types</div>
+              <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Rename or remove product types. Removing a type hides it from entry forms — existing sales data is unaffected.</p>
+              <div id="product-types-list"></div>
+              <div style="margin-top:.5rem;background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.75rem;">
+                <div style="font-size:12px;color:var(--muted);margin-bottom:.5rem;font-weight:600;">ADD PRODUCT TYPE</div>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                  <input id="new-pt-label" type="text" placeholder="Label (e.g. Medicare)" style="flex:1;min-width:160px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;">
+                  <button class="btn btn-secondary" onclick="addProductType()">Add</button>
+                </div>
+              </div>
+              <div id="pt-msg" style="font-size:13px;margin-top:8px;display:none;"></div>
+            </div>
+
+            <!-- Subcategories -->
+            <div>
+              <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Subcategories</div>
+              <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Toggle subcategories on/off or add custom ones. Financial Service items are flagged for the Commissions Calculator.</p>
+              <div id="subcats-list"></div>
+              <div style="margin-top:.75rem;background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.85rem;">
+                <div style="font-size:12px;color:var(--muted);margin-bottom:.5rem;font-weight:600;">ADD CUSTOM SUBCATEGORY</div>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                  <select id="new-sc-cat" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;"></select>
+                  <input id="new-sc-label" type="text" placeholder="Subcategory label" style="flex:1;min-width:160px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;">
+                  <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap;"><input type="checkbox" id="new-sc-fin"> Fin. Service</label>
+                  <button class="btn btn-secondary" onclick="addSubcategory()">Add</button>
+                </div>
+              </div>
+              <div id="sc-msg" style="font-size:13px;margin-top:8px;display:none;"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ── PANE: Team ── -->
+      <div id="acct-pane-team" class="acct-pane" style="display:none">
+        <div class="acct-section" id="agency-mgmt-section">
+          <h3>Agency Management</h3>
+          <p style="font-size:13px;color:var(--muted);margin-bottom:1.25rem;">
+            Invite team members to view your dashboard. Assign a role to control which tabs they can access.
+          </p>
+          <div id="agency-members-list" style="margin-bottom:1.5rem;"></div>
+          <div style="background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:1rem 1.1rem;">
+            <div style="font-size:12px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.85rem;">Invite a Team Member</div>
+            <div class="acct-field"><label>EMAIL ADDRESS</label><input id="ag-invite-email" type="email" placeholder="teammate@agency.com" style="max-width:320px;"></div>
+            <div class="acct-field" style="margin-bottom:.6rem;">
+              <label>ACCESS ROLE</label>
+              <select id="ag-invite-role" onchange="toggleCustomTabsUI()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;max-width:320px;outline:none;">
+                <option value="bosun">Bosun — Race tab only</option>
+                <option value="chief_officer">Chief Officer — Scoring, Manage &amp; Performance</option>
+                <option value="captain">Captain — Full dashboard access</option>
+                <option value="custom">Custom — Choose specific tabs</option>
+              </select>
+            </div>
+            <div id="ag-custom-tabs-wrap" style="display:none;margin-bottom:.75rem;">
+              <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px;">WHICH TABS</label>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <label style="font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" value="race" class="ag-tab-cb"> Race</label>
+                <label style="font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" value="scoring" class="ag-tab-cb"> Scoring</label>
+                <label style="font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" value="manage" class="ag-tab-cb"> Manage</label>
+                <label style="font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" value="perf" class="ag-tab-cb"> Performance</label>
+                <label style="font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" value="analysis" class="ag-tab-cb"> Analysis</label>
+                <label style="font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" value="history" class="ag-tab-cb"> History</label>
+              </div>
+            </div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:.85rem;" id="ag-role-desc">
+              Can view the Race tab only — scores, rankings, and team standings.
+            </div>
+            <button class="btn btn-primary" onclick="sendTeamInvite(this)">Send Invite</button>
+            <div id="ag-invite-msg" style="font-size:13px;margin-top:10px;display:none"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── PANE: Settings ── -->
+      <div id="acct-pane-settings" class="acct-pane" style="display:none">
+        <div class="acct-section" id="report-delivery-section" style="display:none">
+          <h3>Report Delivery</h3>
+          <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Daily performance reports and AI analysis emails are sent to your account email by default. If your work email blocks external senders, set an alternate delivery address below.</p>
+          <div class="acct-field">
+            <label>REPORT DELIVERY EMAIL <span style="color:var(--muted);font-weight:400;">(optional — overrides account email for all reports)</span></label>
+            <input id="ac-report-email" type="email" placeholder="personal@gmail.com" style="max-width:360px;">
+          </div>
+          <div class="acct-field">
+            <label>TIMEZONE</label>
+            <select id="ac-timezone" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;width:100%;outline:none;">
+              <optgroup label="United States">
+                <option value="America/New_York">Eastern (ET)</option>
+                <option value="America/Chicago">Central (CT)</option>
+                <option value="America/Denver">Mountain (MT)</option>
+                <option value="America/Phoenix">Mountain – no DST (AZ)</option>
+                <option value="America/Los_Angeles">Pacific (PT)</option>
+                <option value="America/Anchorage">Alaska (AKT)</option>
+                <option value="Pacific/Honolulu">Hawaii (HT)</option>
+              </optgroup>
+              <optgroup label="International">
+                <option value="UTC">UTC</option>
+                <option value="Europe/London">London (GMT/BST)</option>
+                <option value="Europe/Paris">Central Europe (CET/CEST)</option>
+                <option value="Asia/Tokyo">Tokyo (JST)</option>
+                <option value="Australia/Sydney">Sydney (AEST/AEDT)</option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="acct-field">
+            <label>DELIVERY HOUR</label>
+            <select id="ac-report-hour" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;width:100%;outline:none;">
+              <option value="5">5:00 AM</option>
+              <option value="6">6:00 AM</option>
+              <option value="7">7:00 AM</option>
+              <option value="8">8:00 AM</option>
+              <option value="9">9:00 AM</option>
+              <option value="10">10:00 AM</option>
+              <option value="11">11:00 AM</option>
+              <option value="12">12:00 PM</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" onclick="saveReportPrefs()">Save Report Preferences</button>
+          <div id="ac-report-msg" style="font-size:13px;margin-top:10px;display:none"></div>
+        </div>
+        <div class="acct-section">
+          <h3>Sales Column Mapping</h3>
+          <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">If your sales file uses non-standard column names, map them here. Leave blank to use auto-detection.</p>
+          <div class="col-map-grid" id="col-map-grid"></div>
+          <button class="btn btn-primary" onclick="saveColumnMap()">Save Mapping</button>
+          <div id="colmap-msg" style="font-size:13px;margin-top:10px;color:var(--accent2);display:none"></div>
+        </div>
+      </div>
+
+      <!-- Member account view (shown instead of owner panes for sub-users) -->
       <div id="member-account-panel" style="display:none">
         <div class="acct-section">
           <h3>Your Access</h3>
@@ -754,11 +1145,10 @@
       </div>
     </div>
 
-    <!-- Danger Zone — non-admin only, right-aligned below main panel -->
+    <!-- Danger Zone — non-admin only -->
     <div id="danger-zone-section" style="display:none;justify-content:flex-start;margin-top:1.5rem;">
       <div style="border:1px solid rgba(255,77,109,.3);border-radius:12px;padding:1.5rem 1.75rem;background:rgba(255,77,109,.04);max-width:500px;width:100%;">
         <div style="font-size:10px;font-weight:700;color:var(--danger);text-transform:uppercase;letter-spacing:.12em;margin-bottom:1.25rem;">Danger Zone</div>
-
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1.5rem;padding-bottom:1.1rem;border-bottom:1px solid rgba(255,77,109,.15);margin-bottom:1.1rem;">
           <div>
             <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px;">Delete All Data</div>
@@ -767,7 +1157,6 @@
           <button class="btn btn-danger" style="white-space:nowrap;flex-shrink:0;" onclick="confirmDeleteData(this)">Delete Data</button>
         </div>
         <div id="delete-data-msg" style="font-size:13px;margin-bottom:1rem;display:none"></div>
-
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1.5rem;">
           <div>
             <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px;">Delete Account</div>
@@ -903,6 +1292,28 @@ let CAT_LABELS = { deposit:'Deposit', other:'Other', other2:'Other 2', other3:'O
 let _raceWideMissed = 0;
 let _raceWideVm     = 0;
 
+// ── DIRECTIVE 2 — Sales Add-On state ─────────────────────────────────────────
+let _hasSalesAddon    = false;
+let _salesEntryMode   = 'upload';   // 'upload' | 'manual'
+let _checklistToken   = null;
+let _checklistEmailCfg= null;
+let _checklistFormCfg = [];         // [{form_key,label,active,sort_order}]
+let _salesSubcats     = [];         // [{id,scoring_category,label,is_financial_service,active,sort_order}]
+let _editingSubcatId  = null;
+let _productTypes     = [];         // [{key,label}] user-configured; falls back to DEFAULT_SCORING_CATS
+let _editingPtKey     = null;
+let _agentRoster      = [];
+let _salesLocations   = [];         // [{id, name, active, sort_order}]
+let _salesTileEntries = [];         // sales_log entries for current race period
+let _salesTileLocation = 'all';     // selected location filter on race tile
+
+// ── Member Analysis add-on state ─────────────────────────────────────────────
+let _hasMemberAnalysis    = false;
+let _memberAnalysisCount  = 0;
+let _memberAnalysisAgents = [];
+let _memberAnalysisAt     = null;
+let _memberAnalysisLoading = false;
+
 // ── INIT ─────────────────────────────────────────────────────────────────────
 // localStorage helpers — persistSession:false means Supabase never writes its own keys,
 // so our br-* keys have no lock contention and work across tabs.
@@ -993,7 +1404,7 @@ async function init() {
 
 // ── AUTH HELPERS ─────────────────────────────────────────────────────────────
 function showScreen(name) {
-  ['login','signup','forgot','recovery','app','invite'].forEach(s => {
+  ['login','signup','forgot','recovery','app','invite','checklist'].forEach(s => {
     const el = document.getElementById('screen-' + s);
     if (el) el.style.display = (s === name) ? (s === 'app' ? 'block' : 'flex') : 'none';
   });
@@ -1005,7 +1416,8 @@ function showScreen(name) {
 
 function showLoginOrSignup() {
   const params = new URLSearchParams(window.location.search);
-  if (params.get('invite')) { loadInviteScreen(params.get('invite')); return; }
+  if (params.get('invite'))    { loadInviteScreen(params.get('invite')); return; }
+  if (params.get('checklist')) { loadChecklistScreen(params.get('checklist')); return; }
   const signup = params.get('signup') === 'true';
   showScreen(signup ? 'signup' : 'login');
   if (signup) {
@@ -1042,11 +1454,18 @@ async function checkAccountAndShow(session) {
 
     if (acct) {
       _dataUserId  = _userId;
-      _isAdmin     = acct.is_admin || false;
-      _acctStatus  = acct.status   || 'trial';
-      _currentPlan = acct.plan     || 'basic';
-      _columnMap   = acct.sales_column_map || {};
-      _analysisAt  = acct.ai_analysis_at   || null;
+      _isAdmin        = acct.is_admin || false;
+      _acctStatus     = acct.status   || 'trial';
+      _currentPlan    = acct.plan     || 'basic';
+      _columnMap      = acct.sales_column_map || {};
+      _analysisAt     = acct.ai_analysis_at   || null;
+      _hasSalesAddon  = acct.has_sales_addon  || false;
+      _memberAnalysisAgents = acct.member_analysis_agents || [];
+      _memberAnalysisAt     = acct.member_analysis_at    || null;
+      _hasMemberAnalysis    = acct.has_member_analysis   || false;
+      _memberAnalysisCount  = acct.member_analysis_count || 0;
+      _salesEntryMode = acct.sales_entry_mode || 'upload';
+      _checklistToken = acct.checklist_token  || null;
       if (_acctStatus === 'trial' && acct.trial_ends_at) {
         if (new Date(acct.trial_ends_at) < new Date()) {
           _acctStatus   = 'past_due';
@@ -1087,6 +1506,8 @@ async function checkAccountAndShow(session) {
       }
     }
 
+    if (!_isMember) await loadAddonConfig().catch(e => console.error('loadAddonConfig:', e));
+
     showScreen('app');
     document.getElementById('user-info').textContent = _isMember
       ? (_ownerCompany ? `${_ownerCompany} · ${_memberRole.replace('_',' ')}` : _userEmail)
@@ -1101,6 +1522,29 @@ async function checkAccountAndShow(session) {
         if (msg) { msg.style.display='block'; msg.style.color='var(--accent2)'; msg.textContent='Payment successful! Your subscription is now active.'; setTimeout(()=>{msg.style.display='none';},8000); }
       }, 800);
     } else if (_urlParams.get('billing') === 'cancel') {
+      history.replaceState({}, '', '/app');
+    } else if (_urlParams.get('addon') === 'success') {
+      history.replaceState({}, '', '/app');
+      _hasSalesAddon = true;
+      setTimeout(() => {
+        const msg = document.getElementById('addon-upsell-msg');
+        if (msg) { msg.style.display='block'; msg.style.color='var(--accent2)'; msg.textContent='Sales Tracking add-on activated!'; }
+        loadAddonConfig().then(() => renderManageTabMode()).catch(() => {});
+      }, 800);
+    } else if (_urlParams.get('addon') === 'cancel') {
+      history.replaceState({}, '', '/app');
+    } else if (_urlParams.get('member_analysis') === 'success') {
+      history.replaceState({}, '', '/app');
+      const maCount = Math.max(1, parseInt(_urlParams.get('ma_count')) || 1);
+      fetch('/api/member-analysis-checkout', {
+        method: 'PATCH',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'activate', count: maCount }),
+      }).then(() => {
+        _hasMemberAnalysis   = true;
+        _memberAnalysisCount = maCount;
+      }).catch(() => {});
+    } else if (_urlParams.get('member_analysis') === 'cancel') {
       history.replaceState({}, '', '/app');
     }
 
@@ -1122,10 +1566,12 @@ async function checkAccountAndShow(session) {
       if (acctBtn) acctBtn.classList.add('active');
       banner.style.display = 'flex';
       msg.textContent = _acctStatus === 'cancelled'
-        ? 'Your subscription has been cancelled. Subscribe below to restore access.'
+        ? 'Your subscription has been cancelled. Go to Account → Billing to resubscribe.'
         : _acctStatus === 'past_due'
-        ? 'Your payment is past due. Update your payment method below to restore access.'
-        : 'Your trial has expired. Subscribe below to continue.';
+        ? 'Your payment is past due. Go to Account → Billing to update your payment method.'
+        : 'Your trial has expired. Go to Account → Billing to subscribe.';
+      await loadAccountTab();
+      showAccountSubTab('billing');
     } else {
       banner.style.display = 'none';
       if (_isMember) {
@@ -1153,6 +1599,7 @@ async function checkAccountAndShow(session) {
   await loadRaceData().catch(e => console.error('loadRaceData:', e));
   await loadHistory().catch(e => console.error('loadHistory:', e));
   if (_isAdmin || (['pro','premium'].includes(_currentPlan) && !_trialExpired && ['paid','deferred'].includes(_acctStatus))) await loadPerf();
+  renderManageTabMode();
 }
 
 // ── LOGIN / SIGNUP / AUTH ────────────────────────────────────────────────────
@@ -1268,9 +1715,19 @@ async function handleSignOut() {
 }
 
 // ── TABS ──────────────────────────────────────────────────────────────────────
-function goToAccountTab() {
+function showAccountSubTab(name, btn) {
+  document.querySelectorAll('#tab-account .acct-pane').forEach(p => p.style.display = 'none');
+  document.querySelectorAll('#acct-subtab-nav .acct-stab').forEach(b => b.classList.remove('active'));
+  const pane = document.getElementById('acct-pane-' + name);
+  if (pane) pane.style.display = '';
+  const activeBtn = btn || document.querySelector(`#acct-subtab-nav [data-pane="${name}"]`);
+  if (activeBtn) activeBtn.classList.add('active');
+}
+
+function goToAccountTab(pane) {
   const btn = document.querySelector('.tab[onclick*="account"]');
   showTab('account', btn);
+  if (pane) showAccountSubTab(pane);
 }
 
 function showTab(name, btn) {
@@ -1305,6 +1762,8 @@ function showTab(name, btn) {
     document.getElementById('analysis-refresh-btn').style.display = '';
     updateAnalysisBtn();
     displayCachedAnalysis();
+    updateMemberAnalysisBtn();
+    displayCachedMemberAnalysis();
   }
 }
 
@@ -1355,6 +1814,8 @@ async function loadRaceData() {
   }));
   buildScoringUI();
   renderRace(_raceData);
+  renderSalesTile();
+  if (_hasSalesAddon || _isAdmin) loadSalesTileData().catch(() => {});
 }
 
 function fmtMins(m) {
@@ -1546,7 +2007,149 @@ function renderRace(data) {
     </div>`;
 }
 
+// ── Sales tile (race tab bottom-right) ───────────────────────────────────────
+async function loadSalesTileData() {
+  if ((!_hasSalesAddon && !_isAdmin) || !_dataUserId) return;
+  const now = new Date();
+  const m   = now.getMonth() + 1;
+  const y   = now.getFullYear();
+  try {
+    const r = await fetch(`/api/sales?month=${m}&year=${y}`, { headers: authHeaders() });
+    if (!r.ok) return;
+    const d = await r.json();
+    _salesTileEntries = d.entries || [];
+  } catch(_) { /* silent */ }
+  renderSalesTile();
+}
+
+function onSalesTileLocationChange() {
+  _salesTileLocation = document.getElementById('sales-tile-loc-sel')?.value || 'all';
+  renderSalesTile();
+}
+
+function renderSalesTile() {
+  const panel = document.getElementById('sales-tile-panel');
+  if (!panel) return;
+  panel.style.display = '';
+
+  const useSalesLog = _hasSalesAddon || _isAdmin;
+
+  // Location filter only available when using sales_log data
+  const locSel     = document.getElementById('sales-tile-loc-sel');
+  const activeLocs = _salesLocations.filter(l => l.active !== false);
+  if (locSel) {
+    if (useSalesLog && activeLocs.length) {
+      locSel.style.display = '';
+      locSel.innerHTML = '<option value="all">All Locations</option>' +
+        activeLocs.map(l => `<option value="${escHtml(l.name)}"${_salesTileLocation === l.name ? ' selected' : ''}>${escHtml(l.name)}</option>`).join('');
+    } else {
+      locSel.style.display = 'none';
+    }
+  }
+
+  // Active scoring cats (exclude deposit/other/skip)
+  const SKIP = new Set(['other','other2','other3','other4','other5','deposit','skip']);
+  const cats = activeCats().filter(c => !SKIP.has(c.key));
+
+  const agentMap = {};
+
+  if (useSalesLog) {
+    // Subscribed: aggregate from sales_log entries (supports location filter)
+    const entries = _salesTileLocation === 'all'
+      ? _salesTileEntries
+      : _salesTileEntries.filter(e => e.location === _salesTileLocation);
+    for (const e of entries) {
+      if (!e.agent_id || SKIP.has(e.product)) continue;
+      if (!agentMap[e.agent_id]) {
+        agentMap[e.agent_id] = { name: e.agent_id, total: 0, products: {} };
+        for (const c of cats) agentMap[e.agent_id].products[c.key] = 0;
+      }
+      if (agentMap[e.agent_id].products[e.product] !== undefined) {
+        agentMap[e.agent_id].products[e.product]++;
+        agentMap[e.agent_id].total++;
+      }
+    }
+    // Resolve names from race_data / roster
+    for (const [id, ag] of Object.entries(agentMap)) {
+      const rd = (_raceData || []).find(r => r.agent_id === id);
+      if (rd) ag.name = rd.name;
+      else { const ros = _agentRoster.find(r => r.agent_id === id); if (ros) ag.name = ros.name; }
+    }
+  } else {
+    // Upload-only (no add-on): read product totals directly from race_data
+    for (const ag of (_raceData || [])) {
+      if (!ag.agent_id) continue;
+      const products = {};
+      let total = 0;
+      for (const c of cats) {
+        const n = ag[c.key] || 0;
+        products[c.key] = n;
+        total += n;
+      }
+      if (total > 0) agentMap[ag.agent_id] = { name: ag.name || ag.agent_id, total, products };
+    }
+  }
+
+  const content = document.getElementById('sales-tile-content');
+  if (!content) return;
+  if (!Object.keys(agentMap).length) {
+    content.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:.25rem 0;">No sales recorded this period.</div>';
+    return;
+  }
+
+  // Totals row
+  const totals = { total: 0 };
+  for (const c of cats) totals[c.key] = 0;
+  for (const ag of Object.values(agentMap)) {
+    totals.total += ag.total;
+    for (const c of cats) totals[c.key] += (ag.products[c.key] || 0);
+  }
+
+  const th = t => `<th style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;padding:4px 6px;text-align:center;white-space:nowrap;border-bottom:1px solid var(--border);">${t}</th>`;
+  const td = (v, hi) => `<td style="text-align:center;padding:3px 6px;font-family:'DM Mono',monospace;font-size:12px;color:${hi ? 'var(--accent2)' : v ? 'var(--text)' : 'var(--muted)'};">${v || '—'}</td>`;
+
+  const sortedAgents = Object.values(agentMap).sort((a, b) => b.total - a.total);
+
+  content.innerHTML = `<div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;">
+      <thead><tr style="text-align:left;">
+        <th style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;padding:4px 6px;border-bottom:1px solid var(--border);">Agent</th>
+        ${cats.map(c => th(c.label)).join('')}
+        ${th('Total')}
+      </tr></thead>
+      <tbody>
+        ${sortedAgents.map(ag => `<tr>
+          <td style="padding:3px 6px;font-size:12px;white-space:nowrap;max-width:100px;overflow:hidden;text-overflow:ellipsis;">${escHtml(ag.name)}</td>
+          ${cats.map(c => td(ag.products[c.key] || 0)).join('')}
+          ${td(ag.total, true)}
+        </tr>`).join('')}
+      </tbody>
+      <tfoot><tr style="border-top:1px solid var(--border);">
+        <td style="padding:3px 6px;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;">Total</td>
+        ${cats.map(c => `<td style="text-align:center;padding:3px 6px;font-family:'DM Mono',monospace;font-size:12px;font-weight:700;color:var(--text);">${totals[c.key] || 0}</td>`).join('')}
+        <td style="text-align:center;padding:3px 6px;font-family:'DM Mono',monospace;font-size:12px;font-weight:700;color:var(--accent2);">${totals.total}</td>
+      </tr></tfoot>
+    </table>
+  </div>`;
+}
+
 // ── SCORING UI ────────────────────────────────────────────────────────────────
+function buildScoringLabelOpts() {
+  const cats = activeCats();
+  let html = '<option value="">— pick —</option>';
+  html += '<optgroup label="Product Types">';
+  cats.forEach(c => { html += `<option value="${escHtml(c.label)}">${escHtml(c.label)}</option>`; });
+  html += '</optgroup>';
+  cats.forEach(c => {
+    const subs = _salesSubcats.filter(s => s.scoring_category === c.key && s.active !== false);
+    if (!subs.length) return;
+    html += `<optgroup label="${escHtml(c.label)} ›">`;
+    subs.forEach(s => { html += `<option value="${escHtml(s.label)}">${escHtml(s.label)}</option>`; });
+    html += '</optgroup>';
+  });
+  return html;
+}
+
 function buildScoringUI() {
   const fixedCats    = [['wl','Whole Life'],['ul','Universal Life'],['term','Term'],['health','Health'],['auto','Auto'],['fire','Fire']];
   const flexCats     = ['deposit','other','other2','other3','other4','other5'];
@@ -1561,10 +2164,13 @@ function buildScoringUI() {
       <label><input type="checkbox" id="sc-${k}_enabled" ${SCORING[k+'_enabled'] ? 'checked' : ''}>${lbl}</label>
       <input type="number" id="sc-${k}" step="0.1" value="${SCORING[k]}" placeholder="pts">
     </div>`).join('');
+  const labelOpts = buildScoringLabelOpts();
   const flexRows = flexCats.map(k => `
     <div class="score-cat-row">
       <label><input type="checkbox" id="sc-${k}_enabled" ${SCORING[k+'_enabled'] ? 'checked' : ''}>
-        <input type="text" id="sc-${k}_label" class="cat-label-input" value="${CAT_LABELS[k]}" placeholder="Label">
+        <select class="sc-label-pick" title="Pick from product types / subcategories"
+                onchange="if(this.value){document.getElementById('sc-${k}_label').value=this.value;this.value=''}">${labelOpts}</select>
+        <input type="text" id="sc-${k}_label" class="cat-label-input" value="${CAT_LABELS[k]}" placeholder="label">
       </label>
       <input type="number" id="sc-${k}" step="0.1" value="${SCORING[k]}" placeholder="pts">
     </div>`).join('');
@@ -2256,7 +2862,16 @@ async function emailAnalysis() {
   btn.textContent = 'Sending…';
   const msg = document.getElementById('analysis-msg');
   try {
-    const res  = await fetch('/api/ai-analysis?action=email', { method: 'POST', headers: authHeaders() });
+    let localInsights = null;
+    try {
+      const cached = _lsGet('br-analysis-data');
+      if (cached) { const d = JSON.parse(cached); if (d.insights) localInsights = d.insights; }
+    } catch(e) {}
+    const res  = await fetch('/api/ai-analysis?action=email', {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ insights: localInsights }),
+    });
     const data = await res.json();
     msg.style.display = 'block';
     if (res.ok) {
@@ -2361,12 +2976,57 @@ async function loadHistory() {
 }
 
 // ── ACCOUNT TAB ───────────────────────────────────────────────────────────────
+const ADDONS = [
+  {
+    key:   'sales_tracking',
+    label: 'Sales Tracking',
+    desc:  'Manual sales entry, shareable checklist link, and subcategory tracking.',
+    price: '$25/mo',
+    active: acct => !!(acct.has_sales_addon),
+  },
+  {
+    key:   'member_analysis',
+    label: 'Team Member Analysis',
+    desc:  'Individual month-over-month coaching analysis — score, policies, and premium per agent.',
+    price: '$10/head/mo',
+    active: acct => !!(acct.has_member_analysis),
+  },
+  // Future add-ons: add a new object here following the same shape.
+];
+
+function renderAddonsOverview(acct) {
+  const el = document.getElementById('addons-overview');
+  if (!el) return;
+  el.innerHTML = ADDONS.map(addon => {
+    const on = addon.active(acct) || _isAdmin && addon.active({...acct, has_sales_addon: _hasSalesAddon});
+    const badge = on
+      ? `<span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent2);background:rgba(0,255,136,.08);border:1px solid rgba(0,255,136,.2);padding:2px 9px;border-radius:4px;">Active</span>`
+      : `<span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);background:rgba(255,255,255,.04);border:1px solid var(--border);padding:2px 9px;border-radius:4px;">Not Active</span>`;
+    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.75rem 1rem;background:var(--card2);border:1px solid var(--border2);border-radius:10px;margin-bottom:.5rem;flex-wrap:wrap;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:2px;">${escHtml(addon.label)}</div>
+        <div style="font-size:12px;color:var(--muted);">${escHtml(addon.desc)}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:.75rem;flex-shrink:0;">
+        <span style="font-size:13px;font-weight:600;color:var(--muted);">${escHtml(addon.price)}</span>
+        ${badge}
+        <button class="btn btn-secondary" style="padding:3px 12px;font-size:12px;"
+                onclick="showAccountSubTab('billing',document.querySelector('[data-pane=billing]'))">Manage</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
 async function loadAccountTab() {
   if (!_userId) return;
   if (_isMember) { loadMemberAccountTab(); return; }
+  // Ensure sub-tab nav is visible and reset to profile pane
+  const nav = document.getElementById('acct-subtab-nav');
+  if (nav) nav.style.display = '';
+  showAccountSubTab('profile');
   const { data: acct } = await _supabase.from('accounts').select('*').eq('user_id', _userId).single();
   if (!acct) return;
-  // Show agency management section for account owners (non-admin or admin)
+  // Agency management section lives in the Team pane — always visible there for owners
   const agencySection = document.getElementById('agency-mgmt-section');
   if (agencySection) { agencySection.style.display = ''; loadAgencyMembers(); }
 
@@ -2388,6 +3048,8 @@ async function loadAccountTab() {
   ].map(([lbl, val]) =>
     `<div class="acct-info-item"><div class="acct-info-label">${lbl}</div><div class="acct-info-val">${val}</div></div>`
   ).join('');
+
+  renderAddonsOverview(acct);
 
   // Editable contact fields
   document.getElementById('ac-contact').value = acct.contact_name || '';
@@ -2434,6 +3096,13 @@ async function loadAccountTab() {
 
   document.getElementById('danger-zone-section').style.display  = _isAdmin ? 'none' : 'flex';
   document.getElementById('sandbox-reset-section').style.display = _isAdmin ? '' : 'none';
+
+  // Sales add-on section
+  document.getElementById('sales-addon-section').style.display = '';
+  renderSalesAddonSection(acct);
+  // Member analysis add-on section
+  document.getElementById('member-analysis-section').style.display = '';
+  renderMemberAnalysisSection(acct);
 }
 
 async function confirmResetMyData(btn) {
@@ -2454,6 +3123,7 @@ async function confirmResetMyData(btn) {
       _supabase.from('sales_log').delete().eq('user_id', _userId),
       _supabase.from('historical_wins').delete().eq('user_id', _userId),
       _supabase.from('historical_months').delete().eq('user_id', _userId),
+      _supabase.from('checklist_submissions').delete().eq('user_id', _userId),
     ]);
     await _supabase.from('race_data').delete().eq('user_id', _userId);
     await _supabase.from('race_config').delete().eq('user_id', _userId).eq('key', 'current_month');
@@ -2495,6 +3165,7 @@ async function confirmDeleteData(btn) {
       _supabase.from('sales_log').delete().eq('user_id', _userId),
       _supabase.from('historical_wins').delete().eq('user_id', _userId),
       _supabase.from('historical_months').delete().eq('user_id', _userId),
+      _supabase.from('checklist_submissions').delete().eq('user_id', _userId),
     ]);
     await _supabase.from('race_data').delete().eq('user_id', _userId);
     await _supabase.from('race_config').update({ value: '' }).eq('user_id', _userId).eq('key', 'current_month');
@@ -2975,17 +3646,13 @@ async function acceptInvite() {
 
 // ── MEMBER ACCOUNT TAB ───────────────────────────────────────────────────────
 function loadMemberAccountTab() {
-  // Hide all owner-specific sections
-  ['acct-info-grid-wrap','report-delivery-section','plan-upgrade-section',
-   'sandbox-reset-section','danger-zone-section','agency-mgmt-section',
-   'colmap-section'].forEach(id => {
+  // Hide sub-tab nav and all owner panes
+  const nav = document.getElementById('acct-subtab-nav');
+  if (nav) nav.style.display = 'none';
+  document.querySelectorAll('#tab-account .acct-pane').forEach(p => p.style.display = 'none');
+  ['sandbox-reset-section','danger-zone-section'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
-  });
-  // Hide the first three acct-sections (Account Info, Contact Info, Report Delivery)
-  const sections = document.querySelectorAll('#tab-account .panel .acct-section');
-  sections.forEach(s => {
-    if (!s.id || s.id !== 'member-account-panel') s.style.display = 'none';
   });
   // Show member panel
   const mp = document.getElementById('member-account-panel');
@@ -3021,6 +3688,45 @@ const ROLE_DESC = {
 };
 const ROLE_LABEL = { captain:'Captain', chief_officer:'Chief Officer', bosun:'Bosun', custom:'Custom' };
 
+const ALL_MEMBER_TABS = ['race','scoring','manage','perf','analysis','history'];
+const MEMBER_TAB_LABELS = { race:'Race', scoring:'Scoring', manage:'Manage', perf:'Performance', analysis:'Analysis', history:'History' };
+
+function renderMemberRow(m) {
+  const tabCbs = ALL_MEMBER_TABS.map(tab => {
+    const chk = (m.custom_tabs || []).includes(tab) ? ' checked' : '';
+    return `<label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" class="mb-tab-cb-${m.id}" value="${tab}"${chk}> ${MEMBER_TAB_LABELS[tab]}</label>`;
+  }).join('');
+  const roleOpts = ['bosun','chief_officer','captain','custom'].map(r =>
+    `<option value="${r}"${r===m.role?' selected':''}>${ROLE_LABEL[r]}</option>`
+  ).join('');
+  const statusColor = m.status === 'active' ? 'var(--accent2)' : 'var(--warn)';
+  const resendBtn = m.status === 'invited'
+    ? `<button onclick="resendInvite('${m.id}','${escHtml(m.email)}',this)" style="background:none;border:1px solid rgba(255,255,255,.15);color:var(--muted);border-radius:5px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;margin-right:6px;">Resend</button>`
+    : '';
+  return `<tr>
+      <td style="padding:6px 8px;border-bottom:1px solid var(--border2);font-family:'DM Mono',monospace;font-size:12px;">${escHtml(m.email)}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid var(--border2);">
+        <select onchange="onMemberRoleChange('${m.id}',this)" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:3px 6px;font-size:12px;outline:none;">${roleOpts}</select>
+      </td>
+      <td style="padding:6px 8px;border-bottom:1px solid var(--border2);">
+        <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:${statusColor};">${m.status}</span>
+      </td>
+      <td style="padding:6px 8px;border-bottom:1px solid var(--border2);text-align:right;white-space:nowrap;">
+        ${resendBtn}<button onclick="removeMember('${m.id}',this)" style="background:none;border:1px solid rgba(255,77,109,.3);color:var(--danger);border-radius:5px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">Remove</button>
+      </td>
+    </tr>
+    <tr id="custom-tabs-row-${m.id}" style="${m.role==='custom'?'':'display:none'}">
+      <td colspan="4" style="padding:0 8px 10px 8px;border-bottom:1px solid var(--border2);">
+        <div style="background:rgba(0,212,255,.04);border:1px solid rgba(0,212,255,.12);border-radius:6px;padding:.6rem .75rem;">
+          <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">ALLOWED TABS</div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:.5rem;">${tabCbs}</div>
+          <button class="btn btn-primary" style="padding:3px 12px;font-size:12px;" onclick="saveMemberCustomTabs('${m.id}')">Save Permissions</button>
+          <span id="mb-perm-msg-${m.id}" style="font-size:12px;margin-left:8px;display:none;"></span>
+        </div>
+      </td>
+    </tr>`;
+}
+
 function toggleCustomTabsUI() {
   const role = document.getElementById('ag-invite-role').value;
   document.getElementById('ag-custom-tabs-wrap').style.display = role === 'custom' ? '' : 'none';
@@ -3046,38 +3752,7 @@ async function loadAgencyMembers() {
             <th style="padding:5px 8px;border-bottom:1px solid var(--border);"></th>
           </tr>
         </thead>
-        <tbody>
-          ${data.map(m => `
-            <tr>
-              <td style="padding:6px 8px;border-bottom:1px solid var(--border2);font-family:'DM Mono',monospace;font-size:12px;">${m.email}</td>
-              <td style="padding:6px 8px;border-bottom:1px solid var(--border2);">
-                <select onchange="updateMemberRole('${m.id}', this.value)"
-                        style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:3px 6px;font-size:12px;outline:none;">
-                  ${['bosun','chief_officer','captain','custom'].map(r =>
-                    `<option value="${r}"${r===m.role?' selected':''}>${ROLE_LABEL[r]}</option>`
-                  ).join('')}
-                </select>
-              </td>
-              <td style="padding:6px 8px;border-bottom:1px solid var(--border2);">
-                <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;
-                  color:${m.status==='active'?'var(--accent2)':'var(--warn)'};">
-                  ${m.status}
-                </span>
-              </td>
-              <td style="padding:6px 8px;border-bottom:1px solid var(--border2);text-align:right;white-space:nowrap;">
-                ${m.status === 'invited' ? `<button onclick="resendInvite('${m.id}', '${m.email}', this)"
-                        style="background:none;border:1px solid rgba(255,255,255,.15);color:var(--muted);
-                               border-radius:5px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;margin-right:6px;">
-                  Resend
-                </button>` : ''}
-                <button onclick="removeMember('${m.id}', this)"
-                        style="background:none;border:1px solid rgba(255,77,109,.3);color:var(--danger);
-                               border-radius:5px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">
-                  Remove
-                </button>
-              </td>
-            </tr>`).join('')}
-        </tbody>
+        <tbody>${data.map(m => renderMemberRow(m)).join('')}</tbody>
       </table>`;
   } catch(e) {
     container.innerHTML = `<div style="color:var(--danger);font-size:13px;">Error loading members: ${e.message}</div>`;
@@ -3156,11 +3831,32 @@ async function removeMember(memberId, btn) {
   }
 }
 
-async function updateMemberRole(memberId, role) {
+function onMemberRoleChange(memberId, sel) {
+  const row = document.getElementById(`custom-tabs-row-${memberId}`);
+  if (sel.value === 'custom') {
+    if (row) row.style.display = '';
+  } else {
+    if (row) row.style.display = 'none';
+    updateMemberRole(memberId, sel.value, null);
+  }
+}
+
+async function saveMemberCustomTabs(memberId) {
+  const tabs = [...document.querySelectorAll(`.mb-tab-cb-${memberId}:checked`)].map(cb => cb.value);
+  const msg  = document.getElementById(`mb-perm-msg-${memberId}`);
+  if (!tabs.length) {
+    if (msg) { msg.style.display='inline'; msg.style.color='var(--danger)'; msg.textContent='Select at least one tab.'; }
+    return;
+  }
+  await updateMemberRole(memberId, 'custom', tabs);
+  if (msg) { msg.style.display='inline'; msg.style.color='var(--accent2)'; msg.textContent='Saved.'; setTimeout(() => { msg.style.display='none'; }, 2500); }
+}
+
+async function updateMemberRole(memberId, role, custom_tabs = null) {
   const res  = await fetch('/api/members', {
     method:  'PATCH',
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ memberId, role }),
+    body:    JSON.stringify({ memberId, role, custom_tabs }),
   });
   if (!res.ok) {
     const data = await res.json();
@@ -3171,6 +3867,1763 @@ async function updateMemberRole(memberId, role) {
 
 // ── STARTUP ───────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', init);
+
+// ── DIRECTIVE 2: SALES TRACKING ADD-ON ───────────────────────────────────────
+
+const LEAD_SOURCES = [
+  'Aged Lead Store','Agent Tagged Media','Call In','Contractors List',
+  'Current Customer','Customer Letter','Direct Mail','Events',
+  'Facebook','Google','Home Office Campaign','iLead',
+  'Mortgage Broker','Other','Pivot','Realtor',
+  'School','Self Generate','Statefarm.com','State2State',
+  'Walk-In','Win-Back',
+];
+
+const DEFAULT_SCORING_CATS = [
+  { key: 'auto',    label: 'Auto'             },
+  { key: 'fire',    label: 'Fire'             },
+  { key: 'health',  label: 'Health'           },
+  { key: 'wl',      label: 'Whole Life (WL)'  },
+  { key: 'ul',      label: 'Univ. Life (UL)'  },
+  { key: 'term',    label: 'Term'             },
+  { key: 'deposit', label: 'Deposit/Bank'     },
+  { key: 'other',   label: 'Other'            },
+];
+// Returns user-configured active product types, falling back to defaults
+function activeCats() {
+  const src = _productTypes.length ? _productTypes : DEFAULT_SCORING_CATS;
+  return src.filter(c => c.active !== false);
+}
+// Finds the display label for a given product key (searches user config then defaults)
+function labelForCat(key) {
+  if (!key) return '—';
+  const all = _productTypes.length ? _productTypes : DEFAULT_SCORING_CATS;
+  return (all.find(c => c.key === key) || DEFAULT_SCORING_CATS.find(c => c.key === key))?.label || key;
+}
+
+// ── Account tab: sales add-on section rendering ───────────────────────────────
+function renderSalesAddonSection(acct) {
+  const hasSub = acct.has_sales_addon || _hasSalesAddon || _isAdmin;
+  const hasMa  = acct.has_member_analysis || _hasMemberAnalysis || _isAdmin;
+  const showContent = hasSub || hasMa;
+
+  // Billing pane: upsell vs active card
+  document.getElementById('sales-addon-upsell').style.display  = hasSub ? 'none' : '';
+  document.getElementById('sales-addon-active').style.display  = hasSub ? ''     : 'none';
+
+  // Sales pane: locked vs content
+  document.getElementById('sales-pane-locked').style.display  = showContent ? 'none' : '';
+  document.getElementById('sales-pane-content').style.display = showContent ? ''     : 'none';
+
+  // Member analysis agent section
+  document.getElementById('ma-agents-section').style.display = hasMa ? '' : 'none';
+  if (hasMa) renderMemberAnalysisAgentPicker();
+
+  if (!hasSub) return;
+
+  renderAgentRoster();
+  renderLocationsList();
+
+  // Link
+  const host  = window.location.origin;
+  const token = acct.checklist_token || _checklistToken;
+  const link  = token ? `${host}/app?checklist=${token}` : '';
+  document.getElementById('ac-checklist-link').value = link;
+
+  // Mode buttons
+  const mode = acct.sales_entry_mode || _salesEntryMode;
+  document.getElementById('mode-btn-upload').style.background = mode === 'upload' ? 'var(--accent)' : '';
+  document.getElementById('mode-btn-upload').style.color      = mode === 'upload' ? '#000' : '';
+  document.getElementById('mode-btn-manual').style.background = mode === 'manual' ? 'var(--accent2)' : '';
+  document.getElementById('mode-btn-manual').style.color      = mode === 'manual' ? '#fff' : '';
+
+  // Email template
+  const cfg = acct.checklist_email_config || _checklistEmailCfg || {};
+  document.getElementById('et-subject').value     = cfg.subject     || '';
+  document.getElementById('et-agency').value      = cfg.agency_name || acct.company_name || '';
+  document.getElementById('et-color').value       = cfg.brand_color || '#00d4ff';
+  document.getElementById('et-agent-name').value  = cfg.agent_name  || '';
+  document.getElementById('et-agent-phone').value = cfg.agent_phone || '';
+  document.getElementById('et-agent-email').value = cfg.agent_email || '';
+  document.getElementById('et-greeting').value    = cfg.greeting    || '';
+  document.getElementById('et-footer').value      = cfg.footer      || '';
+
+  // Form types
+  renderFormTypesList();
+
+  // Product types & Subcategories
+  renderProductTypeList();
+  renderSubcatList();
+}
+
+function renderAgentRoster() {
+  const container = document.getElementById('agent-roster-list');
+  if (!container) return;
+  if (!_agentRoster.length) {
+    container.innerHTML = '<div style="font-size:13px;color:var(--muted);margin-bottom:.5rem;">No agents yet — add one below or upload a sales/call file.</div>';
+    return;
+  }
+  container.innerHTML = _agentRoster.map(a =>
+    `<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
+      <input type="checkbox" ${a.active !== false ? 'checked' : ''} onchange="toggleAgentRoster('${escHtml(a.id)}', this.checked)" title="Active in dropdowns">
+      <span style="font-size:13px;flex:1;">${escHtml(a.name)}</span>
+      <span style="font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;">${escHtml(a.agent_id)}</span>
+      <button class="btn btn-secondary" style="padding:2px 8px;font-size:11px;" onclick="deleteAgentRoster('${escHtml(a.id)}', this)">✕</button>
+    </div>`
+  ).join('');
+}
+
+async function addAgentToRoster(btn) {
+  const input = document.getElementById('new-agent-name');
+  const name = (input?.value || '').trim();
+  if (!name) return showInlineMsg('agent-roster-msg', 'Enter a name', 'err');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/agent-roster', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+    const d = await r.json();
+    if (!r.ok) { showInlineMsg('agent-roster-msg', d.error || 'Error', 'err'); return; }
+    _agentRoster.push(d);
+    _agentRoster.sort((a, b) => a.name.localeCompare(b.name));
+    input.value = '';
+    renderAgentRoster();
+  } catch(e) { showInlineMsg('agent-roster-msg', e.message, 'err'); }
+  finally { btn.disabled = false; }
+}
+
+async function toggleAgentRoster(id, active) {
+  await fetch('/api/agent-roster', { method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ id, active }) });
+  const a = _agentRoster.find(a => a.id === id);
+  if (a) a.active = active;
+}
+
+async function deleteAgentRoster(id, btn) {
+  btn.disabled = true;
+  const r = await fetch(`/api/agent-roster?id=${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders() });
+  if (r.ok) {
+    _agentRoster = _agentRoster.filter(a => a.id !== id);
+    renderAgentRoster();
+  } else { btn.disabled = false; }
+}
+
+function refreshManualRowLocations() {
+  const activeLocs = _salesLocations.filter(l => l.active !== false);
+  const hasLocs    = activeLocs.length > 0;
+  const optsHtml   = '<option value="">— optional —</option>' +
+    activeLocs.map(l => `<option value="${escHtml(l.name)}">${escHtml(l.name)}</option>`).join('');
+  document.querySelectorAll('#manual-sales-rows .manual-sale-row').forEach(row => {
+    const existingSel = row.querySelector('.msr-location');
+    const row2Grid    = Array.from(row.querySelectorAll('div')).find(d => d.querySelector('.msr-date'));
+    if (!row2Grid) return;
+    if (hasLocs && !existingSel) {
+      row2Grid.style.gridTemplateColumns = '1fr 1fr 1fr 1fr 1fr 1fr';
+      const div = document.createElement('div');
+      div.innerHTML = `<label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">LOCATION</label><select class="msr-location" style="${msrSelectStyle()}">${optsHtml}</select>`;
+      row2Grid.appendChild(div);
+    } else if (hasLocs && existingSel) {
+      const cur = existingSel.value;
+      existingSel.innerHTML = optsHtml;
+      existingSel.value = cur;
+    } else if (!hasLocs && existingSel) {
+      existingSel.closest('div').remove();
+      row2Grid.style.gridTemplateColumns = '1fr 1fr 1fr 1fr 1fr';
+    }
+  });
+}
+
+function renderLocationsList() {
+  const container = document.getElementById('locations-list');
+  if (!container) return;
+  if (!_salesLocations.length) {
+    container.innerHTML = '<div style="font-size:13px;color:var(--muted);margin-bottom:.5rem;">No locations added yet.</div>';
+    return;
+  }
+  container.innerHTML = _salesLocations.map(l =>
+    `<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
+      <input type="checkbox" ${l.active !== false ? 'checked' : ''} onchange="toggleLocation('${escHtml(l.id)}',this.checked)" title="Active in dropdowns">
+      <span style="font-size:13px;flex:1;">${escHtml(l.name)}</span>
+      <button class="btn btn-secondary" style="padding:2px 8px;font-size:11px;" onclick="deleteLocation('${escHtml(l.id)}',this)">✕</button>
+    </div>`
+  ).join('');
+}
+
+async function addLocation(btn) {
+  const input = document.getElementById('new-location-name');
+  const name  = (input?.value || '').trim();
+  if (!name) return showInlineMsg('location-msg', 'Enter a location name', 'err');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/checklist-config', {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ locationUpdates: [{ action: 'add', name, sort_order: _salesLocations.length }] })
+    });
+    if (!r.ok) { showInlineMsg('location-msg', 'Failed to add', 'err'); return; }
+    const fresh = await fetch('/api/checklist-config', { headers: authHeaders() });
+    const d     = await fresh.json();
+    _salesLocations = d.locations || [];
+    renderLocationsList();
+    refreshManualRowLocations();
+    input.value = '';
+    showInlineMsg('location-msg', 'Location added', 'ok');
+  } catch(e) { showInlineMsg('location-msg', e.message, 'err'); }
+  finally { btn.disabled = false; }
+}
+
+async function toggleLocation(id, active) {
+  await fetch('/api/checklist-config', {
+    method: 'PATCH',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ locationUpdates: [{ action: 'toggle', id, active }] })
+  });
+  const loc = _salesLocations.find(l => l.id === id);
+  if (loc) loc.active = active;
+  refreshManualRowLocations();
+}
+
+async function deleteLocation(id, btn) {
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/checklist-config', {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ locationUpdates: [{ action: 'delete', id }] })
+    });
+    if (r.ok) {
+      _salesLocations = _salesLocations.filter(l => l.id !== id);
+      renderLocationsList();
+      refreshManualRowLocations();
+    }
+  } finally { btn.disabled = false; }
+}
+
+function renderFormTypesList() {
+  const container = document.getElementById('form-types-list');
+  if (!container) return;
+  if (!_checklistFormCfg.length) {
+    container.innerHTML = '<div style="font-size:13px;color:var(--muted);margin-bottom:.5rem;">No form types configured yet — defaults will be seeded on first load of the checklist link.</div>';
+    return;
+  }
+  container.innerHTML = _checklistFormCfg.map((f, i) =>
+    `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;" data-idx="${i}">
+      <input type="checkbox" ${f.active !== false ? 'checked' : ''} onchange="ftToggle(${i},this.checked)">
+      <span style="font-size:13px;min-width:80px;">${escHtml(f.label)}</span>
+      <span style="font-size:11px;color:var(--muted);">(${escHtml(f.form_key)})</span>
+      <button class="btn btn-secondary" style="padding:2px 8px;font-size:11px;" onclick="ftRemove(${i})">✕</button>
+    </div>`
+  ).join('');
+}
+
+function ftToggle(idx, val) { if (_checklistFormCfg[idx]) _checklistFormCfg[idx].active = val; }
+function ftRemove(idx) { _checklistFormCfg.splice(idx, 1); renderFormTypesList(); }
+
+function addFormType() {
+  const key   = document.getElementById('new-form-key').value.trim();
+  const label = document.getElementById('new-form-label').value.trim();
+  if (!key || !label) return;
+  _checklistFormCfg.push({ form_key: key, label, active: true, sort_order: _checklistFormCfg.length });
+  document.getElementById('new-form-key').value   = '';
+  document.getElementById('new-form-label').value = '';
+  renderFormTypesList();
+}
+
+async function saveFormTypes(btn) {
+  btn.disabled = true;
+  const msg = document.getElementById('ft-msg');
+  try {
+    const r = await fetch('/api/checklist-config', {
+      method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ formTypes: _checklistFormCfg }),
+    });
+    const d = await r.json();
+    showInlineMsg('ft-msg', d.ok ? 'Saved.' : (d.error || 'Error'), d.ok ? 'ok' : 'err');
+  } catch(e) { showInlineMsg('ft-msg', e.message, 'err'); }
+  finally { btn.disabled = false; }
+}
+
+// ── Product Type CRUD ─────────────────────────────────────────────────────────
+function renderProductTypeList() {
+  const container = document.getElementById('product-types-list');
+  if (!container) return;
+  const pts = _productTypes.length ? _productTypes : DEFAULT_SCORING_CATS;
+  if (!pts.length) { container.innerHTML = ''; return; }
+  container.innerHTML = pts.map(p => {
+    if (_editingPtKey === p.key) {
+      return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">
+        <input id="pt-edit-label-${p.key}" type="text" value="${escHtml(p.label)}" style="flex:1;min-width:120px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:3px 8px;font-size:13px;outline:none;">
+        <button class="btn btn-primary" style="padding:2px 10px;font-size:11px;" onclick="ptSaveEdit('${p.key}')">Save</button>
+        <button class="btn btn-secondary" style="padding:2px 8px;font-size:11px;" onclick="ptCancelEdit()">Cancel</button>
+      </div>`;
+    }
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+      <span style="font-size:13px;flex:1;">${escHtml(p.label)}</span>
+      <span style="font-size:10px;color:var(--muted);font-family:monospace;">${escHtml(p.key)}</span>
+      <button class="btn btn-secondary" style="padding:2px 8px;font-size:11px;" onclick="ptEdit('${p.key}')">Edit</button>
+      <button class="btn btn-secondary" style="padding:2px 8px;font-size:11px;" onclick="ptDelete('${p.key}')">✕</button>
+    </div>`;
+  }).join('');
+  renderNewScCatOptions();
+}
+
+function ptEdit(key) { _editingPtKey = key; renderProductTypeList(); }
+function ptCancelEdit() { _editingPtKey = null; renderProductTypeList(); }
+
+async function ptSaveEdit(key) {
+  const input = document.getElementById(`pt-edit-label-${key}`);
+  if (!input) return;
+  const label = input.value.trim();
+  if (!label) return;
+  const pts = _productTypes.length ? [..._productTypes] : [...DEFAULT_SCORING_CATS];
+  const idx = pts.findIndex(p => p.key === key);
+  if (idx >= 0) pts[idx] = { ...pts[idx], label };
+  _productTypes = pts;
+  _editingPtKey = null;
+  renderProductTypeList();
+  await _savePtToApi();
+  refreshEntryDropdowns(true);
+  showInlineMsg('pt-msg', 'Saved.', 'ok');
+}
+
+async function ptDelete(key) {
+  const pts = (_productTypes.length ? _productTypes : DEFAULT_SCORING_CATS).filter(p => p.key !== key);
+  _productTypes = pts;
+  renderProductTypeList();
+  renderSubcatList();
+  await _savePtToApi();
+  refreshEntryDropdowns(true);
+}
+
+async function addProductType() {
+  const input = document.getElementById('new-pt-label');
+  if (!input) return;
+  const label = input.value.trim();
+  if (!label) return;
+  const pts = _productTypes.length ? [..._productTypes] : [...DEFAULT_SCORING_CATS];
+  const base = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'custom';
+  let key = base;
+  let i = 2;
+  while (pts.find(p => p.key === key)) { key = `${base}_${i}`; i++; }
+  pts.push({ key, label });
+  _productTypes = pts;
+  input.value = '';
+  renderProductTypeList();
+  renderSubcatList();
+  await _savePtToApi();
+  refreshEntryDropdowns(true);
+  showInlineMsg('pt-msg', 'Added.', 'ok');
+}
+
+async function _savePtToApi() {
+  await fetch('/api/checklist-config', {
+    method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ productTypes: _productTypes }),
+  });
+}
+
+function refreshEntryDropdowns(refreshProducts = false) {
+  if (refreshProducts) {
+    document.querySelectorAll('.msr-product').forEach(sel => {
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">— Select —</option>' +
+        activeCats().map(c => `<option value="${escHtml(c.key)}"${c.key === cur ? ' selected' : ''}>${escHtml(c.label)}</option>`).join('');
+    });
+    document.querySelectorAll('.clrow-product').forEach(sel => {
+      const cur = sel.value;
+      sel.innerHTML = activeCats().map(c => `<option value="${escHtml(c.key)}"${c.key === cur ? ' selected' : ''}>${escHtml(c.label)}</option>`).join('');
+    });
+  }
+  document.querySelectorAll('.msr-product').forEach(sel => {
+    const m = (sel.getAttribute('onchange') || '').match(/msrUpdateSubcat\(this,(\d+)\)/);
+    if (m) msrUpdateSubcat(sel, parseInt(m[1]));
+  });
+  document.querySelectorAll('.clrow-product').forEach(sel => {
+    const m = (sel.getAttribute('onchange') || '').match(/clUpdateSubcat\(this,(\d+)\)/);
+    if (m) clUpdateSubcat(sel, parseInt(m[1]));
+  });
+}
+
+function renderNewScCatOptions() {
+  const sel = document.getElementById('new-sc-cat');
+  if (sel) sel.innerHTML = activeCats().map(c => `<option value="${c.key}">${c.label}</option>`).join('');
+}
+
+function renderSubcatList() {
+  renderNewScCatOptions();
+  const container = document.getElementById('subcats-list');
+  if (!container) return;
+  if (!_salesSubcats.length) {
+    container.innerHTML = '<div style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Subcategories will be seeded on first access of the checklist config.</div>';
+    return;
+  }
+  const grouped = {};
+  for (const s of _salesSubcats) {
+    if (!grouped[s.scoring_category]) grouped[s.scoring_category] = [];
+    grouped[s.scoring_category].push(s);
+  }
+  container.innerHTML = Object.entries(grouped).map(([cat, items]) => {
+    const catLabel = labelForCat(cat);
+    return `<div style="margin-bottom:1rem;">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">${escHtml(catLabel)}</div>
+      ${items.map(s => {
+        if (_editingSubcatId === s.id) {
+          return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">
+            <input type="checkbox" ${s.active ? 'checked' : ''} onchange="subcatToggle('${s.id}',this.checked)">
+            <input id="sc-edit-label-${s.id}" type="text" value="${escHtml(s.label)}" style="flex:1;min-width:120px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:3px 8px;font-size:13px;outline:none;">
+            <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap;"><input type="checkbox" id="sc-edit-fin-${s.id}" ${s.is_financial_service ? 'checked' : ''}> Fin. Service</label>
+            <button class="btn btn-primary" style="padding:2px 10px;font-size:11px;" onclick="subcatSaveEdit('${s.id}')">Save</button>
+            <button class="btn btn-secondary" style="padding:2px 8px;font-size:11px;" onclick="subcatCancelEdit()">Cancel</button>
+          </div>`;
+        }
+        return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+          <input type="checkbox" ${s.active ? 'checked' : ''} onchange="subcatToggle('${s.id}',this.checked)">
+          <span style="font-size:13px;flex:1;">${escHtml(s.label)}</span>
+          ${s.is_financial_service ? '<span style="font-size:10px;color:var(--accent2);background:rgba(0,255,136,.08);padding:1px 6px;border-radius:4px;white-space:nowrap;">Fin. Service</span>' : ''}
+          <button class="btn btn-secondary" style="padding:2px 8px;font-size:11px;" onclick="subcatEdit('${s.id}')">Edit</button>
+          <button class="btn btn-secondary" style="padding:2px 8px;font-size:11px;" onclick="subcatDelete('${s.id}')">✕</button>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }).join('');
+}
+
+async function subcatToggle(id, active) {
+  const s = _salesSubcats.find(x => x.id === id);
+  if (s) s.active = active;
+  await fetch('/api/checklist-config', {
+    method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subcategoryUpdates: [{ action: 'toggle', id, active }] }),
+  });
+  refreshEntryDropdowns(false);
+  showInlineMsg('sc-msg', 'Saved.', 'ok');
+}
+
+async function subcatDelete(id) {
+  _salesSubcats = _salesSubcats.filter(x => x.id !== id);
+  renderSubcatList();
+  refreshEntryDropdowns(false);
+  await fetch('/api/checklist-config', {
+    method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subcategoryUpdates: [{ action: 'delete', id }] }),
+  });
+}
+
+function subcatEdit(id) {
+  _editingSubcatId = id;
+  renderSubcatList();
+}
+
+function subcatCancelEdit() {
+  _editingSubcatId = null;
+  renderSubcatList();
+}
+
+async function subcatSaveEdit(id) {
+  const labelEl = document.getElementById(`sc-edit-label-${id}`);
+  const finEl   = document.getElementById(`sc-edit-fin-${id}`);
+  if (!labelEl) return;
+  const label = labelEl.value.trim();
+  if (!label) return;
+  const is_financial_service = finEl.checked;
+  const s = _salesSubcats.find(x => x.id === id);
+  if (s) { s.label = label; s.is_financial_service = is_financial_service; }
+  _editingSubcatId = null;
+  renderSubcatList();
+  refreshEntryDropdowns(false);
+  await fetch('/api/checklist-config', {
+    method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subcategoryUpdates: [{ action: 'update', id, label, is_financial_service }] }),
+  });
+  showInlineMsg('sc-msg', 'Saved.', 'ok');
+}
+
+async function addSubcategory() {
+  const cat   = document.getElementById('new-sc-cat').value;
+  const label = document.getElementById('new-sc-label').value.trim();
+  const isFin = document.getElementById('new-sc-fin').checked;
+  if (!label) return;
+  const r = await fetch('/api/checklist-config', {
+    method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subcategoryUpdates: [{ action: 'add', scoring_category: cat, label, is_financial_service: isFin }] }),
+  });
+  const d = await r.json();
+  if (d.ok) {
+    document.getElementById('new-sc-label').value = '';
+    document.getElementById('new-sc-fin').checked = false;
+    await loadAddonConfig();
+    renderSubcatList();
+    refreshEntryDropdowns(false);
+    showInlineMsg('sc-msg', 'Added.', 'ok');
+  }
+}
+
+async function saveEmailTemplate(btn) {
+  btn.disabled = true;
+  try {
+    const cfg = {
+      subject:     document.getElementById('et-subject').value.trim(),
+      agency_name: document.getElementById('et-agency').value.trim(),
+      brand_color: document.getElementById('et-color').value,
+      agent_name:  document.getElementById('et-agent-name').value.trim(),
+      agent_phone: document.getElementById('et-agent-phone').value.trim(),
+      agent_email: document.getElementById('et-agent-email').value.trim(),
+      greeting:    document.getElementById('et-greeting').value.trim(),
+      footer:      document.getElementById('et-footer').value.trim(),
+    };
+    const r = await fetch('/api/checklist-config', {
+      method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ emailConfig: cfg }),
+    });
+    const d = await r.json();
+    if (d.ok) { _checklistEmailCfg = cfg; showInlineMsg('et-msg', 'Saved.', 'ok'); }
+    else showInlineMsg('et-msg', d.error || 'Error', 'err');
+  } catch(e) { showInlineMsg('et-msg', e.message, 'err'); }
+  finally { btn.disabled = false; }
+}
+
+// ── Checklist link management ─────────────────────────────────────────────────
+function copyChecklistLink() {
+  const val = document.getElementById('ac-checklist-link').value;
+  if (!val) return;
+  navigator.clipboard.writeText(val).then(() => showInlineMsg('ac-link-msg', 'Copied!', 'ok'));
+}
+
+async function regenerateChecklistLink(btn) {
+  if (btn.dataset.confirming !== 'yes') {
+    btn.dataset.confirming = 'yes';
+    btn.textContent = 'Confirm Regenerate?';
+    setTimeout(() => { btn.dataset.confirming = ''; btn.textContent = 'Regenerate'; }, 5000);
+    return;
+  }
+  btn.disabled = true; btn.textContent = 'Regenerating…';
+  try {
+    const r = await fetch('/api/checklist-config', {
+      method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'regenerate_token' }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      _checklistToken = d.checklistToken;
+      const host = window.location.origin;
+      document.getElementById('ac-checklist-link').value = `${host}/app?checklist=${d.checklistToken}`;
+      showInlineMsg('ac-link-msg', 'Link regenerated. Old link no longer works.', 'ok');
+    }
+  } finally { btn.disabled = false; btn.dataset.confirming = ''; btn.textContent = 'Regenerate'; }
+}
+
+// ── Entry mode toggle ─────────────────────────────────────────────────────────
+async function confirmSalesEntryMode(newMode) {
+  if (newMode === _salesEntryMode) return;
+  const label = newMode === 'manual' ? 'Manual / Checklist' : 'Upload (File)';
+  const warn  = newMode === 'manual'
+    ? 'Switching to Manual mode will delete this month\'s uploaded sales data. Archived months are unaffected. Continue?'
+    : 'Switching to Upload mode will delete this month\'s manually entered sales data. Archived months are unaffected. Continue?';
+  if (!confirm(warn)) return;
+  const r = await fetch('/api/checklist-config', {
+    method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ salesEntryMode: newMode, clearCurrentSales: true }),
+  });
+  const d = await r.json();
+  if (d.ok) {
+    _salesEntryMode = newMode;
+    renderManageTabMode();
+    const msg = document.getElementById('ac-mode-msg');
+    if (msg) showInlineMsg('ac-mode-msg', `Switched to ${label} mode.`, 'ok');
+    document.getElementById('mode-btn-upload').style.background = newMode === 'upload' ? 'var(--accent)' : '';
+    document.getElementById('mode-btn-upload').style.color      = newMode === 'upload' ? '#000' : '';
+    document.getElementById('mode-btn-manual').style.background = newMode === 'manual' ? 'var(--accent2)' : '';
+    document.getElementById('mode-btn-manual').style.color      = newMode === 'manual' ? '#fff' : '';
+  }
+}
+
+function renderManageTabMode() {
+  const banner      = document.getElementById('manage-mode-banner');
+  const uploadPanelS= document.getElementById('upload-panel-sales');
+  const manualPanel = document.getElementById('manual-entry-panel');
+  const subPanel    = document.getElementById('checklist-subs-panel');
+  if (!banner) return;
+  if (_hasSalesAddon || _isAdmin) {
+    banner.style.display = 'flex';
+    const lbl = document.getElementById('manage-mode-label');
+    if (lbl) lbl.textContent = _salesEntryMode === 'manual' ? 'Manual / Checklist' : 'Upload (File)';
+    if (uploadPanelS) uploadPanelS.style.display = _salesEntryMode === 'upload' ? '' : 'none';
+    if (manualPanel)  manualPanel.style.display  = _salesEntryMode === 'manual' ? '' : 'none';
+    if (subPanel)     { subPanel.style.display = ''; loadChecklistSubmissions(); }
+    if (_salesEntryMode === 'manual' && manualPanel && !manualPanel.querySelector('.manual-sale-row')) {
+      manualAddRow();
+    }
+  } else {
+    banner.style.display = 'none';
+    if (manualPanel)  manualPanel.style.display  = 'none';
+    if (subPanel)     subPanel.style.display     = 'none';
+    if (uploadPanelS) uploadPanelS.style.display = '';
+  }
+}
+
+// ── Load add-on config ────────────────────────────────────────────────────────
+async function loadAddonConfig() {
+  const r = await fetch('/api/checklist-config', { headers: authHeaders() });
+  if (!r.ok) return;
+  const d = await r.json();
+  _hasSalesAddon    = d.hasSalesAddon;
+  _salesEntryMode   = d.salesEntryMode || 'upload';
+  _checklistToken   = d.checklistToken;
+  _checklistEmailCfg= d.emailConfig;
+  _checklistFormCfg = d.formConfig    || [];
+  _salesSubcats     = d.subcategories || [];
+  _agentRoster      = d.agents        || [];
+  _salesLocations   = d.locations     || [];
+  _productTypes     = d.productTypes  || [];
+}
+
+// ── Purchase add-on ───────────────────────────────────────────────────────────
+async function purchaseSalesAddon(btn) {
+  btn.disabled = true; btn.textContent = 'Redirecting…';
+  try {
+    const r = await fetch('/api/addon-checkout', { method: 'POST', headers: authHeaders() });
+    const d = await r.json();
+    if (d.url) window.location.href = d.url;
+    else { showInlineMsg('addon-upsell-msg', d.error || 'Error', 'err'); btn.disabled = false; btn.textContent = 'Add to Plan'; }
+  } catch(e) { showInlineMsg('addon-upsell-msg', e.message, 'err'); btn.disabled = false; btn.textContent = 'Add to Plan'; }
+}
+
+async function cancelSalesAddon(btn) {
+  if (btn.dataset.confirming !== 'yes') {
+    btn.dataset.confirming = 'yes';
+    btn.textContent = 'Confirm Remove — click again to cancel';
+    setTimeout(() => {
+      if (btn.dataset.confirming === 'yes') {
+        btn.dataset.confirming = '';
+        btn.textContent = 'Remove Add-On';
+      }
+    }, 5000);
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = 'Removing…';
+  try {
+    const r = await fetch('/api/addon-checkout', { method: 'DELETE', headers: authHeaders() });
+    const d = await r.json();
+    if (!r.ok) {
+      showInlineMsg('addon-cancel-msg', d.error || 'Error removing add-on', 'err');
+      btn.disabled = false; btn.textContent = 'Remove Add-On'; btn.dataset.confirming = '';
+      return;
+    }
+    _hasSalesAddon = false;
+    await loadAccountTab();
+    showAccountSubTab('billing', document.querySelector('[data-pane=billing]'));
+    renderManageTabMode();
+  } catch(e) {
+    showInlineMsg('addon-cancel-msg', e.message, 'err');
+    btn.disabled = false; btn.textContent = 'Remove Add-On'; btn.dataset.confirming = '';
+  }
+}
+
+// ── Manual entry (Manage tab) ─────────────────────────────────────────────────
+let _manualRowCounter = 0;
+
+function manualAddRow(opts = {}) {
+  const id  = ++_manualRowCounter;
+  const { agentId = '', customerName = '', saleDate = '' } = opts;
+  const activeLocs = _salesLocations.filter(l => l.active !== false);
+  const hasLocs    = activeLocs.length > 0;
+  const row2Cols   = hasLocs ? '1fr 1fr 1fr 1fr 1fr 1fr' : '1fr 1fr 1fr 1fr 1fr';
+  const locColHtml = hasLocs ? `<div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">LOCATION</label>
+        <select class="msr-location" style="${msrSelectStyle()}">
+          <option value="">— optional —</option>
+          ${activeLocs.map(l => `<option value="${escHtml(l.name)}">${escHtml(l.name)}</option>`).join('')}
+        </select></div>` : '';
+  const html = `<div class="manual-sale-row" id="msr-${id}" style="background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:.85rem;margin-bottom:.75rem;">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;margin-bottom:.75rem;">
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">AGENT</label>
+        <select class="msr-agent" style="${msrSelectStyle()}">
+          <option value="">— Select —</option>
+          ${(_agentRoster.filter(a => a.active !== false)).map(a => `<option value="${escHtml(a.agent_id)}"${a.agent_id === agentId ? ' selected' : ''}>${escHtml(a.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">PRODUCT</label>
+        <select class="msr-product" onchange="msrUpdateSubcat(this,${id})" style="${msrSelectStyle()}">
+          <option value="">— Select —</option>
+          ${activeCats().map(c => `<option value="${c.key}">${c.label}</option>`).join('')}
+        </select>
+      </div>
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">SUBCATEGORY</label>
+        <select class="msr-subcat" id="msr-subcat-${id}" style="${msrSelectStyle()}">
+          <option value="">— optional —</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:${row2Cols};gap:.75rem;margin-bottom:.75rem;">
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">SALE DATE</label>
+        <input class="msr-date" id="msr-sale-date-${id}" type="text" placeholder="YYYY-MM-DD" value="${escHtml(saleDate)}" style="${msrInputStyle()}"></div>
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">ISSUED DATE</label>
+        <input class="msr-issued-date" id="msr-issued-date-${id}" type="text" placeholder="YYYY-MM-DD" style="${msrInputStyle()}"></div>
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">PREMIUM</label>
+        <input class="msr-prem" type="number" step="0.01" placeholder="0.00" style="${msrInputStyle()}"></div>
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">PERIOD (MO)</label>
+        <select class="msr-period" style="${msrSelectStyle()}">
+          <option value="">—</option><option value="6">6</option><option value="12">12</option>
+        </select>
+      </div>
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">LEAD SOURCE</label>
+        <select class="msr-source" style="${msrSelectStyle()}">
+          <option value="">—</option>
+          ${LEAD_SOURCES.map(s => `<option value="${escHtml(s)}">${escHtml(s)}</option>`).join('')}
+        </select>
+      </div>
+      ${locColHtml}
+    </div>
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:.75rem;align-items:end;">
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">CUSTOMER NAME <span style="color:var(--muted);font-weight:400;">(2 initials + last)</span></label>
+        <input class="msr-cust" type="text" placeholder="John Smith" value="${escHtml(customerName)}" style="${msrInputStyle()}"></div>
+      <div style="display:flex;flex-direction:column;gap:4px;">
+        <label style="font-size:11px;color:var(--muted);">AUTO ISSUED</label>
+        <input class="msr-issued" type="checkbox" onchange="msrAutoIssuedChanged(this,${id})" style="width:18px;height:18px;margin-top:4px;">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px;">
+        <label style="font-size:11px;color:var(--muted);">SPLIT SALE</label>
+        <input class="msr-split" type="checkbox" style="width:18px;height:18px;margin-top:4px;" onchange="msrToggleTeammate(this,${id})">
+      </div>
+      <div style="display:flex;gap:6px;justify-content:flex-end;align-items:flex-end;">
+        <button class="btn btn-secondary" style="padding:4px 10px;font-size:12px;" onclick="msrDuplicate(${id})">+ Dup</button>
+        <button class="btn btn-danger" style="padding:4px 10px;font-size:12px;" onclick="document.getElementById('msr-${id}').remove()">Remove</button>
+      </div>
+    </div>
+    <div id="msr-teammate-row-${id}" style="display:none;margin-top:.5rem;">
+      <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">TEAMMATE NAME</label>
+      <input class="msr-teammate" type="text" placeholder="Teammate name" style="${msrInputStyle()}; max-width:240px;">
+    </div>
+  </div>`;
+  document.getElementById('manual-sales-rows').insertAdjacentHTML('beforeend', html);
+  flatpickr(`#msr-sale-date-${id}`, {
+    dateFormat: 'Y-m-d', allowInput: true, defaultDate: saleDate || null,
+    onChange: (d, s) => msrSaleDateChanged({ value: s }, id)
+  });
+  flatpickr(`#msr-issued-date-${id}`, { dateFormat: 'Y-m-d', allowInput: true });
+}
+
+function msrDuplicate(id) {
+  const row = document.getElementById(`msr-${id}`);
+  if (!row) return;
+  manualAddRow({
+    agentId:      row.querySelector('.msr-agent')?.value || '',
+    customerName: row.querySelector('.msr-cust')?.value  || '',
+    saleDate:     row.querySelector('.msr-date')?.value  || '',
+  });
+}
+
+function msrSelectStyle() { return 'width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 8px;font-size:12px;outline:none;'; }
+function msrInputStyle()  { return 'width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 8px;font-size:12px;outline:none;box-sizing:border-box;'; }
+
+function msrUpdateSubcat(productSel, id) {
+  const cat    = productSel.value;
+  const subSel = document.getElementById(`msr-subcat-${id}`);
+  if (!subSel) return;
+  if (!cat) { subSel.innerHTML = '<option value="">— optional —</option>'; return; }
+  const opts = _salesSubcats.filter(s => s.active && s.scoring_category === cat);
+  subSel.innerHTML = '<option value="">— optional —</option>' +
+    opts.map(s => `<option value="${escHtml(s.scoring_category)}|${escHtml(s.label)}">${escHtml(s.label)}</option>`).join('');
+}
+
+function msrToggleTeammate(cb, id) {
+  const row = document.getElementById(`msr-teammate-row-${id}`);
+  if (row) row.style.display = cb.checked ? '' : 'none';
+}
+
+async function manualSubmitAll(btn) {
+  const rows = document.querySelectorAll('#manual-sales-rows .manual-sale-row');
+  if (!rows.length) return;
+  btn.disabled = true;
+  const msg = document.getElementById('manual-entry-msg');
+  msg.style.display = 'none';
+  let saved = 0, errors = 0;
+  for (const row of rows) {
+    const product  = row.querySelector('.msr-product')?.value;
+    const subcatRaw= row.querySelector('.msr-subcat')?.value || '';
+    const saleDate = row.querySelector('.msr-date')?.value;
+    if (!product || !saleDate) { errors++; continue; }
+    const subcategory = subcatRaw.includes('|') ? subcatRaw.split('|')[1] : '';
+    const body = {
+      agentId:       row.querySelector('.msr-agent')?.value      || null,
+      product,
+      subcategory:   subcategory                                  || null,
+      saleDate,
+      writtenPremium:row.querySelector('.msr-prem')?.value        || null,
+      customerName:  row.querySelector('.msr-cust')?.value        || '',
+      leadSource:    row.querySelector('.msr-source')?.value      || null,
+      period:        row.querySelector('.msr-period')?.value      || null,
+      autoIssued:    row.querySelector('.msr-issued')?.checked    ?? null,
+      issuedDate:    row.querySelector('.msr-issued-date')?.value || null,
+      splitSale:     row.querySelector('.msr-split')?.checked     ?? null,
+      teammate:      row.querySelector('.msr-teammate')?.value    || null,
+      location:      row.querySelector('.msr-location')?.value    || null,
+    };
+    const r = await fetch('/api/sales', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (r.ok) { saved++; row.remove(); }
+    else errors++;
+  }
+  btn.disabled = false;
+  msg.style.display = 'block';
+  if (saved)   { msg.style.color = 'var(--accent2)'; msg.textContent = `${saved} entr${saved===1?'y':'ies'} saved.`; }
+  if (errors)  { msg.style.color = 'var(--danger)';  msg.textContent += ` ${errors} failed (product and date required).`; }
+  if (saved)   { loadRaceData().catch(() => {}); }
+}
+
+// ── Manual entry helpers ──────────────────────────────────────────────────────
+function msrSaleDateChanged(input, id) {
+  const cb = document.getElementById('msr-issued-cb-' + id) || document.querySelector('#msr-' + id + ' .msr-issued');
+  if (cb?.checked) {
+    const issued = document.getElementById('msr-issued-date-' + id);
+    if (issued) issued._flatpickr ? issued._flatpickr.setDate(input.value, false) : (issued.value = input.value);
+  }
+}
+function msrAutoIssuedChanged(cb, id) {
+  const issued  = document.getElementById('msr-issued-date-' + id);
+  const saleDt  = document.getElementById('msr-sale-date-' + id);
+  if (!issued) return;
+  if (cb.checked) {
+    issued._flatpickr ? issued._flatpickr.setDate(saleDt?.value || '', false) : (issued.value = saleDt?.value || '');
+    issued.disabled = true;
+  } else { issued.disabled = false; }
+}
+
+// ── Sales log ─────────────────────────────────────────────────────────────────
+function _slSubcatOpts(product, selectedLabel) {
+  const opts = _salesSubcats.filter(s => s.active && (!product || s.scoring_category === product));
+  return '<option value="">— optional —</option>' + opts.map(s => {
+    const val = s.scoring_category + '|' + s.label;
+    return `<option value="${escHtml(val)}"${s.label === selectedLabel ? ' selected' : ''}>${escHtml(s.label)}</option>`;
+  }).join('');
+}
+function slUpdateSubcat(sel, h) {
+  const sub = document.getElementById('sl-subcat-' + h);
+  if (sub) sub.innerHTML = _slSubcatOpts(sel.value, '');
+}
+function slSaleDateChanged(input, h) {
+  const cb = document.getElementById('sl-auto-issued-' + h);
+  if (cb?.checked) {
+    const d = document.getElementById('sl-issued-date-' + h);
+    if (d) d._flatpickr ? d._flatpickr.setDate(input.value, false) : (d.value = input.value);
+  }
+}
+function slAutoIssuedChanged(cb, h) {
+  const issued = document.getElementById('sl-issued-date-' + h);
+  const sale   = document.getElementById('sl-sale-date-' + h);
+  if (!issued) return;
+  if (cb.checked) {
+    issued._flatpickr ? issued._flatpickr.setDate(sale?.value || '', false) : (issued.value = sale?.value || '');
+    issued.disabled = true;
+  } else { issued.disabled = false; }
+}
+function slToggleTeammate(cb, h) {
+  const row = document.getElementById('sl-teammate-row-' + h);
+  if (row) row.style.display = cb.checked ? '' : 'none';
+}
+function _buildSlEditForm(e) {
+  const h   = e.hash;
+  const ss  = msrSelectStyle();
+  const si  = msrInputStyle();
+  const lbl = (t) => `<label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">${t}</label>`;
+  const agentOpts = '<option value="">— Select —</option>' +
+    _agentRoster.filter(a => a.active !== false).map(a =>
+      `<option value="${escHtml(a.agent_id)}"${a.agent_id === e.agent_id ? ' selected' : ''}>${escHtml(a.name)}</option>`
+    ).join('');
+  const productOpts = '<option value="">— Select —</option>' +
+    activeCats().map(c => `<option value="${c.key}"${c.key === e.product ? ' selected' : ''}>${c.label}</option>`).join('');
+  const srcOpts = '<option value="">—</option>' +
+    LEAD_SOURCES.map(s => `<option value="${escHtml(s)}"${e.lead_source === s ? ' selected' : ''}>${escHtml(s)}</option>`).join('');
+  const autoChk = e.auto_issued ? ' checked' : '';
+  const splitChk = e.split_sale ? ' checked' : '';
+  const activeLocs = _salesLocations.filter(l => l.active !== false);
+  const existingLoc = e.location || '';
+  const locsForOpts = [...activeLocs.map(l => l.name)];
+  if (existingLoc && !locsForOpts.includes(existingLoc)) locsForOpts.push(existingLoc);
+  const locOpts = `<option value="">— optional —</option>` +
+    locsForOpts.map(n => `<option value="${escHtml(n)}"${n === existingLoc ? ' selected' : ''}>${escHtml(n)}</option>`).join('');
+  return `<div style="background:var(--deep);border-radius:8px;padding:.85rem;margin-top:.5rem;">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;margin-bottom:.75rem;">
+      <div>${lbl('AGENT')}<select id="sl-agent-${h}" style="${ss}">${agentOpts}</select></div>
+      <div>${lbl('PRODUCT')}<select id="sl-product-${h}" onchange="slUpdateSubcat(this,'${h}')" style="${ss}">${productOpts}</select></div>
+      <div>${lbl('SUBCATEGORY')}<select id="sl-subcat-${h}" style="${ss}">${_slSubcatOpts(e.product, e.subcategory)}</select></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:.75rem;margin-bottom:.75rem;align-items:end;">
+      <div>${lbl('SALE DATE')}<input id="sl-sale-date-${h}" type="text" placeholder="YYYY-MM-DD" value="${e.sale_date || ''}" style="${si}"></div>
+      <div>${lbl('ISSUED DATE')}<input id="sl-issued-date-${h}" type="text" placeholder="YYYY-MM-DD" value="${e.issued_date || ''}"${e.auto_issued ? ' disabled' : ''} style="${si}"></div>
+      <div style="display:flex;flex-direction:column;gap:4px;padding-bottom:2px;">
+        <label style="font-size:11px;color:var(--muted);">AUTO ISSUED</label>
+        <input id="sl-auto-issued-${h}" type="checkbox"${autoChk} onchange="slAutoIssuedChanged(this,'${h}')" style="width:18px;height:18px;margin-top:4px;">
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;gap:.75rem;margin-bottom:.75rem;">
+      <div>${lbl('CUSTOMER NAME')}<input id="sl-cust-${h}" type="text" value="${escHtml(e.customer_name || '')}" style="${si}"></div>
+      <div>${lbl('PREMIUM')}<input id="sl-prem-${h}" type="number" step="0.01" value="${e.written_premium || ''}" style="${si}"></div>
+      <div>${lbl('PERIOD')}<select id="sl-period-${h}" style="${ss}"><option value="">—</option><option value="6"${e.period==6?' selected':''}>6</option><option value="12"${e.period==12?' selected':''}>12</option></select></div>
+      <div>${lbl('LEAD SOURCE')}<select id="sl-source-${h}" style="${ss}">${srcOpts}</select></div>
+      <div>${lbl('LOCATION')}<select id="sl-location-${h}" style="${ss}">${locOpts}</select></div>
+    </div>
+    <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;">
+      <label style="font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer;">
+        <input id="sl-split-${h}" type="checkbox"${splitChk} onchange="slToggleTeammate(this,'${h}')"> Split Sale
+      </label>
+      <div id="sl-teammate-row-${h}" style="display:${e.split_sale ? '' : 'none'};flex:1;">
+        <input id="sl-teammate-${h}" type="text" value="${escHtml(e.teammate || '')}" placeholder="Teammate name" style="${si};max-width:200px;">
+      </div>
+      <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+        <div id="sl-msg-${h}" style="font-size:12px;display:none;"></div>
+        <button class="btn btn-primary" style="padding:4px 14px;font-size:12px;" onclick="saveSalesLogRow('${h}',this)">Save</button>
+        <button class="btn btn-secondary" style="padding:4px 10px;font-size:12px;" onclick="cancelSalesLogEdit('${h}')">Cancel</button>
+      </div>
+    </div>
+  </div>`;
+}
+function editSalesLogRow(h) {
+  const edit = document.getElementById('sl-edit-' + h);
+  if (!edit) return;
+  const wasHidden = edit.style.display === 'none';
+  edit.style.display = wasHidden ? '' : 'none';
+  if (wasHidden) {
+    const saleDateEl   = document.getElementById('sl-sale-date-' + h);
+    const issuedDateEl = document.getElementById('sl-issued-date-' + h);
+    if (saleDateEl && !saleDateEl._flatpickr) {
+      flatpickr(saleDateEl, { dateFormat: 'Y-m-d', allowInput: true,
+        onChange: (d, s) => slSaleDateChanged({ value: s }, h) });
+    }
+    if (issuedDateEl && !issuedDateEl._flatpickr) {
+      flatpickr(issuedDateEl, { dateFormat: 'Y-m-d', allowInput: true });
+    }
+  }
+}
+function cancelSalesLogEdit(h) {
+  const edit = document.getElementById('sl-edit-' + h);
+  if (edit) edit.style.display = 'none';
+}
+async function saveSalesLogRow(h, btn) {
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const subcatRaw  = document.getElementById('sl-subcat-' + h)?.value || '';
+    const subcategory = subcatRaw.includes('|') ? subcatRaw.split('|')[1] : null;
+    const body = {
+      hash:          h,
+      agent_id:      document.getElementById('sl-agent-' + h)?.value      || null,
+      product:       document.getElementById('sl-product-' + h)?.value     || null,
+      subcategory:   subcategory,
+      sale_date:     document.getElementById('sl-sale-date-' + h)?.value   || null,
+      issued_date:   document.getElementById('sl-issued-date-' + h)?.value || null,
+      auto_issued:   document.getElementById('sl-auto-issued-' + h)?.checked ?? null,
+      written_premium: document.getElementById('sl-prem-' + h)?.value      || null,
+      customer_name: document.getElementById('sl-cust-' + h)?.value        || null,
+      lead_source:   document.getElementById('sl-source-' + h)?.value      || null,
+      period:        document.getElementById('sl-period-' + h)?.value       || null,
+      split_sale:    document.getElementById('sl-split-' + h)?.checked      ?? null,
+      teammate:      document.getElementById('sl-teammate-' + h)?.value     || null,
+      location:      document.getElementById('sl-location-' + h)?.value     || null,
+    };
+    const r = await fetch('/api/sales', { method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (!r.ok) { showInlineMsg('sl-msg-' + h, d.error || 'Save failed', 'err'); return; }
+    await loadSalesLog(); // re-fetch so edited data reflects in _salesLogEntries
+  } catch(err) {
+    showInlineMsg('sl-msg-' + h, err.message, 'err');
+  } finally { btn.disabled = false; btn.textContent = 'Save'; }
+}
+async function deleteSalesLogRow(h, btn) {
+  if (btn.dataset.confirming !== 'yes') {
+    btn.dataset.confirming = 'yes'; btn.textContent = 'Confirm?';
+    setTimeout(() => { if (btn.dataset.confirming === 'yes') { btn.dataset.confirming = ''; btn.textContent = '✕'; } }, 3000);
+    return;
+  }
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/sales?hash=' + encodeURIComponent(h), { method: 'DELETE', headers: authHeaders() });
+    if (r.ok) { await loadSalesLog(); loadRaceData().catch(() => {}); }
+    else { const d = await r.json(); showInlineMsg('sl-msg-' + h, d.error || 'Delete failed', 'err'); btn.disabled = false; }
+  } catch(err) { btn.disabled = false; }
+}
+let _salesLogEntries = [];
+let _salesLogMonth   = new Date().getMonth() + 1;
+let _salesLogYear    = new Date().getFullYear();
+let _salesLogAllYear = false;
+
+function initSalesLogControls() {
+  const monthSel = document.getElementById('sl-month-sel');
+  const yearSel  = document.getElementById('sl-year-sel');
+  if (!monthSel || !yearSel || monthSel.options.length) return;
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  monthSel.innerHTML = MONTHS.map((m, i) => `<option value="${i+1}">${m}</option>`).join('');
+  const curYear = new Date().getFullYear();
+  yearSel.innerHTML = [curYear-2, curYear-1, curYear].map(y => `<option value="${y}">${y}</option>`).join('');
+  monthSel.value = _salesLogMonth;
+  yearSel.value  = _salesLogYear;
+}
+
+function onSalesLogMonthChange() {
+  _salesLogMonth = parseInt(document.getElementById('sl-month-sel')?.value) || _salesLogMonth;
+  _salesLogYear  = parseInt(document.getElementById('sl-year-sel')?.value)  || _salesLogYear;
+  loadSalesLog();
+}
+function onSalesLogFilterChange() { loadSalesLog(); }
+function onSalesLogAllYearChange() {
+  _salesLogAllYear = !!document.getElementById('sl-all-year')?.checked;
+  const monthSel = document.getElementById('sl-month-sel');
+  if (monthSel) monthSel.disabled = _salesLogAllYear;
+  // year change still meaningful so keep year selector enabled
+  _salesLogYear = parseInt(document.getElementById('sl-year-sel')?.value) || _salesLogYear;
+  loadSalesLog();
+}
+
+async function loadSalesLog() {
+  initSalesLogControls();
+  const list = document.getElementById('checklist-subs-list');
+  if (!list) return;
+  list.innerHTML = '<span style="color:var(--muted);font-size:13px;">Loading…</span>';
+  try {
+    const showUnissued = document.getElementById('sl-show-unissued')?.checked ? '1' : '0';
+    const showHidden   = document.getElementById('sl-show-hidden')?.checked   ? '1' : '0';
+    const params = new URLSearchParams({
+      month: _salesLogMonth, year: _salesLogYear,
+      includeUnissued: showUnissued, includeHidden: showHidden,
+      ...((_salesLogAllYear) ? { allYear: '1' } : {}),
+    });
+    const r = await fetch(`/api/sales?${params}`, { headers: authHeaders() });
+    const d = await r.json();
+    _salesLogEntries = d.entries || [];
+    renderSalesLog();
+  } catch(err) { list.innerHTML = `<span style="color:var(--danger);font-size:13px;">Error: ${err.message}</span>`; }
+}
+function filterSalesLog() { renderSalesLog(); }
+
+function _filteredSalesEntries() {
+  const q = (document.getElementById('sales-log-search')?.value || '').toLowerCase().trim();
+  if (!q) return _salesLogEntries;
+  return _salesLogEntries.filter(e => {
+    const agName = _agentRoster.find(a => a.agent_id === e.agent_id)?.name || e.agent_id || '';
+    return (e.customer_name || '').toLowerCase().includes(q)
+        || agName.toLowerCase().includes(q)
+        || (e.product || '').toLowerCase().includes(q)
+        || labelForCat(e.product).toLowerCase().includes(q)
+        || (e.subcategory || '').toLowerCase().includes(q);
+  });
+}
+
+function renderSalesLog() {
+  const list = document.getElementById('checklist-subs-list');
+  if (!list) return;
+  const entries = _filteredSalesEntries();
+  const q = (document.getElementById('sales-log-search')?.value || '').trim();
+
+  // Determine "in scope" boundary
+  const yearStr = String(_salesLogYear);
+  const fromDate = `${_salesLogYear}-${String(_salesLogMonth).padStart(2,'0')}-01`;
+  const lastDay  = new Date(_salesLogYear, _salesLogMonth, 0).getDate();
+  const toDate   = `${_salesLogYear}-${String(_salesLogMonth).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+  const inScope  = _salesLogAllYear
+    ? (e) => (e.sale_date || '').startsWith(yearStr + '-')
+    : (e) => e.sale_date >= fromDate && e.sale_date <= toDate;
+
+  const scopeEntries = entries.filter(inScope);
+  const crossEntries = entries.filter(e => !inScope(e));
+
+  const sortFn = (a, b) => {
+    const d = (a.issued_date ? 1 : 0) - (b.issued_date ? 1 : 0);
+    return d !== 0 ? d : (b.sale_date || '').localeCompare(a.sale_date || '');
+  };
+  scopeEntries.sort(sortFn);
+  crossEntries.sort((a, b) => (b.sale_date || '').localeCompare(a.sale_date || ''));
+
+  if (!scopeEntries.length && !crossEntries.length) {
+    list.innerHTML = `<span style="color:var(--muted);font-size:13px;">${q ? 'No matches.' : _salesLogAllYear ? 'No entries for this year.' : 'No entries for this month.'}</span>`;
+    return;
+  }
+
+  const canEdit = _isAdmin || !_isMember || ['captain', 'chief_officer'].includes(_memberRole);
+
+  const renderRow = (e) => {
+    const cat      = labelForCat(e.product);
+    const src      = e.source === 'checklist' ? '🔗' : '✏️';
+    const agName   = _agentRoster.find(a => a.agent_id === e.agent_id)?.name || e.agent_id || '—';
+    const premium  = e.written_premium ? '$' + Number(e.written_premium).toFixed(2) : '—';
+    const isHidden = !!e.hidden;
+    const isUnissued = !e.issued_date;
+
+    const issuedBadge = e.issued_date
+      ? `<span style="font-size:11px;font-weight:600;color:var(--accent2);background:rgba(0,200,120,.12);padding:1px 7px;border-radius:10px;white-space:nowrap;">Issued ✓</span>`
+      : isHidden
+        ? `<span style="font-size:11px;font-weight:600;color:var(--muted);background:rgba(150,150,150,.12);padding:1px 7px;border-radius:10px;white-space:nowrap;">Hidden</span>`
+        : `<span style="font-size:11px;font-weight:600;color:#f59e0b;background:rgba(245,158,11,.12);padding:1px 7px;border-radius:10px;white-space:nowrap;">Not Issued</span>`;
+
+    const hideBtn = (canEdit && isUnissued)
+      ? `<button onclick="toggleSalesLogHidden('${e.hash}',${!isHidden},this)" title="${isHidden ? 'Unhide' : 'Hide'}" style="background:none;border:1px solid var(--border);color:${isHidden ? 'var(--muted)' : '#f59e0b'};font-size:11px;padding:2px 7px;border-radius:5px;cursor:pointer;white-space:nowrap;">${isHidden ? 'Unhide' : 'Hide'}</button>`
+      : '';
+
+    const editBtn = canEdit
+      ? `<button onclick="editSalesLogRow('${e.hash}')" style="background:none;border:1px solid var(--border);color:var(--text);font-size:11px;padding:2px 8px;border-radius:5px;cursor:pointer;white-space:nowrap;">Edit</button>
+         <button onclick="deleteSalesLogRow('${e.hash}',this)" data-confirming="" style="background:none;border:1px solid var(--border);color:var(--danger);font-size:11px;padding:2px 8px;border-radius:5px;cursor:pointer;">✕</button>`
+      : '';
+    const editForm = canEdit ? `<div id="sl-edit-${e.hash}" style="display:none;">${_buildSlEditForm(e)}</div>` : '';
+
+    return `<div id="sl-row-${e.hash}" style="border-bottom:1px solid var(--border2);padding:7px 0;${isHidden ? 'opacity:.5;' : ''}">
+      <div style="display:grid;grid-template-columns:18px 82px 1fr 1fr 1fr 60px auto auto auto;gap:8px;align-items:center;">
+        <span style="font-size:14px;">${src}</span>
+        <span style="font-size:11px;color:var(--muted);">${e.sale_date || '—'}</span>
+        <span style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(agName)}</span>
+        <span style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(cat + (e.subcategory ? ' · ' + e.subcategory : '') + (e.location ? ' @ ' + e.location : ''))}">${escHtml(cat)}${e.subcategory ? '<br><span style="color:var(--muted);font-size:11px;">' + escHtml(e.subcategory) + '</span>' : ''}${e.location ? '<br><span style="color:var(--muted);font-size:11px;">📍 ' + escHtml(e.location) + '</span>' : ''}</span>
+        <span style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(e.customer_name || '—')}</span>
+        <span style="font-size:12px;color:var(--accent2);text-align:right;">${premium}</span>
+        ${issuedBadge}
+        <div style="display:flex;gap:4px;">${hideBtn}</div>
+        <div style="display:flex;gap:4px;">${editBtn}</div>
+      </div>
+      ${editForm}
+    </div>`;
+  };
+
+  let html = scopeEntries.length
+    ? scopeEntries.map(renderRow).join('')
+    : `<div style="font-size:13px;color:var(--muted);padding:4px 0 8px;">No entries for the selected ${_salesLogAllYear ? 'year' : 'month'}.</div>`;
+
+  if (crossEntries.length) {
+    const crossLabel = _salesLogAllYear ? 'Unissued · Prior Year' : 'Unissued · Other Months';
+    html += `<div style="margin:10px 0 6px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;border-top:1px solid var(--border2);padding-top:8px;">${crossLabel}</div>`;
+    html += crossEntries.map(renderRow).join('');
+  }
+  list.innerHTML = html;
+}
+
+function downloadSalesLogXlsx() {
+  const entries = _filteredSalesEntries();
+  if (!entries.length) return;
+  const rows = entries.map(e => ({
+    'Date':          e.sale_date     || '',
+    'Agent':         _agentRoster.find(a => a.agent_id === e.agent_id)?.name || e.agent_id || '',
+    'Product':       labelForCat(e.product),
+    'Subcategory':   e.subcategory   || '',
+    'Customer':      e.customer_name || '',
+    'Premium':       e.written_premium ? Number(e.written_premium).toFixed(2) : '',
+    'Lead Source':   e.lead_source   || '',
+    'Period':        e.period        || '',
+    'Issued Date':   e.issued_date   || '',
+    'Auto Issued':   e.auto_issued   ? 'Yes' : '',
+    'Split Sale':    e.split_sale    ? 'Yes' : '',
+    'Teammate':      e.teammate      || '',
+    'Location':      e.location      || '',
+    'Source':        e.source        || '',
+    'Hidden':        e.hidden        ? 'Yes' : '',
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Sales Log');
+  const filename = _salesLogAllYear
+    ? `sales-log-${_salesLogYear}.xlsx`
+    : `sales-log-${_salesLogYear}-${String(_salesLogMonth).padStart(2,'0')}.xlsx`;
+  XLSX.writeFile(wb, filename);
+}
+
+async function toggleSalesLogHidden(hash, makeHidden, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    const r = await fetch('/api/sales', {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hash, hidden: makeHidden }),
+    });
+    if (!r.ok) { const d = await r.json(); console.error('Hide toggle failed:', d.error); return; }
+    await loadSalesLog();
+  } catch(err) {
+    console.error('toggleSalesLogHidden error:', err);
+    if (btn) { btn.disabled = false; }
+  }
+}
+function loadChecklistSubmissions() { return loadSalesLog(); }
+
+// ── Public checklist screen ───────────────────────────────────────────────────
+let _clToken    = null;
+let _clAgents   = [];
+let _clFormCfg  = [];
+let _clSubcats  = [];
+let _clEmailCfg = {};
+let _clEmailPayload = null;
+
+async function loadChecklistScreen(token) {
+  _clToken = token;
+  showScreen('checklist');
+
+  // Set today as default submission date
+  const today = new Date().toISOString().slice(0, 10);
+  const subDt = document.getElementById('cl-sub-date');
+  if (subDt) subDt.value = today;
+
+  try {
+    const r = await fetch(`/api/checklist-form?token=${encodeURIComponent(token)}`);
+    const d = await r.json();
+    if (!r.ok) {
+      document.getElementById('cl-error').style.display = 'block';
+      document.getElementById('cl-error').textContent   = d.error || 'This link is invalid or the feature is not active.';
+      return;
+    }
+    _clAgents      = d.agents        || [];
+    _clFormCfg     = d.formConfig    || [];
+    _clSubcats     = d.subcategories || [];
+    _clEmailCfg    = d.emailConfig   || {};
+    _productTypes  = d.productTypes  || [];
+
+    // Branding
+    const headerEl = document.getElementById('cl-agency-name');
+    if (headerEl) headerEl.textContent = d.emailConfig?.agency_name || d.companyName || 'Checklist';
+
+    // Agent dropdown
+    const sel = document.getElementById('cl-salesperson');
+    if (sel) {
+      sel.innerHTML = '<option value="">— Select Agent —</option>' +
+        _clAgents.map(a => `<option value="${escHtml(a.agent_id)}">${escHtml(a.name)}</option>`).join('');
+    }
+
+    // Form checklist table
+    const formsDiv = document.getElementById('cl-forms-table');
+    if (formsDiv && _clFormCfg.length) {
+      formsDiv.innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr repeat(4,auto);gap:4px;font-size:11px;color:var(--muted);text-transform:uppercase;padding:0 4px;margin-bottom:6px;">
+          <div>Form</div><div style="text-align:center">Applied</div><div style="text-align:center">Submitted</div><div style="text-align:center">Notified</div><div style="text-align:center">N/A</div>
+        </div>` +
+        _clFormCfg.map(f => `
+          <div style="display:grid;grid-template-columns:1fr repeat(4,auto);gap:4px;align-items:center;padding:8px 4px;border-bottom:1px solid var(--border2);">
+            <div style="font-size:13px;">${escHtml(f.label)}</div>
+            <div style="text-align:center"><input type="checkbox" data-form="${escHtml(f.form_key)}" data-field="applied"></div>
+            <div style="text-align:center"><input type="checkbox" data-form="${escHtml(f.form_key)}" data-field="submitted"></div>
+            <div style="text-align:center"><input type="checkbox" data-form="${escHtml(f.form_key)}" data-field="notified"></div>
+            <div style="text-align:center"><input type="checkbox" data-form="${escHtml(f.form_key)}" data-field="na"></div>
+          </div>`).join('');
+    }
+
+    // Add one empty sale row
+    clAddSaleRow();
+  } catch(e) {
+    document.getElementById('cl-error').style.display = 'block';
+    document.getElementById('cl-error').textContent   = 'Failed to load checklist: ' + e.message;
+  }
+}
+
+function clSubcatOptsFor(cat) {
+  return '<option value="">— optional —</option>' +
+    _clSubcats.filter(s => s.scoring_category === cat).map(s =>
+      `<option value="${escHtml(s.label)}">${escHtml(s.label)}</option>`
+    ).join('');
+}
+
+let _clRowIdx = 0;
+function clAddSaleRow() {
+  const id = ++_clRowIdx;
+  const html = `<div class="cl-sale-row" id="clrow-${id}" style="background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:.85rem;margin-bottom:.75rem;">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem;">
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">PRODUCT</label>
+        <select class="clrow-product" onchange="clUpdateSubcat(this,${id})" style="${msrSelectStyle()}">
+          ${activeCats().map(c => `<option value="${c.key}">${c.label}</option>`).join('')}
+        </select>
+      </div>
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">SUBCATEGORY</label>
+        <select class="clrow-subcat" id="clrow-subcat-${id}" style="${msrSelectStyle()}">
+          ${clSubcatOptsFor('auto')}
+        </select>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:.75rem;margin-bottom:.75rem;">
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">PREMIUM</label>
+        <input class="clrow-prem" type="number" step="0.01" placeholder="0.00" style="${msrInputStyle()}"></div>
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">PERIOD (MO)</label>
+        <select class="clrow-period" style="${msrSelectStyle()}">
+          <option value="">—</option><option value="6">6</option><option value="12">12</option>
+        </select>
+      </div>
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">LEAD SOURCE</label>
+        <select class="clrow-source" style="${msrSelectStyle()}">
+          <option value="">—</option>
+          ${LEAD_SOURCES.map(s => `<option value="${escHtml(s)}">${escHtml(s)}</option>`).join('')}
+        </select>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;padding-top:14px;">
+        <label style="font-size:12px;display:flex;gap:5px;align-items:center;cursor:pointer;"><input class="clrow-issued" type="checkbox"> Auto Issued</label>
+        <label style="font-size:12px;display:flex;gap:5px;align-items:center;cursor:pointer;"><input class="clrow-split" type="checkbox" onchange="clToggleTeammate(this,${id})"> Split Sale</label>
+      </div>
+    </div>
+    <div id="clrow-teammate-${id}" style="display:none;margin-bottom:.5rem;">
+      <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">TEAMMATE</label>
+      <input class="clrow-teammate" type="text" placeholder="Teammate name" style="${msrInputStyle()};max-width:240px;">
+    </div>
+    <div style="text-align:right;">
+      <button class="btn btn-danger" style="padding:3px 10px;font-size:12px;" onclick="document.getElementById('clrow-${id}').remove()">Remove Row</button>
+    </div>
+  </div>`;
+  document.getElementById('cl-sales-rows').insertAdjacentHTML('beforeend', html);
+}
+
+function clUpdateSubcat(sel, id) {
+  const sub = document.getElementById(`clrow-subcat-${id}`);
+  if (sub) sub.innerHTML = clSubcatOptsFor(sel.value);
+}
+
+function clToggleTeammate(cb, id) {
+  const row = document.getElementById(`clrow-teammate-${id}`);
+  if (row) row.style.display = cb.checked ? '' : 'none';
+}
+
+async function clSubmit() {
+  const btn   = document.getElementById('cl-submit-btn');
+  const errEl = document.getElementById('cl-error');
+  errEl.style.display = 'none';
+  const custName = document.getElementById('cl-cust-name').value.trim();
+  const subDate  = document.getElementById('cl-sub-date').value;
+  if (!custName) { errEl.textContent = 'Customer name is required.'; errEl.style.display='block'; return; }
+  if (!subDate)  { errEl.textContent = 'Submission date is required.'; errEl.style.display='block'; return; }
+
+  // Collect form completions
+  const formCompletions = {};
+  document.querySelectorAll('#cl-forms-table input[type=checkbox]').forEach(cb => {
+    const form  = cb.dataset.form;
+    const field = cb.dataset.field;
+    if (!formCompletions[form]) formCompletions[form] = {};
+    formCompletions[form][field] = cb.checked;
+  });
+
+  // Collect sale rows
+  const salesRows = document.querySelectorAll('#cl-sales-rows .cl-sale-row');
+  const sales = [];
+  for (const row of salesRows) {
+    const product = row.querySelector('.clrow-product')?.value;
+    if (!product) continue;
+    const subcatRaw = row.querySelector('.clrow-subcat')?.value || '';
+    sales.push({
+      product,
+      subcategory: subcatRaw || null,
+      writtenPremium: row.querySelector('.clrow-prem')?.value  || null,
+      period:         row.querySelector('.clrow-period')?.value || null,
+      leadSource:     row.querySelector('.clrow-source')?.value || null,
+      autoIssued:     row.querySelector('.clrow-issued')?.checked ?? null,
+      splitSale:      row.querySelector('.clrow-split')?.checked  ?? null,
+      teammate:       row.querySelector('.clrow-teammate')?.value || null,
+    });
+  }
+
+  btn.disabled = true; btn.textContent = 'Submitting…';
+  try {
+    const r = await fetch('/api/checklist-form', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token:           _clToken,
+        subDate,
+        apptDate:        document.getElementById('cl-appt-date').value || null,
+        customerName:    custName,
+        salespersonId:   document.getElementById('cl-salesperson').value || null,
+        formCompletions,
+        sales,
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok) { errEl.textContent = d.error || 'Submission failed.'; errEl.style.display='block'; return; }
+    _clEmailPayload = d.emailPayload;
+    showChecklistEmailModal(d.emailPayload);
+  } catch(e) {
+    errEl.textContent = e.message; errEl.style.display='block';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Submit Checklist';
+  }
+}
+
+function buildEmailBody(payload) {
+  const p = payload;
+  const formLines = Object.entries(p.formCompletions || {}).map(([key, fields]) => {
+    const checks = Object.entries(fields).filter(([,v]) => v).map(([k]) => k.charAt(0).toUpperCase() + k.slice(1)).join(', ');
+    return `  ${key}: ${checks || 'none'}`;
+  }).join('\n');
+  const salesLines = (p.sales || []).map((s, i) => {
+    const cat = labelForCat(s.product);
+    return `  ${i+1}. ${cat}${s.subcategory ? ' — ' + s.subcategory : ''}${s.writtenPremium ? ' ($' + parseFloat(s.writtenPremium).toFixed(2) + ')' : ''}${s.autoIssued ? ' ✓ Auto Issued' : ''}${s.splitSale ? ' — Split w/ ' + (s.teammate || 'TBD') : ''}`;
+  }).join('\n');
+  return [
+    p.agencyName ? p.agencyName : '',
+    '',
+    p.greeting || '',
+    '',
+    `Date: ${p.subDate || '—'}`,
+    p.apptDate ? `Appointment: ${p.apptDate}` : '',
+    p.salespersonId ? `Agent: ${p.salespersonId}` : '',
+    '',
+    formLines ? 'Forms Completed:\n' + formLines : '',
+    '',
+    salesLines ? 'Products Sold:\n' + salesLines : '',
+    '',
+    p.footer || '',
+    '',
+    p.agentName  ? `Agent: ${p.agentName}` : '',
+    p.agentPhone ? `Phone: ${p.agentPhone}` : '',
+    p.agentEmail ? `Email: ${p.agentEmail}` : '',
+  ].filter(l => l !== null && l !== undefined).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function showChecklistEmailModal(payload) {
+  const modal = document.getElementById('cl-email-modal');
+  if (!modal) return;
+  document.getElementById('cl-email-subject').textContent = payload.subject || 'New Customer Checklist';
+  document.getElementById('cl-email-body').textContent    = buildEmailBody(payload);
+  modal.style.display = 'flex';
+}
+
+function clCopyEmail() {
+  const body = document.getElementById('cl-email-body').textContent;
+  navigator.clipboard.writeText(body).then(() => {
+    const msg = document.getElementById('cl-copy-msg');
+    if (msg) { msg.style.display='block'; setTimeout(() => msg.style.display='none', 2000); }
+  });
+}
+
+function clOpenMailto() {
+  const subj = encodeURIComponent(document.getElementById('cl-email-subject').textContent);
+  const body = encodeURIComponent(document.getElementById('cl-email-body').textContent);
+  window.open(`mailto:?subject=${subj}&body=${body}`, '_blank');
+}
+
+function clNewSubmission() {
+  document.getElementById('cl-email-modal').style.display = 'none';
+  document.getElementById('cl-cust-name').value  = '';
+  document.getElementById('cl-appt-date').value  = '';
+  document.getElementById('cl-sales-rows').innerHTML = '';
+  document.getElementById('cl-forms-table').querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
+  document.getElementById('cl-error').style.display = 'none';
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('cl-sub-date').value = today;
+  clAddSaleRow();
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function showInlineMsg(id, text, type='ok') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.display = 'block';
+  el.style.color   = type === 'ok' ? 'var(--accent2)' : 'var(--danger)';
+  el.textContent   = text;
+  setTimeout(() => { if (el) el.style.display = 'none'; }, 4000);
+}
+
+// ── Member Analysis — billing ─────────────────────────────────────────────────
+async function purchaseMemberAnalysis(btn) {
+  const countEl = document.getElementById('ma-seat-count-new');
+  const count = Math.max(1, parseInt(countEl?.value) || 1);
+  btn.disabled = true; btn.textContent = 'Redirecting…';
+  try {
+    const r = await fetch('/api/member-analysis-checkout', {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ count }),
+    });
+    const d = await r.json();
+    if (d.url) window.location.href = d.url;
+    else { showInlineMsg('ma-upsell-msg', d.error || 'Error', 'err'); btn.disabled = false; btn.textContent = 'Subscribe'; }
+  } catch(e) { showInlineMsg('ma-upsell-msg', e.message, 'err'); btn.disabled = false; btn.textContent = 'Subscribe'; }
+}
+
+async function updateMemberAnalysisCount(btn) {
+  const countEl = document.getElementById('ma-seat-count-update');
+  const count = Math.max(1, parseInt(countEl?.value) || 1);
+  btn.disabled = true; btn.textContent = 'Updating…';
+  try {
+    const r = await fetch('/api/member-analysis-checkout', {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'update', count }),
+    });
+    const d = await r.json();
+    if (r.ok) {
+      _memberAnalysisCount = count;
+      showInlineMsg('ma-update-msg', `Updated to ${count} seat${count !== 1 ? 's' : ''} ($${count * 10}/mo).`, 'ok');
+      document.getElementById('ma-active-price').textContent = `${count} seat${count !== 1 ? 's' : ''} · $${count * 10}/mo`;
+      renderMemberAnalysisAgentPicker();
+    } else {
+      showInlineMsg('ma-update-msg', d.error || 'Update failed', 'err');
+    }
+  } catch(e) { showInlineMsg('ma-update-msg', e.message, 'err'); }
+  btn.disabled = false; btn.textContent = 'Update';
+}
+
+async function cancelMemberAnalysis(btn) {
+  if (btn.dataset.confirming !== 'yes') {
+    btn.dataset.confirming = 'yes';
+    btn.textContent = 'Confirm Remove — click again to cancel';
+    setTimeout(() => { if (btn.dataset.confirming === 'yes') { btn.dataset.confirming = ''; btn.textContent = 'Remove Add-On'; } }, 5000);
+    return;
+  }
+  btn.disabled = true; btn.textContent = 'Removing…';
+  try {
+    const r = await fetch('/api/member-analysis-checkout', { method: 'DELETE', headers: authHeaders() });
+    const d = await r.json();
+    if (!r.ok) {
+      showInlineMsg('ma-cancel-msg', d.error || 'Error removing add-on', 'err');
+      btn.disabled = false; btn.textContent = 'Remove Add-On'; btn.dataset.confirming = '';
+      return;
+    }
+    _hasMemberAnalysis = false;
+    _memberAnalysisCount = 0;
+    await loadAccountTab();
+  } catch(e) { showInlineMsg('ma-cancel-msg', e.message, 'err'); btn.disabled = false; btn.textContent = 'Remove Add-On'; btn.dataset.confirming = ''; }
+}
+
+function renderMemberAnalysisSection(acct) {
+  const hasMa = acct.has_member_analysis || _hasMemberAnalysis || _isAdmin;
+  document.getElementById('member-analysis-upsell').style.display = hasMa ? 'none' : '';
+  document.getElementById('member-analysis-active').style.display = hasMa ? ''     : 'none';
+  if (hasMa) {
+    const count = acct.member_analysis_count || _memberAnalysisCount || 0;
+    const priceEl = document.getElementById('ma-active-price');
+    if (priceEl) priceEl.textContent = `${count} seat${count !== 1 ? 's' : ''} · $${count * 10}/mo`;
+    const updateEl = document.getElementById('ma-seat-count-update');
+    if (updateEl) updateEl.value = count;
+  }
+}
+
+// ── Member Analysis — agent picker ───────────────────────────────────────────
+function renderMemberAnalysisAgentPicker() {
+  const desc = document.getElementById('ma-agents-desc');
+  const container = document.getElementById('ma-agent-picker');
+  if (!container) return;
+  const count = _memberAnalysisCount || 0;
+  const isAdmin = _isAdmin;
+  if (desc) desc.textContent = `Select up to ${isAdmin ? 'unlimited' : count} agent${count !== 1 ? 's' : ''} for individual coaching analysis${count > 0 ? ` (${count} seat${count !== 1 ? 's' : ''} purchased)` : ''}.`;
+
+  // Source: agent_roster if has_sales_addon, else race_data
+  let agents = [];
+  if (_hasSalesAddon || _isAdmin) {
+    agents = _agentRoster.filter(a => a.agent_id && a.name).map(a => ({ id: a.agent_id, name: a.name }));
+  } else {
+    agents = (_raceData || []).filter(a => a.agent_id && a.name).map(a => ({ id: a.agent_id, name: a.name }));
+  }
+
+  const selectedIds = new Set((_memberAnalysisAgents || []).map(a => a.agent_id || a));
+
+  container.innerHTML = agents.map(ag => {
+    const checked = selectedIds.has(ag.id) ? 'checked' : '';
+    return `<label style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--card2);border:1px solid var(--border2);border-radius:8px;cursor:pointer;font-size:13px;">
+      <input type="checkbox" value="${escHtml(ag.id)}" data-name="${escHtml(ag.name)}" ${checked}
+             onchange="enforceMaLimit(this,${isAdmin ? 9999 : count})">
+      ${escHtml(ag.name)}
+    </label>`;
+  }).join('');
+
+  if (!agents.length) {
+    container.innerHTML = '<div style="font-size:13px;color:var(--muted);">No agents found. Add agents to the roster first.</div>';
+  }
+}
+
+function enforceMaLimit(cb, limit) {
+  const all = document.querySelectorAll('#ma-agent-picker input[type=checkbox]');
+  const checkedCount = Array.from(all).filter(c => c.checked).length;
+  if (checkedCount > limit) { cb.checked = false; }
+}
+
+async function saveMemberAnalysisAgents(btn) {
+  const all = document.querySelectorAll('#ma-agent-picker input[type=checkbox]:checked');
+  const agents = Array.from(all).map(cb => ({ agent_id: cb.value, name: cb.dataset.name }));
+  const limit = _memberAnalysisCount || 0;
+  if (!_isAdmin && agents.length > limit) {
+    showInlineMsg('ma-agents-msg', `Seat limit is ${limit}. Uncheck ${agents.length - limit} agent${agents.length - limit !== 1 ? 's' : ''}.`, 'err');
+    return;
+  }
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const r = await fetch('/api/member-analysis', {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agents }),
+    });
+    const d = await r.json();
+    if (r.ok) {
+      _memberAnalysisAgents = agents;
+      showInlineMsg('ma-agents-msg', 'Agent selection saved.', 'ok');
+    } else {
+      showInlineMsg('ma-agents-msg', d.error || 'Save failed', 'err');
+    }
+  } catch(e) { showInlineMsg('ma-agents-msg', e.message, 'err'); }
+  btn.disabled = false; btn.textContent = 'Save Selection';
+}
+
+// ── Member Analysis — analysis pane ──────────────────────────────────────────
+function showAnalysisSubTab(name, btn) {
+  document.getElementById('analysis-pane-trends').style.display  = name === 'trends'  ? '' : 'none';
+  document.getElementById('analysis-pane-members').style.display = name === 'members' ? '' : 'none';
+  document.querySelectorAll('#tab-analysis .acct-stab').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+}
+
+function maAnalysisRemainingMs() {
+  if (!_memberAnalysisAt) return 0;
+  return Math.max(0, new Date(_memberAnalysisAt).getTime() + ANALYSIS_COOLDOWN_MS - Date.now());
+}
+
+function updateMemberAnalysisBtn() {
+  const btn = document.getElementById('ma-refresh-btn');
+  if (!btn) return;
+  const hasMa = _hasMemberAnalysis || _isAdmin;
+  if (!hasMa) { btn.style.display = 'none'; return; }
+  btn.style.display = '';
+  const remaining = maAnalysisRemainingMs();
+  if (remaining > 0) {
+    const days = Math.floor(remaining / 86400000);
+    const hrs  = Math.floor((remaining % 86400000) / 3600000);
+    btn.disabled = true;
+    btn.textContent = days > 0 ? `Next in ${days}d ${hrs}h` : `Next in ${hrs}h`;
+    setTimeout(updateMemberAnalysisBtn, Math.min(remaining, 5 * 60 * 1000));
+  } else {
+    btn.disabled = false;
+    btn.textContent = 'Analyze';
+  }
+}
+
+function displayCachedMemberAnalysis() {
+  if (!(_hasMemberAnalysis || _isAdmin)) {
+    renderMemberAnalysisTeaser();
+    return;
+  }
+  const cached = _lsGet('br-member-analysis-' + _userId);
+  if (cached) {
+    try {
+      const data = JSON.parse(cached);
+      if (data.userId === _userId && data.agentSections) {
+        renderMemberAnalysisCards(data.agentSections, data.agentData, data.generatedAt);
+        return;
+      }
+    } catch(e) {}
+  }
+  if (!_memberAnalysisAt) return;
+  fetch('/api/member-analysis', { headers: authHeaders() })
+    .then(r => r.json())
+    .then(data => {
+      if (data.agentSections) {
+        renderMemberAnalysisCards(data.agentSections, data.agentData, data.generatedAt || data.cachedAt);
+        _lsSet('br-member-analysis-' + _userId, JSON.stringify({ userId: _userId, ...data }));
+      }
+    })
+    .catch(() => {});
+}
+
+async function runMemberAnalysis() {
+  if (_memberAnalysisLoading) return;
+  if (maAnalysisRemainingMs() > 0) return;
+  if (!(_hasMemberAnalysis || _isAdmin)) return;
+  if (!_memberAnalysisAgents?.length) {
+    const body = document.getElementById('ma-analysis-body');
+    if (body) body.innerHTML = '<div style="color:var(--danger);font-size:13px;">No agents selected. Go to Account → Sales → Team Member Analysis to choose agents.</div>';
+    return;
+  }
+  _memberAnalysisLoading = true;
+  const btn  = document.getElementById('ma-refresh-btn');
+  const body = document.getElementById('ma-analysis-body');
+  const msg  = document.getElementById('ma-analysis-msg');
+  if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
+  if (body) body.innerHTML = '<div style="color:var(--muted);font-size:13px;">Generating individual analysis…</div>';
+  if (msg) msg.style.display = 'none';
+  try {
+    const r = await fetch('/api/member-analysis', { headers: authHeaders() });
+    const data = await r.json();
+    if (!r.ok) {
+      if (body) body.innerHTML = `<div style="color:var(--danger);font-size:13px;">${data.error || 'Error loading analysis.'}</div>`;
+      return;
+    }
+    const nowIso = new Date().toISOString();
+    _memberAnalysisAt = data.generatedAt || nowIso;
+    _lsSet('br-member-analysis-' + _userId, JSON.stringify({ userId: _userId, ...data }));
+    renderMemberAnalysisCards(data.agentSections, data.agentData, data.generatedAt);
+    if (msg) {
+      msg.style.display = 'block';
+      msg.style.color = 'var(--muted)';
+      msg.textContent = `Generated ${new Date(_memberAnalysisAt).toLocaleString()}`;
+    }
+  } catch(e) {
+    if (body) body.innerHTML = `<div style="color:var(--danger);font-size:13px;">${e.message}</div>`;
+  } finally {
+    _memberAnalysisLoading = false;
+    updateMemberAnalysisBtn();
+  }
+}
+
+function renderMemberAnalysisTeaser() {
+  const body = document.getElementById('ma-analysis-body');
+  const btn  = document.getElementById('ma-refresh-btn');
+  if (btn) btn.style.display = 'none';
+  if (!body) return;
+  body.innerHTML = `
+    <div style="text-align:center;padding:2rem 1rem;">
+      <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:.75rem;">Team Member Analysis</div>
+      <p style="font-size:13px;color:var(--muted);max-width:440px;margin:0 auto 1.25rem;">
+        Get individual month-over-month coaching analysis for each of your team members —
+        trends, strengths, gaps, and group standings — refreshed every 5 days.
+      </p>
+      <button class="btn btn-primary" onclick="showAccountSubTab('billing',document.querySelector('[data-pane=billing]'));showTab('account',document.getElementById('accountTab'));">
+        Add Team Member Analysis — $10/head/mo
+      </button>
+    </div>`;
+}
+
+function renderMemberAnalysisCards(agentSections, agentData, generatedAt) {
+  const body = document.getElementById('ma-analysis-body');
+  if (!body) return;
+  if (!agentSections || !Object.keys(agentSections).length) {
+    body.innerHTML = '<div style="color:var(--muted);font-size:13px;">No analysis data. Click Analyze to generate.</div>';
+    return;
+  }
+
+  const fmtCur = n => n != null ? '$' + Math.round(n).toLocaleString() : null;
+  const rankBadge = (rank, total, label) => {
+    if (!rank) return '';
+    const color = rank === 1 ? 'var(--accent2)' : rank <= Math.ceil(total / 3) ? 'var(--accent)' : 'var(--muted)';
+    return `<span style="font-size:10px;font-weight:700;color:${color};background:${color}18;padding:2px 7px;border-radius:4px;margin-right:4px;">#${rank} ${label}</span>`;
+  };
+
+  const cards = Object.entries(agentSections).map(([name, text]) => {
+    const agId = agentData ? Object.keys(agentData).find(id => agentData[id]?.name === name) : null;
+    const ag = agId ? agentData[agId] : null;
+    const cur = ag?.current;
+    const teamColor = ag?.team === 'service' ? 'var(--accent2)' : 'var(--accent)';
+    const teamLabel = ag?.team || 'sales';
+
+    const statsLine = cur ? [
+      `${cur.placed} placed`,
+      `${cur.answered} answered`,
+      `${cur.talkMin}min talk`,
+      `${cur.policies} ${cur.policies === 1 ? 'policy' : 'policies'}`,
+      cur.premium ? fmtCur(cur.premium) + ' premium' : null,
+    ].filter(Boolean).join(' · ') : '';
+
+    const standings = cur ? [
+      rankBadge(ag.scoreRank, Object.keys(agentData).length, 'Score'),
+      rankBadge(ag.polRank,   Object.keys(agentData).length, 'Policies'),
+      ag.premRank ? rankBadge(ag.premRank, Object.keys(agentData).length, 'Premium') : '',
+    ].join('') : '';
+
+    const cardId = 'ma-card-' + escHtml(name).replace(/\s+/g, '-').toLowerCase();
+    const paragraphs = (text || '').split(/\n\n+/).filter(Boolean).map(p => `<p style="margin:0 0 .75em;font-size:13px;line-height:1.7;">${p.trim()}</p>`).join('');
+
+    return `<div style="border:1px solid var(--border2);border-radius:10px;margin-bottom:.75rem;overflow:hidden;">
+      <div style="padding:.85rem 1rem;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;background:var(--card2);" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'':'none';this.querySelector('.ma-chevron').textContent=this.nextElementSibling.style.display===''?'▲':'▼'">
+        <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;">
+          <span style="font-size:14px;font-weight:700;color:var(--text);">${escHtml(name)}</span>
+          <span style="font-size:10px;font-weight:700;text-transform:uppercase;color:${teamColor};background:${teamColor}18;padding:2px 7px;border-radius:4px;">${teamLabel}</span>
+          ${standings}
+        </div>
+        <div style="display:flex;align-items:center;gap:.75rem;">
+          <span style="font-size:12px;color:var(--muted);">${statsLine}</span>
+          <span class="ma-chevron" style="font-size:11px;color:var(--muted);">▼</span>
+        </div>
+      </div>
+      <div id="${cardId}" style="display:none;padding:1rem;background:var(--deep);">
+        ${paragraphs || '<p style="color:var(--muted);font-size:13px;">No analysis available.</p>'}
+      </div>
+    </div>`;
+  }).join('');
+
+  const genLabel = generatedAt ? `Generated ${new Date(generatedAt).toLocaleString()}` : '';
+  body.innerHTML = `
+    ${genLabel ? `<div style="font-size:11px;color:var(--muted);margin-bottom:1rem;">${genLabel}</div>` : ''}
+    ${cards}`;
+}
 </script>
 </body>
 </html>
