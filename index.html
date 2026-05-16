@@ -220,6 +220,13 @@
   .hist-rank-1{color:var(--gold);}
   .hist-rank-2{color:var(--silver);}
   .hist-rank-3{color:var(--bronze);}
+  /* HISTORY TILES */
+  .hist-month-tile{background:var(--card2);border:1px solid var(--border2);border-radius:12px;padding:1rem;cursor:pointer;transition:border-color .15s,background .15s;}
+  .hist-month-tile:hover{border-color:var(--accent);background:rgba(0,212,255,.04);}
+  .hist-month-tile.hist-tile-selected{border-color:var(--accent);}
+  .hist-pill{background:var(--card2);border:1px solid var(--border2);border-radius:20px;padding:4px 14px;font-size:12px;font-weight:600;cursor:pointer;transition:background .12s,border-color .12s;white-space:nowrap;}
+  .hist-pill:hover{border-color:var(--accent);}
+  .hist-pill.hist-pill-active{background:var(--accent);color:#000;border-color:var(--accent);}
 
   /* ACCOUNT TAB */
   .acct-section{margin-bottom:2rem;}
@@ -737,15 +744,32 @@
   <!-- ── TAB: HISTORY ── -->
   <div id="tab-history" style="display:none">
     <div class="panel">
-      <div class="panel-title">Historical Results</div>
-      <div style="overflow-x:auto;">
-        <table class="hist-tbl">
-          <thead><tr>
-            <th>Month</th><th>Rank</th><th>Agent</th><th>Team</th>
-            <th>Score</th><th>Gross</th><th>Deductions</th>
-          </tr></thead>
-          <tbody id="hist-body"></tbody>
-        </table>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.25rem;">
+        <div class="panel-title" style="margin:0">Historical Results</div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-secondary" id="hist-view-btn-annual" onclick="setHistView('annual',this)" style="font-size:12px;padding:5px 14px;">Annual</button>
+          <button class="btn btn-secondary" id="hist-view-btn-month" onclick="setHistView('month',this)" style="font-size:12px;padding:5px 14px;">Month</button>
+        </div>
+      </div>
+
+      <!-- Annual: grid of month tiles -->
+      <div id="hist-pane-annual">
+        <div id="hist-tiles-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:.875rem;"></div>
+      </div>
+
+      <!-- Month detail: pills + table -->
+      <div id="hist-pane-month" style="display:none">
+        <div id="hist-month-pills" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:1.1rem;"></div>
+        <div id="hist-month-heading" style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:.75rem;"></div>
+        <div style="overflow-x:auto;">
+          <table class="hist-tbl">
+            <thead><tr>
+              <th>Rank</th><th>Agent</th><th>Team</th>
+              <th>Score</th><th>Gross</th><th>Deductions</th><th>Policies</th>
+            </tr></thead>
+            <tbody id="hist-body"></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
@@ -2956,23 +2980,148 @@ function renderAnalysisCharts(data) {
   });
 }
 
+let _histByMonth       = {};   // month → [row, ...]
+let _histMonthOrder    = [];   // sorted newest→oldest
+let _histSelectedMonth = null;
+let _histView          = 'annual';
+
+const HIST_MONTH_ORDER = { Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12 };
+
 async function loadHistory() {
   try {
-  const hdrs = authHeaders();
-  const res  = await fetch('/api/history', { headers: hdrs });
-  if (!res.ok) return;
-  const data = await res.json();
-  const rows = Array.isArray(data) ? data.slice(1) : [];
-  const rankCls = ['hist-rank-1','hist-rank-2','hist-rank-3'];
-  document.getElementById('hist-body').innerHTML = rows.map(r =>
-    `<tr>
-      <td>${r[0]}</td>
-      <td class="${rankCls[(r[1]||99)-1]||''}">${r[1]}</td>
-      <td>${r[3]}</td><td>${r[4]}</td>
-      <td>${r[5]}</td><td>${r[6]}</td><td>${r[7]}</td>
-    </tr>`
-  ).join('') || '<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:20px">No history yet</td></tr>';
+    const res  = await fetch('/api/history', { headers: authHeaders() });
+    if (!res.ok) return;
+    const data = await res.json();
+
+    // Support both legacy array format and new object format
+    const rows = Array.isArray(data) ? data.slice(1).map(r => ({
+      month: r[0], rank: r[1], agent_id: r[2], name: r[3], team: r[4],
+      total_score: r[5], gross_score: r[6], deductions: r[7],
+      wl:0, ul:0, term:0, health:0, auto:0, fire:0, placed:0, answered:0, talk_min:0,
+    })) : (data.wins || []);
+
+    // Group by month
+    const byMonth = {};
+    for (const r of rows) {
+      if (!byMonth[r.month]) byMonth[r.month] = [];
+      byMonth[r.month].push(r);
+    }
+
+    _histByMonth = byMonth;
+    _histMonthOrder = Object.keys(byMonth).sort((a, b) => {
+      const [am, ay] = [HIST_MONTH_ORDER[a.split(' ')[0]], parseInt(a.split(' ')[1])];
+      const [bm, by] = [HIST_MONTH_ORDER[b.split(' ')[0]], parseInt(b.split(' ')[1])];
+      return ay !== by ? by - ay : bm - am;
+    });
+    _histSelectedMonth = _histMonthOrder[0] || null;
+
+    renderHistView();
   } catch(e) { console.error('loadHistory:', e); }
+}
+
+function setHistView(view, btn) {
+  _histView = view;
+  document.querySelectorAll('#tab-history .btn').forEach(b => {
+    b.style.background = ''; b.style.color = '';
+  });
+  if (btn) { btn.style.background = 'var(--accent)'; btn.style.color = '#000'; }
+  renderHistView();
+}
+
+function renderHistView() {
+  document.getElementById('hist-pane-annual').style.display = _histView === 'annual' ? '' : 'none';
+  document.getElementById('hist-pane-month').style.display  = _histView === 'month'  ? '' : 'none';
+
+  if (_histView === 'annual') renderHistTiles();
+  else                        renderHistMonthDetail();
+
+  // Reflect active view button
+  const annBtn = document.getElementById('hist-view-btn-annual');
+  const monBtn = document.getElementById('hist-view-btn-month');
+  if (annBtn) { annBtn.style.background = _histView === 'annual' ? 'var(--accent)' : ''; annBtn.style.color = _histView === 'annual' ? '#000' : ''; }
+  if (monBtn) { monBtn.style.background = _histView === 'month'  ? 'var(--accent)' : ''; monBtn.style.color = _histView === 'month'  ? '#000' : ''; }
+}
+
+function renderHistTiles() {
+  const grid = document.getElementById('hist-tiles-grid');
+  if (!grid) return;
+  if (!_histMonthOrder.length) {
+    grid.innerHTML = '<div style="color:var(--muted);font-size:13px;grid-column:1/-1;text-align:center;padding:2rem;">No history yet. Archive a month to get started.</div>';
+    return;
+  }
+  const rankEmoji = ['🥇','🥈','🥉'];
+  grid.innerHTML = _histMonthOrder.map(month => {
+    const rows     = _histByMonth[month] || [];
+    const sorted   = [...rows].sort((a, b) => (a.rank||99) - (b.rank||99));
+    const top3     = sorted.slice(0, 3);
+    const agents   = rows.length;
+    const policies = rows.reduce((s, r) => s + (r.wl||0)+(r.ul||0)+(r.term||0)+(r.health||0)+(r.auto||0)+(r.fire||0), 0);
+    const winner   = top3[0];
+    const teamColor = winner?.team === 'service' ? 'var(--accent2)' : 'var(--accent)';
+
+    const podium = top3.map((r, i) => {
+      const tc = r.team === 'service' ? 'var(--accent2)' : 'var(--accent)';
+      return `<div style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:3px;">
+        <span>${rankEmoji[i]}</span>
+        <span style="font-weight:600;color:var(--text);">${escHtml(r.name)}</span>
+        <span style="font-size:10px;color:${tc};font-weight:700;">${r.total_score ?? '—'}</span>
+      </div>`;
+    }).join('');
+
+    const statsLine = [
+      agents ? `${agents} agent${agents !== 1 ? 's' : ''}` : null,
+      policies ? `${policies} ${policies === 1 ? 'policy' : 'policies'}` : null,
+    ].filter(Boolean).join(' · ');
+
+    return `<div class="hist-month-tile" onclick="drillHistMonth('${escHtml(month)}')">
+      <div style="font-size:16px;font-weight:800;color:var(--text);margin-bottom:2px;">${escHtml(month)}</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:.75rem;">${statsLine}</div>
+      <div style="border-top:1px solid var(--border2);padding-top:.6rem;">${podium || '<div style="font-size:12px;color:var(--muted);">No entries</div>'}</div>
+    </div>`;
+  }).join('');
+}
+
+function drillHistMonth(month) {
+  _histSelectedMonth = month;
+  _histView = 'month';
+  renderHistView();
+}
+
+function renderHistMonthDetail() {
+  // Pills
+  const pillsEl = document.getElementById('hist-month-pills');
+  if (pillsEl) {
+    pillsEl.innerHTML = _histMonthOrder.map(m =>
+      `<button class="hist-pill${m === _histSelectedMonth ? ' hist-pill-active' : ''}"
+               onclick="selectHistMonth('${escHtml(m)}')">${escHtml(m)}</button>`
+    ).join('');
+  }
+
+  const heading = document.getElementById('hist-month-heading');
+  if (heading) heading.textContent = _histSelectedMonth || '';
+
+  const rows     = _histByMonth[_histSelectedMonth] || [];
+  const sorted   = [...rows].sort((a, b) => (a.rank||99) - (b.rank||99));
+  const rankCls  = ['hist-rank-1','hist-rank-2','hist-rank-3'];
+
+  document.getElementById('hist-body').innerHTML = sorted.map(r => {
+    const policies = (r.wl||0)+(r.ul||0)+(r.term||0)+(r.health||0)+(r.auto||0)+(r.fire||0);
+    const teamColor = r.team === 'service' ? 'var(--accent2)' : 'var(--accent)';
+    return `<tr>
+      <td class="${rankCls[(r.rank||99)-1]||''}" style="font-weight:700;">${r.rank ?? '—'}</td>
+      <td style="font-weight:600;">${escHtml(r.name || '')}</td>
+      <td><span style="font-size:10px;font-weight:700;color:${teamColor};background:${teamColor}18;padding:2px 7px;border-radius:4px;">${escHtml(r.team || '')}</span></td>
+      <td style="color:var(--accent);font-weight:700;">${r.total_score ?? '—'}</td>
+      <td>${r.gross_score ?? '—'}</td>
+      <td style="color:var(--danger);">${r.deductions ?? '—'}</td>
+      <td>${policies || '—'}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:20px">No data for this month</td></tr>';
+}
+
+function selectHistMonth(month) {
+  _histSelectedMonth = month;
+  renderHistMonthDetail();
 }
 
 // ── ACCOUNT TAB ───────────────────────────────────────────────────────────────
