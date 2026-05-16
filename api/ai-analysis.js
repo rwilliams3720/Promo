@@ -110,25 +110,28 @@ export default async function handler(req, res) {
       if (!agentMeta[r.agent_id]) agentMeta[r.agent_id] = { name: r.name, team: r.team };
     }
 
-    // Aggregate into monthly, weekly, agent, and rolling-90 buckets
-    // Seed monthly from historical_months (archived data that no longer exists in call_log)
+    // ── Data Aggregation ─────────────────────────────────────────────────────
+    // archived months come exclusively from histMonths; live call_log only fills
+    // the current (not-yet-archived) period — prevents double-counting.
     const monthly  = {};
     const weekly   = {};
     const agents   = {};
     const r90      = { p:0, a:0, tk:0, vm:0, ms:0 };
+    const archivedMonthKeys = new Set();
 
     const monthNameToNum = { Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11 };
-
-    // Full month names written by older versions of confirmArchive — normalize to abbreviated
     const FULL_TO_ABBR = {
       January:'Jan',February:'Feb',March:'Mar',April:'Apr',May:'May',June:'Jun',
       July:'Jul',August:'Aug',September:'Sep',October:'Oct',November:'Nov',December:'Dec',
     };
+
+    // Seed from archived historical_months — complete months, never overwritten by call_log
     for (const hm of (histMonths || [])) {
       const rawParts = hm.month.split(' ');
       const normMonth = (rawParts.length === 2 && FULL_TO_ABBR[rawParts[0]])
         ? FULL_TO_ABBR[rawParts[0]] + ' ' + rawParts[1]
         : hm.month;
+      archivedMonthKeys.add(normMonth);
       monthly[normMonth] = {
         placed:   hm.placed   || 0,
         answered: hm.answered || 0,
@@ -137,7 +140,6 @@ export default async function handler(req, res) {
         missed:   hm.missed   || 0,
         policies: hm.policies || 0,
       };
-      // Add historical months within the 90-day window to r90 rolling totals.
       const parts = normMonth.split(' ');
       if (parts.length === 2) {
         const mo = monthNameToNum[parts[0]];
@@ -155,13 +157,15 @@ export default async function handler(req, res) {
       }
     }
 
+    // Process live call_log — skip months already captured from historical_months
     for (const row of calls) {
       const dtStr = String(row.call_dt).includes('T') ? String(row.call_dt).split('T')[0] : String(row.call_dt);
       const d = new Date(dtStr + 'T12:00:00Z');
       if (isNaN(d.getTime())) continue;
       const monKey  = `${MONTH_ABBR[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
-      const wkKey   = isoWeek(d);
+      if (archivedMonthKeys.has(monKey)) continue;
 
+      const wkKey   = isoWeek(d);
       if (!monthly[monKey]) monthly[monKey] = { placed:0, answered:0, talkMin:0, voicemail:0, missed:0, policies:0 };
       if (!weekly[wkKey])   weekly[wkKey]   = { p:0, a:0, tk:0, vm:0, ms:0 };
       const m = monthly[monKey];
@@ -189,8 +193,10 @@ export default async function handler(req, res) {
       const d = new Date(dtStr + 'T12:00:00Z');
       if (isNaN(d.getTime())) continue;
       const monKey = `${MONTH_ABBR[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
-      if (!monthly[monKey]) monthly[monKey] = { placed:0, answered:0, talkMin:0, voicemail:0, missed:0, policies:0 };
-      monthly[monKey].policies++;
+      if (!archivedMonthKeys.has(monKey)) {
+        if (!monthly[monKey]) monthly[monKey] = { placed:0, answered:0, talkMin:0, voicemail:0, missed:0, policies:0 };
+        monthly[monKey].policies++;
+      }
     }
 
     const monthOrder = { Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12 };
@@ -214,13 +220,41 @@ export default async function handler(req, res) {
       policies:  monthly[mon].policies,
     }));
 
-    // Build current metric text for Claude
-    const monthlyText = sortedMonths.map(mon => {
+    // Current period pace and projection
+    const nowDate     = new Date();
+    const curKey      = `${MONTH_ABBR[nowDate.getUTCMonth()]} ${nowDate.getUTCFullYear()}`;
+    const curData     = monthly[curKey] || { placed:0, answered:0, talkMin:0, voicemail:0, missed:0, policies:0 };
+    const daysElapsed = nowDate.getUTCDate();
+    const daysInMonth = new Date(Date.UTC(nowDate.getUTCFullYear(), nowDate.getUTCMonth() + 1, 0)).getUTCDate();
+    const pctElapsed  = Math.round(daysElapsed / daysInMonth * 100);
+    const dailyPacePlaced   = daysElapsed > 0 ? curData.placed   / daysElapsed : 0;
+    const dailyPaceAnswered = daysElapsed > 0 ? curData.answered / daysElapsed : 0;
+    const projPlaced        = Math.round(dailyPacePlaced   * daysInMonth);
+    const projAnswered      = Math.round(dailyPaceAnswered * daysInMonth);
+
+    const completedSorted  = sortedMonths.filter(m => archivedMonthKeys.has(m));
+    const priorMonKey      = completedSorted[completedSorted.length - 1];
+    const priorMon         = priorMonKey ? monthly[priorMonKey] : null;
+    const pctOfPriorPlaced = priorMon && priorMon.placed > 0 ? Math.round(projPlaced / priorMon.placed * 100) : null;
+
+    // Completed months text (closed, final data)
+    const completedMonthlyText = completedSorted.map(mon => {
       const m = monthly[mon];
-      const inbound     = m.answered + m.voicemail + m.missed;
-      const handleRate  = inbound > 0 ? Math.round(m.answered/inbound*100) : 0;
-      return `${mon}: ${m.placed} placed, ${m.answered} answered (${handleRate}% handle rate), ${Math.round(m.talkMin)}min talk, ${m.voicemail} voicemails, ${m.missed} missed, ${m.policies} policies`;
+      const inbound    = m.answered + m.voicemail + m.missed;
+      const handleRate = inbound > 0 ? Math.round(m.answered / inbound * 100) : 0;
+      return `${mon} (complete): ${m.placed} placed, ${m.answered} answered (${handleRate}% handle rate), ${Math.round(m.talkMin)}min talk, ${m.voicemail} VM, ${m.missed} missed, ${m.policies} policies`;
     }).join('\n');
+
+    // Current period text with daily pace and projection
+    const curInbound    = curData.answered + curData.voicemail + curData.missed;
+    const curHandleRate = curInbound > 0 ? Math.round(curData.answered / curInbound * 100) : 0;
+    const curPeriodText = [
+      `${curKey} — day ${daysElapsed} of ${daysInMonth} (${pctElapsed}% of month elapsed)`,
+      `Raw to date: ${curData.placed} placed, ${curData.answered} answered (${curHandleRate}% handle rate), ${Math.round(curData.talkMin)}min talk, ${curData.voicemail} VM, ${curData.missed} missed, ${curData.policies} policies`,
+      `Daily pace: ${dailyPacePlaced.toFixed(1)} placed/day, ${dailyPaceAnswered.toFixed(1)} answered/day`,
+      `Projected full month at current pace: ~${projPlaced} placed, ~${projAnswered} answered`,
+      pctOfPriorPlaced !== null ? `Projection vs prior month (${priorMonKey}): ${pctOfPriorPlaced}% of ${priorMon.placed} placed` : '',
+    ].filter(Boolean).join('\n');
 
     const weeklyText = recentWeeks.map(wk => {
       const w = weekly[wk];
@@ -290,17 +324,20 @@ ${prevAgLines || 'none'}
 Prior AI assessment: ${prevNote}`;
     }
 
-    const dataRange = sortedMonths.length > 0
-      ? `${sortedMonths[0]} through ${sortedMonths[sortedMonths.length - 1]} (${sortedMonths.length} month${sortedMonths.length !== 1 ? 's' : ''})`
-      : 'no historical data';
+    const dataRange = completedSorted.length > 0
+      ? `${completedSorted[0]} through ${completedSorted[completedSorted.length - 1]} (${completedSorted.length} complete month${completedSorted.length !== 1 ? 's' : ''}) + ${curKey} in progress`
+      : `${curKey} in progress only — no archived months yet`;
 
     const company = acct.company_name || 'the team';
     const prompt = `You are a sales performance coach analyzing call center data for ${company}. Write in plain text — no markdown headers, no bullet points.
 
 DATA RANGE: ${dataRange}
 
-MONTHLY TREND (all available history, oldest to newest):
-${monthlyText || 'No data'}
+COMPLETED MONTHS — full data, oldest to newest (these months are closed and final):
+${completedMonthlyText || 'No completed months yet'}
+
+CURRENT PERIOD IN PROGRESS — partial month, do NOT compare raw numbers directly to completed months:
+${curPeriodText}
 
 WEEKLY TREND (last 8 weeks):
 ${weeklyText || 'No data'}
@@ -314,7 +351,7 @@ ${historyContext}
 
 Write exactly 5 paragraphs:
 
-1. TEAM TRENDS — Scan all available months and explicitly call out: (a) what is IMPROVING (rising placed/answered/policies, improving handle rate, falling VM/missed), (b) what is a CONCERN (declining volume, rising missed or voicemail, shrinking talk time), and (c) what to MONITOR (mixed or inconsistent signals). Name specific months and numbers.
+1. TEAM TRENDS — Scan all completed months and call out: (a) what is IMPROVING (rising placed/answered/policies, improving handle rate, falling VM/missed), (b) what is a CONCERN (declining volume, rising missed or voicemail, shrinking talk time), and (c) what to MONITOR (mixed or inconsistent signals). Name specific months and numbers. When referencing the current period (${curKey}), use the projected full-month figures, not raw-to-date numbers — clearly note it is a projection.
 
 2. INDIVIDUAL STANDOUTS — Using both current and archived months, name the top 2-3 performers. Call out specific month-over-month improvements by name and number (e.g. "Tracy grew from 31 placed in Mar to 44 in Apr"). How do they compare to the rest of the team?
 
@@ -371,11 +408,10 @@ async function handleEmailAnalysis(req, res, acct, userId) {
   const { Resend } = await import('resend');
   const resend = new Resend(process.env.RESEND_API_KEY);
 
-  if (!acct.ai_analysis_cache?.insights) {
+  const insights = acct.ai_analysis_cache?.insights || req.body?.insights;
+  if (!insights) {
     return res.status(400).json({ error: 'No analysis available to email. Run an analysis first.' });
   }
-
-  const insights  = acct.ai_analysis_cache.insights;
   const generatedAt = acct.ai_analysis_at
     ? new Date(acct.ai_analysis_at).toLocaleString('en-US', { month:'long', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' })
     : 'recently';

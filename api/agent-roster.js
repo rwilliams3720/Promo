@@ -1,0 +1,79 @@
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+
+function slugify(name) {
+  return String(name).toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'').replace(/^_+|_+$/g,'');
+}
+
+export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
+  if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
+
+  const { data: acct } = await supabase.from('accounts').select('user_id').eq('user_id', user.id).single();
+  if (!acct) return res.status(403).json({ error: 'Owner access required' });
+
+  const userId = user.id;
+
+  if (req.method === 'GET') {
+    const { data, error } = await supabase
+      .from('agent_roster')
+      .select('id, agent_id, name, active, created_at')
+      .eq('user_id', userId)
+      .order('name');
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json(data || []);
+  }
+
+  if (req.method === 'POST') {
+    const { name } = req.body || {};
+    if (!name) return res.status(400).json({ error: 'name required' });
+    const agent_id = slugify(name);
+    if (!agent_id) return res.status(400).json({ error: 'Invalid name' });
+    const { data, error } = await supabase
+      .from('agent_roster')
+      .insert({ user_id: userId, agent_id, name })
+      .select('id, agent_id, name, active, created_at')
+      .single();
+    if (error) {
+      if (error.code === '23505') return res.status(409).json({ error: 'Agent already exists' });
+      return res.status(500).json({ error: error.message });
+    }
+    return res.status(200).json(data);
+  }
+
+  if (req.method === 'PATCH') {
+    const { id, name, active } = req.body || {};
+    if (!id) return res.status(400).json({ error: 'id required' });
+    const update = {};
+    if (name !== undefined) update.name = name;
+    if (active !== undefined) update.active = active;
+    const { error } = await supabase
+      .from('agent_roster')
+      .update(update)
+      .eq('user_id', userId)
+      .eq('id', id);
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ ok: true });
+  }
+
+  if (req.method === 'DELETE') {
+    const { id } = req.query;
+    if (!id) return res.status(400).json({ error: 'id required' });
+    const { error } = await supabase
+      .from('agent_roster')
+      .delete()
+      .eq('user_id', userId)
+      .eq('id', id);
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ ok: true });
+  }
+
+  return res.status(405).json({ error: 'Method not allowed' });
+}

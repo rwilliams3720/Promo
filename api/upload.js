@@ -207,6 +207,13 @@ async function processCallUpload(rows, userId) {
   const { error: seedErr } = await ensureRaceDataRows(userId, classified.discoveredAgents);
   if (seedErr) return { success: false, error: 'race_data seed failed: ' + seedErr.message };
 
+  if (Object.keys(classified.discoveredAgents).length) {
+    const rosterRows = Object.entries(classified.discoveredAgents).map(([id, name]) => ({
+      user_id: userId, agent_id: id, name,
+    }));
+    await supabase.from('agent_roster').upsert(rosterRows, { onConflict: 'user_id,agent_id', ignoreDuplicates: true });
+  }
+
   // Fetch race_data for agentMeta (name/team) after seeding
   const { data: raceRows } = await supabase.from('race_data').select('agent_id,name,team').eq('user_id', userId);
   const agentMeta = {};
@@ -348,6 +355,13 @@ async function processSalesUpload(rows, userId, columnMap) {
   // Seed race_data rows for newly discovered agents before updating
   const { error: sSeedErr } = await ensureRaceDataRows(userId, classified.discoveredAgents);
   if (sSeedErr) return { success: false, error: 'race_data seed failed: ' + sSeedErr.message };
+
+  if (Object.keys(classified.discoveredAgents).length) {
+    const rosterRows = Object.entries(classified.discoveredAgents).map(([id, name]) => ({
+      user_id: userId, agent_id: id, name,
+    }));
+    await supabase.from('agent_roster').upsert(rosterRows, { onConflict: 'user_id,agent_id', ignoreDuplicates: true });
+  }
 
   const allSales = await fetchAllPages(supabase, 'sales_log', 'agent_id,product', userId);
   const allSalesRows = allSales.map(r => ['', r.agent_id || 'skip', r.product || 'other', '', '']);

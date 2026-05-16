@@ -10,6 +10,14 @@ const PLAN_BY_PRICE = {
   [process.env.STRIPE_PRICE_PREMIUM]: 'premium',
 };
 
+// Returns 'plan'|'sales_addon'|'unknown'
+function subType(sub) {
+  const priceId = sub?.items?.data?.[0]?.price?.id;
+  if (PLAN_BY_PRICE[priceId]) return 'plan';
+  if (priceId && priceId === process.env.STRIPE_PRICE_SALES_ADDON) return 'sales_addon';
+  return 'unknown';
+}
+
 export const config = { api: { bodyParser: false } };
 
 async function getRawBody(req) {
@@ -42,63 +50,92 @@ export default async function handler(req, res) {
         const userId  = session.client_reference_id;
         if (!userId) break;
         const sub = await stripe.subscriptions.retrieve(session.subscription);
-        const priceId = sub.items.data[0]?.price?.id;
-        const plan    = PLAN_BY_PRICE[priceId] || 'basic';
-        const paidThrough = new Date(sub.current_period_end * 1000).toISOString();
-        await supabase.from('accounts').update({
-          status:             'paid',
-          plan,
-          stripe_customer_id: session.customer,
-          paid_through:       paidThrough,
-        }).eq('user_id', userId);
+        const type = subType(sub);
+        if (type === 'plan') {
+          const priceId    = sub.items.data[0]?.price?.id;
+          const plan       = PLAN_BY_PRICE[priceId] || 'basic';
+          const paidThrough = new Date(sub.current_period_end * 1000).toISOString();
+          await supabase.from('accounts').update({
+            status: 'paid', plan,
+            stripe_customer_id: session.customer,
+            paid_through: paidThrough,
+          }).eq('user_id', userId);
+        } else if (type === 'sales_addon') {
+          await supabase.from('accounts').update({
+            has_sales_addon:    true,
+            stripe_customer_id: session.customer,
+          }).eq('user_id', userId);
+        }
         break;
       }
 
       case 'invoice.payment_succeeded': {
-        const invoice = event.data.object;
+        const invoice    = event.data.object;
         const customerId = invoice.customer;
         if (!invoice.subscription) break;
-        const sub = await stripe.subscriptions.retrieve(invoice.subscription);
-        const priceId    = sub.items.data[0]?.price?.id;
-        const plan       = PLAN_BY_PRICE[priceId] || 'basic';
-        const paidThrough = new Date(sub.current_period_end * 1000).toISOString();
-        await supabase.from('accounts').update({
-          status: 'paid',
-          plan,
-          paid_through: paidThrough,
-        }).eq('stripe_customer_id', customerId);
+        const sub  = await stripe.subscriptions.retrieve(invoice.subscription);
+        const type = subType(sub);
+        if (type === 'plan') {
+          const priceId    = sub.items.data[0]?.price?.id;
+          const plan       = PLAN_BY_PRICE[priceId] || 'basic';
+          const paidThrough = new Date(sub.current_period_end * 1000).toISOString();
+          await supabase.from('accounts').update({ status: 'paid', plan, paid_through: paidThrough })
+            .eq('stripe_customer_id', customerId);
+        } else if (type === 'sales_addon') {
+          await supabase.from('accounts').update({ has_sales_addon: true })
+            .eq('stripe_customer_id', customerId);
+        }
         break;
       }
 
       case 'invoice.payment_failed': {
-        const customerId = event.data.object.customer;
-        await supabase.from('accounts')
-          .update({ status: 'past_due' })
-          .eq('stripe_customer_id', customerId);
+        const invoice    = event.data.object;
+        const customerId = invoice.customer;
+        if (!invoice.subscription) break;
+        const sub  = await stripe.subscriptions.retrieve(invoice.subscription);
+        const type = subType(sub);
+        if (type === 'plan') {
+          await supabase.from('accounts').update({ status: 'past_due' }).eq('stripe_customer_id', customerId);
+        }
+        // Add-on payment failures don't alter account status — agent keeps access until subscription cancels
         break;
       }
 
       case 'customer.subscription.updated': {
         const sub        = event.data.object;
         const customerId = sub.customer;
-        const priceId    = sub.items.data[0]?.price?.id;
-        const plan       = PLAN_BY_PRICE[priceId] || 'basic';
-        const paidThrough = new Date(sub.current_period_end * 1000).toISOString();
-        const status = sub.status === 'active' ? 'paid'
-                     : sub.status === 'past_due' ? 'past_due'
-                     : 'deferred';
-        await supabase.from('accounts').update({ status, plan, paid_through: paidThrough })
-          .eq('stripe_customer_id', customerId);
+        const type       = subType(sub);
+        if (type === 'plan') {
+          const priceId    = sub.items.data[0]?.price?.id;
+          const plan       = PLAN_BY_PRICE[priceId] || 'basic';
+          const paidThrough = new Date(sub.current_period_end * 1000).toISOString();
+          const status = sub.status === 'active'   ? 'paid'
+                       : sub.status === 'past_due' ? 'past_due'
+                       : 'deferred';
+          await supabase.from('accounts').update({ status, plan, paid_through: paidThrough })
+            .eq('stripe_customer_id', customerId);
+        } else if (type === 'sales_addon') {
+          const isActive = sub.status === 'active';
+          await supabase.from('accounts').update({ has_sales_addon: isActive })
+            .eq('stripe_customer_id', customerId);
+        }
         break;
       }
 
       case 'customer.subscription.deleted': {
-        const customerId = event.data.object.customer;
-        // Don't override 'deferred' — admin set it intentionally to preserve access after cancel
-        await supabase.from('accounts')
-          .update({ status: 'cancelled' })
-          .eq('stripe_customer_id', customerId)
-          .neq('status', 'deferred');
+        const sub        = event.data.object;
+        const customerId = sub.customer;
+        const type       = subType(sub);
+        if (type === 'sales_addon') {
+          await supabase.from('accounts').update({ has_sales_addon: false })
+            .eq('stripe_customer_id', customerId);
+        } else if (type === 'plan') {
+          // Don't override 'deferred' — admin set it intentionally to preserve access after cancel
+          await supabase.from('accounts')
+            .update({ status: 'cancelled' })
+            .eq('stripe_customer_id', customerId)
+            .neq('status', 'deferred');
+        }
         break;
       }
     }

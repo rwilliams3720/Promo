@@ -11,6 +11,10 @@ async function deleteUserData(targetId) {
     supabase.from('historical_months').delete().eq('user_id', targetId),
     supabase.from('race_config').delete().eq('user_id', targetId),
     supabase.from('scoring_config').delete().eq('user_id', targetId),
+    supabase.from('checklist_submissions').delete().eq('user_id', targetId),
+    supabase.from('checklist_config').delete().eq('user_id', targetId),
+    supabase.from('sales_subcategories').delete().eq('user_id', targetId),
+    supabase.from('agent_roster').delete().eq('user_id', targetId),
   ]);
   await supabase.from('race_data').delete().eq('user_id', targetId);
   await supabase.from('accounts').delete().eq('user_id', targetId);

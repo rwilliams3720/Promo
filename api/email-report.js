@@ -141,8 +141,9 @@ async function buildReport(userId, dateStr, dateLabel, acct) {
   const mtdStart = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`;
   const ytdStart = `${d.getUTCFullYear()}-01-01`;
 
-  // Fetch race_data for live team assignments alongside all data queries
-  const [callsRes, salesRes, mtdSalesRes, ytdSalesRes, raceRes] = await Promise.all([
+  // Fetch race_data for live team assignments alongside all data queries.
+  // Also fetch agent_roster so manual-entry agents with no call uploads still appear.
+  const [callsRes, salesRes, mtdSalesRes, ytdSalesRes, raceRes, rosterRes] = await Promise.all([
     supabase.from('call_log')
       .select('agent_id,disposition,talk_secs')
       .eq('user_id', userId).eq('call_dt', dateStr)
@@ -159,15 +160,36 @@ async function buildReport(userId, dateStr, dateLabel, acct) {
           .eq('user_id', userId).gte('sale_date', ytdStart).lte('sale_date', dateStr)
       : Promise.resolve({ data: null }),
     supabase.from('race_data').select('agent_id,name,team').eq('user_id', userId),
+    supabase.from('agent_roster').select('agent_id,name').eq('user_id', userId).eq('active', true),
   ]);
 
   const calls = callsRes.data;
   const sales = salesRes.data;
 
-  // Build agent info from live race_data — source of truth for name and team
+  // Build agent info from race_data (source of truth for name + team when available)
   const agentInfo = {};
   for (const row of (raceRes.data || [])) {
     agentInfo[row.agent_id] = { name: row.name, team: row.team };
+  }
+
+  // Backfill agents from agent_roster who have sales but no race_data row yet.
+  // This covers manual-entry and checklist mode where agents may have sales but no
+  // call uploads (which normally create race_data rows).
+  const rosterNameMap = {};
+  for (const r of (rosterRes.data || [])) rosterNameMap[r.agent_id] = r.name;
+
+  const allSaleRows = [
+    ...(salesRes.data    || []),
+    ...(mtdSalesRes.data || []),
+    ...(ytdSalesRes.data || []),
+  ];
+  for (const row of allSaleRows) {
+    if (row.agent_id && !agentInfo[row.agent_id]) {
+      agentInfo[row.agent_id] = {
+        name: rosterNameMap[row.agent_id] || row.agent_id,
+        team: 'sales',
+      };
+    }
   }
 
   const hasData = (calls?.length || 0) > 0 || (sales?.length || 0) > 0;
@@ -178,7 +200,8 @@ async function buildReport(userId, dateStr, dateLabel, acct) {
   let totalCalls = 0, totalAnswered = 0, totalTalkSecs = 0, totalVoicemails = 0;
   for (const row of (calls || [])) {
     if (row.disposition === 'voicemail') { totalVoicemails++; continue; }
-    if (!row.agent_id || !callStats[row.agent_id]) continue;
+    if (!row.agent_id) continue;
+    if (!callStats[row.agent_id]) callStats[row.agent_id] = { placed: 0, answered: 0, talkSecs: 0 };
     const s = callStats[row.agent_id];
     if (row.disposition === 'placed')   { s.placed++;  totalCalls++; }
     if (row.disposition === 'answered') { s.answered++; totalAnswered++; }
@@ -191,7 +214,8 @@ async function buildReport(userId, dateStr, dateLabel, acct) {
   for (const id of Object.keys(agentInfo)) salesStats[id] = {};
   let totalPolicies = 0;
   for (const row of (sales || [])) {
-    if (!row.agent_id || !salesStats[row.agent_id]) continue;
+    if (!row.agent_id) continue;
+    if (!salesStats[row.agent_id]) salesStats[row.agent_id] = {};
     salesStats[row.agent_id][row.product] = (salesStats[row.agent_id][row.product] || 0) + 1;
     totalPolicies++;
   }
