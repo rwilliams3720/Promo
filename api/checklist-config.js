@@ -110,14 +110,44 @@ export default async function handler(req, res) {
       formConfig = rows;
     }
 
-    // Seed subcategories on first access
+    // Fetch admin account once for defaults (skip if current user is admin)
+    let adminDefaults = null;
+    const needsAdminDefaults = !acct.is_admin && (!subcategories.length || !acct.sales_product_types || !lsRow?.lead_sources);
+    if (needsAdminDefaults) {
+      const { data: adminAcct } = await supabase.from('accounts')
+        .select('user_id, sales_product_types, lead_sources')
+        .eq('is_admin', true).limit(1).single();
+      adminDefaults = adminAcct || null;
+    }
+
+    // Seed subcategories on first access — prefer admin account's subcategories as defaults
     if (!subcategories.length) {
-      const rows = DEFAULT_SUBCATEGORIES.map(s => ({ ...s, user_id: user.id }));
-      await supabase.from('sales_subcategories').insert(rows);
-      subcategories = rows.map((r, i) => ({ ...r, id: `seeded-${i}` }));
-      // Re-fetch to get actual IDs
+      let seedRows;
+      if (adminDefaults?.user_id) {
+        const { data: adminSubs } = await supabase.from('sales_subcategories')
+          .select('scoring_category, label, is_financial_service, active, sort_order')
+          .eq('user_id', adminDefaults.user_id)
+          .order('scoring_category').order('sort_order');
+        if (adminSubs?.length) {
+          seedRows = adminSubs.map(s => ({ ...s, user_id: user.id, is_default: false }));
+        }
+      }
+      if (!seedRows) {
+        seedRows = DEFAULT_SUBCATEGORIES.map(s => ({ ...s, user_id: user.id }));
+      }
+      await supabase.from('sales_subcategories').insert(seedRows);
       const { data: fresh } = await supabase.from('sales_subcategories').select('*').eq('user_id', user.id).order('scoring_category').order('sort_order');
-      subcategories = fresh || subcategories;
+      subcategories = fresh || seedRows;
+    }
+
+    // Default product types — prefer admin account's if user hasn't customized
+    let productTypes = acct.sales_product_types || adminDefaults?.sales_product_types || DEFAULT_PRODUCT_TYPES;
+
+    // Default lead sources — seed from admin account on first access
+    let leadSources = lsRow?.lead_sources ?? null;
+    if (!leadSources && adminDefaults?.lead_sources) {
+      leadSources = adminDefaults.lead_sources;
+      await supabase.from('accounts').update({ lead_sources: leadSources }).eq('user_id', user.id);
     }
 
     const emailCfg = acct.checklist_email_config || {
@@ -136,8 +166,8 @@ export default async function handler(req, res) {
       emailConfig: emailCfg,
       agents: agentData || [],
       locations: locationData || [],
-      productTypes: acct.sales_product_types || DEFAULT_PRODUCT_TYPES,
-      leadSources: lsRow?.lead_sources ?? null,
+      productTypes,
+      leadSources,
     });
   }
 
@@ -201,7 +231,7 @@ export default async function handler(req, res) {
 
     // Email template update
     if (emailConfig) {
-      const allowed = ['subject','agency_name','agent_name','agent_phone','agent_email','brand_color','greeting','footer','internal_email','penalty_warning','form_items','required_fields'];
+      const allowed = ['subject','agency_name','agent_name','agent_phone','agent_email','brand_color','greeting','footer','internal_email','penalty_warning','form_items','required_fields','body_para1','body_para1_enabled','body_para2','body_para2_enabled','important_enabled','important_title','important_body','resources_enabled','resources_title','resources_links','thank_you','thank_you_enabled'];
       const { data: acctRow } = await supabase.from('accounts').select('checklist_email_config').eq('user_id', user.id).single();
       const cfg = { ...(acctRow?.checklist_email_config || {}) };
       for (const k of allowed) if (emailConfig[k] !== undefined) cfg[k] = emailConfig[k];

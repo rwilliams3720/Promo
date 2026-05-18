@@ -91,6 +91,7 @@
     .feat-badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; margin-top: 12px; transition: opacity .25s; }
     .badge-pro { background: rgba(0,212,255,.12); color: var(--accent); }
     .badge-premium { background: rgba(255,209,102,.12); color: var(--warn); }
+    .badge-addon { background: rgba(0,255,148,.1); color: var(--accent2); }
     /* hover preview */
     .feat-preview { position: absolute; inset: 0; padding: 20px 20px 18px; background: var(--card2); border-radius: 14px; opacity: 0; transform: translateY(6px); transition: opacity .25s, transform .25s; pointer-events: none; display: flex; flex-direction: column; justify-content: center; }
     .feat-card:hover .feat-desc { opacity: 0; transform: translateY(-4px); }
@@ -156,6 +157,22 @@
     .stat-num { font-family: 'Bebas Neue', sans-serif; font-size: 2.8rem; color: var(--accent); letter-spacing: .04em; }
     .stat-lbl { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-top: 2px; }
 
+    /* ── ADD-ONS ── */
+    .addons-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-top: 36px; max-width: 900px; }
+    .addon-card {
+      background: var(--card2); border: 1px solid rgba(0,255,148,.2); border-radius: 16px; padding: 28px;
+      display: flex; flex-direction: column;
+    }
+    .addon-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+    .addon-name { font-family: 'Bebas Neue', sans-serif; font-size: 1.5rem; letter-spacing: .04em; }
+    .addon-price { font-size: 1.3rem; font-weight: 700; color: var(--accent2); line-height: 1.2; text-align: right; }
+    .addon-price span { display: block; font-size: 11px; font-weight: 400; color: var(--muted); }
+    .addon-desc { font-size: 13px; color: var(--muted); margin-bottom: 18px; line-height: 1.6; }
+    .addon-features { list-style: none; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+    .addon-features li { font-size: 13px; display: flex; align-items: flex-start; gap: 8px; }
+    .addon-features li::before { content: '✓'; color: var(--accent2); font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+    .addon-note { font-size: 11px; color: var(--muted); margin-top: 14px; font-style: italic; }
+
     /* ── CTA BAND ── */
     .cta-band {
       text-align: center; padding: 90px 5%;
@@ -204,7 +221,7 @@
     .faq-chevron { font-size: 18px; color: var(--muted); transition: transform .25s; flex-shrink: 0; }
     .faq-item.open .faq-chevron { transform: rotate(180deg); color: var(--accent); }
     .faq-a { font-size: 14px; color: var(--muted); line-height: 1.7; padding: 0 24px; max-height: 0; overflow: hidden; transition: max-height .3s ease, padding .3s ease; }
-    .faq-item.open .faq-a { max-height: 300px; padding: 0 24px 20px; }
+    .faq-item.open .faq-a { max-height: 600px; padding: 0 24px 20px; }
 
     @media (max-width: 600px) {
       .nav-links { gap: 12px; }
@@ -221,8 +238,9 @@
   <div class="nav-logo">BOAT <span>RACE</span></div>
   <div class="nav-links">
     <a href="#features">Features</a>
-    <a href="#faq">FAQ</a>
     <a href="#pricing">Pricing</a>
+    <a href="#addons">Add-Ons</a>
+    <a href="#faq">FAQ</a>
     <a href="/app" class="btn btn-outline">Sign In</a>
     <a href="/app?signup=true" class="btn btn-primary">Get Started</a>
   </div>
@@ -378,6 +396,32 @@
         </div>
       </div>
     </div>
+
+    <div class="feat-card">
+      <div class="feat-icon">🧾</div>
+      <div class="feat-title">Sales Tracking</div>
+      <div class="feat-desc">Log every sale manually or let agents submit via a shareable checklist link. Track lead source, location, premium, subcategory, and more — no spreadsheet required.</div>
+      <span class="feat-badge badge-addon">Add-On</span>
+      <div class="feat-preview">
+        <div class="fp-title">Sales Log · This Month</div>
+        <div class="fp-row"><div class="fp-name">Susan N. · Auto</div><div class="fp-tag fp-tag-s">Checklist</div><div class="fp-val" style="color:var(--accent2)">$824</div></div>
+        <div class="fp-row"><div class="fp-name">Joseph U. · WL</div><div class="fp-tag fp-tag-v">Manual</div><div class="fp-val" style="color:var(--accent)">$1,240</div></div>
+        <div class="fp-row"><div class="fp-name">Tracy A. · Fire</div><div class="fp-tag fp-tag-s">Checklist</div><div class="fp-val" style="color:var(--accent2)">$418</div></div>
+        <div class="fp-row"><div class="fp-name">Ashley M. · Health</div><div class="fp-tag fp-tag-v">Manual</div><div class="fp-val" style="color:var(--accent)">$390</div></div>
+      </div>
+    </div>
+
+    <div class="feat-card">
+      <div class="feat-icon">👤</div>
+      <div class="feat-title">Team Member Analysis</div>
+      <div class="feat-desc">AI-powered individual coaching reports for each agent — month-over-month trends, group standing, premium efficiency, and specific areas to address. Per-seat pricing.</div>
+      <span class="feat-badge badge-addon">Add-On</span>
+      <div class="feat-preview">
+        <div class="fp-title">Member Analysis · Apr 2026</div>
+        <div class="fp-ai"><strong>Joseph</strong> is up 18% in policies vs. last month — #2 in group. Premium efficiency at $310/hr trails <strong>Susan</strong> ($440/hr); focus on upsell timing. <strong>Andy</strong> has the highest call volume but lowest answer rate — opening-line coaching recommended.</div>
+      </div>
+    </div>
+
   </div>
 </section>
 
@@ -417,7 +461,8 @@
         <span class="faq-chevron">▾</span>
       </button>
       <div class="faq-a">
-        Upload your existing call log and sales report files directly from the Manage tab — drag and drop or click to browse. Boat Race accepts Excel (.xlsx, .xls) and CSV formats. It auto-detects columns on upload and deduplicates records automatically, so you can re-upload at any time without double-counting. If your file uses non-standard column names, a one-time column mapping saves your preferences for future uploads.
+        There are three ways to get data in. The most common is uploading your existing call log and sales report files from the Manage tab — drag and drop or click to browse (Excel and CSV supported). Boat Race auto-detects columns and deduplicates records, so re-uploading is always safe.<br><br>
+        With the Sales Tracking add-on you can also enter sales manually from inside the dashboard — useful for walk-ins, referrals, or any sale not captured in your export. And the checklist form lets agents log a sale the moment it happens from a phone or tablet, with a customer confirmation email sent automatically.
       </div>
     </div>
 
@@ -433,12 +478,60 @@
 
     <div class="faq-item">
       <button class="faq-q" onclick="toggleFaq(this)">
+        What is the Sales Tracking add-on and what does it include?
+        <span class="faq-chevron">▾</span>
+      </button>
+      <div class="faq-a">
+        Sales Tracking is an optional add-on ($25/mo) that layers full sales management on top of the base competition. It includes:<br><br>
+        <strong>Checklist form</strong> — a mobile-friendly form your agents fill out at point of sale. Captures product details, lead source, subcategory, customer info, and appointment type. After submission, generates a pre-formatted customer email the agent copies and pastes from their own inbox — no email is sent by Boat Race directly.<br><br>
+        <strong>Manual entry</strong> — add or edit individual sales directly in the dashboard without uploading a file. Useful for corrections, walk-ins, or referrals.<br><br>
+        <strong>Sales Log</strong> — a searchable, filterable record of all sales with inline editing. Sort by product, agent, date, or issued status.<br><br>
+        <strong>Sales Performance charts</strong> — interactive breakdown charts showing sales by product type, lead source, agent, subcategory, and more. Drill down into any slice to cross-filter both charts simultaneously.
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggleFaq(this)">
+        How does the checklist form work?
+        <span class="faq-chevron">▾</span>
+      </button>
+      <div class="faq-a">
+        You share a unique link with your agents — they open it on any device and fill it out when a sale closes. The form captures customer info, product type, subcategory, lead source, and appointment details. There's no login required for agents to submit.<br><br>
+        After submission, the form generates a pre-formatted customer email that the agent copies and pastes into their own email client to send. Boat Race does not send the email — it just builds it for you. The email content is fully configurable: intro paragraph, ID card instructions, an important notice box, helpful links, and a custom closing line. Each section can be enabled or disabled individually.
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggleFaq(this)">
+        What is the Team Member Analysis add-on?
+        <span class="faq-chevron">▾</span>
+      </button>
+      <div class="faq-a">
+        Team Member Analysis ($10/agent/mo) gives you deeper visibility into how each agent spends their time. With hour tracking enabled, you can see efficiency metrics — sales per hour, talk time per sale, and patterns that the top-level leaderboard doesn't surface.<br><br>
+        Combined with AI Analysis, it gives the coaching engine more signal to work with: instead of only knowing who produced the most, it can surface who produced efficiently and who has room to grow with better time management.
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggleFaq(this)">
+        How do add-ons work with my subscription? Can I cancel them?
+        <span class="faq-chevron">▾</span>
+      </button>
+      <div class="faq-a">
+        Add-ons are billed monthly alongside your base plan and can be cancelled at any time from Account → Billing. Cancellation takes effect at the end of your current billing period — you keep access until then.<br><br>
+        Add-ons are independent of your base plan. You can be on Basic and add Sales Tracking, or on Premium and skip both add-ons — whatever fits your workflow. There are no annual commitments and no per-seat fees on the base plans.
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggleFaq(this)">
         What data is stored?
         <span class="faq-chevron">▾</span>
       </button>
       <div class="faq-a">
         Boat Race stores performance metrics only: call logs (agent, disposition, talk time, date) and sales records (agent, product type, sale date). No customer names, phone numbers, policy details, or any personally identifiable information from your calls or sales is ever stored or processed.<br><br>
-        For deduplication — so re-uploading the same file never double-counts records — each row is fingerprinted using a SHA-256 cryptographic hash. This hash is a one-way mathematical signature generated from the record's data. The original data cannot be recovered from it, and no customer information is saved in the process. It is used solely to detect whether a record has already been imported.<br><br>
+        If the Sales Tracking add-on is enabled, the checklist form captures a customer name for reference — but only in a privacy-limited format: the first two characters of the first name and the last name only (e.g. "Jo Smith"). No full first name, email address, phone number, address, or any other identifying detail is stored at any point.<br><br>
+        For deduplication — so re-uploading the same file never double-counts records — each row is fingerprinted using a SHA-256 cryptographic hash. The original data cannot be recovered from it and no customer information is saved in the process.<br><br>
         Account information (company name, contact name, email) is stored for billing and login purposes only. All data is fully isolated per account and automatically purged after 12 months.
       </div>
     </div>
@@ -449,7 +542,8 @@
         <span class="faq-chevron">▾</span>
       </button>
       <div class="faq-a">
-        Most sales floors track performance in spreadsheets that nobody looks at until a 1-on-1. Boat Race turns that same data into a live competition — agents can see exactly where they stand, managers can spot momentum shifts in real time, and the AI analysis surfaces coaching opportunities before small problems become big ones. Competition drives activity, activity drives results.
+        Most sales floors track performance in spreadsheets that nobody looks at until a 1-on-1. Boat Race turns that same data into a live competition — agents can see exactly where they stand, managers can spot momentum shifts in real time, and the AI analysis surfaces coaching opportunities before small problems become big ones. Competition drives activity, activity drives results.<br><br>
+        The Sales Tracking add-on goes further: it shows you not just who is winning, but what they're selling, where leads are coming from, and which products are driving the most revenue. That's the data that informs how you coach and where you focus.
       </div>
     </div>
 
@@ -523,7 +617,57 @@
     </div>
 
   </div>
-  <p style="margin-top:24px;font-size:12px;color:var(--muted);max-width:900px;">All plans include a 21-day free trial. No credit card required to start. Plan changes take effect at the next billing cycle upon administrator confirmation.</p>
+  <p style="margin-top:24px;font-size:12px;color:var(--muted);max-width:900px;">All plans include a 21-day free trial. No credit card required to start. Plan changes take effect at the next billing cycle.</p>
+
+  <!-- Add-Ons -->
+  <div id="addons" style="margin-top:64px;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;">
+      <div class="section-label" style="margin-bottom:0;">Add-Ons</div>
+      <div style="height:1px;flex:1;background:var(--border);"></div>
+    </div>
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:clamp(1.5rem,3vw,2rem);letter-spacing:.03em;margin-bottom:8px;">Extend Your Platform</div>
+    <p style="font-size:14px;color:var(--muted);max-width:520px;margin-bottom:0;">Available on any plan. Add only what your team needs — cancel anytime.</p>
+    <div class="addons-grid">
+
+      <div class="addon-card">
+        <div class="addon-header">
+          <div class="addon-name">Sales Tracking</div>
+          <div class="addon-price">$25<span>/mo per office</span></div>
+        </div>
+        <div class="addon-desc">Turn your dashboard into a full sales management tool. Log every sale manually or via a shareable checklist link your agents can fill out from any device.</div>
+        <ul class="addon-features">
+          <li>Manual sales entry with full field set</li>
+          <li>Shareable checklist form (no login required)</li>
+          <li>Customer notification email — fully customizable</li>
+          <li>Sales log with search, edit, and delete</li>
+          <li>Sales performance charts with drill-down</li>
+          <li>Lead source, location &amp; subcategory tracking</li>
+          <li>Written premium tracking per policy</li>
+          <li>Product types, subcategories &amp; lead sources configurable per account</li>
+        </ul>
+        <div class="addon-note">Includes the checklist form, Sales Log tab, and Sales Performance charts in the Performance section.</div>
+      </div>
+
+      <div class="addon-card">
+        <div class="addon-header">
+          <div class="addon-name">Team Member Analysis</div>
+          <div class="addon-price">$10<span>/agent seat/mo</span></div>
+        </div>
+        <div class="addon-desc">Go beyond team-level metrics. Get AI-generated coaching reports for each individual agent — trends, group standing, and specific action items, every month.</div>
+        <ul class="addon-features">
+          <li>Individual month-over-month performance trends</li>
+          <li>Group standing vs. peers for every metric</li>
+          <li>Premium and efficiency analysis (with hours upload)</li>
+          <li>AI-written coaching notes per agent</li>
+          <li>Historical archived months included in analysis</li>
+          <li>Select which agents to include — pay only for those seats</li>
+        </ul>
+        <div class="addon-note">Requires Premium plan for AI analysis. Hours data optional but unlocks efficiency metrics (policies/hr, $/hr).</div>
+      </div>
+
+    </div>
+  </div>
+
 </section>
 
 <!-- ── CTA BAND ── -->

@@ -1117,6 +1117,13 @@
             <div id="ma-agents-msg" style="font-size:13px;margin-top:8px;display:none;"></div>
           </div>
 
+          <!-- Team Member Hours — teaser when no sales add-on -->
+          <div class="acct-section" id="ma-hours-teaser" style="display:none">
+            <h3>Team Member Hours</h3>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Track agent hours to unlock efficiency metrics (policies per hour, premium per hour) in Team Member Analysis.</p>
+            <button class="btn btn-primary" onclick="showAccountSubTab('billing',document.querySelector('[data-pane=billing]'))">Add Sales Tracking — $25/mo</button>
+          </div>
+
           <!-- Team Member Hours Uploader -->
           <div class="acct-section" id="ma-hours-section" style="display:none">
             <h3>Team Member Hours</h3>
@@ -1233,6 +1240,66 @@
               <input id="et-internal-email" type="email" placeholder="agent@office.com" style="max-width:320px;"></div>
             <div class="acct-field"><label>PENALTY WARNING MESSAGE <span style="color:var(--muted);font-weight:400;">(shown before submit if checklist incomplete — leave blank to disable)</span></label>
               <textarea id="et-penalty-warning" rows="2" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;resize:vertical;outline:none;" placeholder="If submitted inaccurately, you risk 80% of your commissions. Please review all items before continuing."></textarea></div>
+
+            <!-- Email Body Sections -->
+            <div style="border-top:1px solid var(--border2);margin:1.25rem 0 1rem;"></div>
+            <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.85rem;">Email Body Sections</div>
+
+            <!-- Intro Paragraph 1 -->
+            <div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.85rem;margin-bottom:.65rem;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;">
+                <span style="font-size:12px;font-weight:600;">Intro Paragraph</span>
+                <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap;"><input type="checkbox" id="et-body-para1-enabled" style="accent-color:var(--accent);"> Show</label>
+              </div>
+              <textarea id="et-body-para1" rows="3" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 10px;font-size:12px;resize:vertical;outline:none;box-sizing:border-box;"></textarea>
+            </div>
+
+            <!-- Body Paragraph 2 -->
+            <div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.85rem;margin-bottom:.65rem;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;">
+                <span style="font-size:12px;font-weight:600;">ID Cards / Portal Paragraph</span>
+                <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap;"><input type="checkbox" id="et-body-para2-enabled" style="accent-color:var(--accent);"> Show</label>
+              </div>
+              <textarea id="et-body-para2" rows="2" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 10px;font-size:12px;resize:vertical;outline:none;box-sizing:border-box;"></textarea>
+            </div>
+
+            <!-- Important Box -->
+            <div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.85rem;margin-bottom:.65rem;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;">
+                <span style="font-size:12px;font-weight:600;">Important Box</span>
+                <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap;"><input type="checkbox" id="et-important-enabled" style="accent-color:var(--accent);"> Show</label>
+              </div>
+              <div class="acct-field" style="margin-bottom:.5rem;"><label style="font-size:10px;">TITLE</label>
+                <input id="et-important-title" type="text" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:12px;width:100%;box-sizing:border-box;outline:none;"></div>
+              <div class="acct-field"><label style="font-size:10px;">BODY</label>
+                <textarea id="et-important-body" rows="3" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 10px;font-size:12px;resize:vertical;outline:none;box-sizing:border-box;"></textarea></div>
+            </div>
+
+            <!-- Helpful Resources -->
+            <div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.85rem;margin-bottom:.65rem;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;">
+                <span style="font-size:12px;font-weight:600;">Helpful Resources</span>
+                <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap;"><input type="checkbox" id="et-resources-enabled" style="accent-color:var(--accent);"> Show</label>
+              </div>
+              <div class="acct-field" style="margin-bottom:.6rem;"><label style="font-size:10px;">SECTION TITLE</label>
+                <input id="et-resources-title" type="text" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:12px;width:100%;box-sizing:border-box;outline:none;"></div>
+              <div id="et-resources-list" style="margin-bottom:.6rem;"></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:6px;align-items:center;">
+                <input id="et-new-res-label" type="text" placeholder="Link label" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:12px;outline:none;">
+                <input id="et-new-res-url" type="url" placeholder="https://..." style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:12px;outline:none;">
+                <button class="btn btn-secondary" style="font-size:11px;padding:5px 10px;white-space:nowrap;" onclick="etAddResourceLink()">Add</button>
+              </div>
+            </div>
+
+            <!-- Thank You Line -->
+            <div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.85rem;margin-bottom:.85rem;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;">
+                <span style="font-size:12px;font-weight:600;">Thank You Line</span>
+                <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap;"><input type="checkbox" id="et-thank-you-enabled" style="accent-color:var(--accent);"> Show</label>
+              </div>
+              <textarea id="et-thank-you" rows="2" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 10px;font-size:12px;resize:vertical;outline:none;box-sizing:border-box;" placeholder="Thank you again for trusting [AgencyName]. We look forward to serving you!"></textarea>
+              <div style="font-size:11px;color:var(--muted);margin-top:4px;">Use <code>[AgencyName]</code> to insert the agency name.</div>
+            </div>
 
             <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:.75rem;">
               <button class="btn btn-primary" onclick="saveEmailTemplate(this)">Save Email Template</button>
@@ -1497,7 +1564,7 @@
           <thead><tr>
             <th>Email</th><th>Company</th><th>Contact</th><th>Plan</th>
             <th>Status</th><th>Agents</th><th>Trial Ends</th><th>Paid Through</th>
-            <th>Notes</th><th>Admin</th><th>Actions</th>
+            <th>Notes</th><th>Add-Ons</th><th>Admin</th><th>Actions</th>
           </tr></thead>
           <tbody id="admin-body"></tbody>
         </table>
@@ -3905,6 +3972,32 @@ function renderAdminTable(rows) {
       <td>${r.trial_ends_at ? new Date(r.trial_ends_at).toLocaleDateString() : '—'}</td>
       <td>${r.paid_through  ? new Date(r.paid_through).toLocaleDateString()  : '—'}</td>
       <td><input class="admin-notes" value="${(r.notes||'').replace(/"/g,'&quot;')}" onblur="adminSave('${r.user_id}','notes',this.value)"></td>
+      <td style="min-width:170px;">
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <div style="display:flex;align-items:center;gap:4px;">
+            <button onclick="adminSave('${r.user_id}','has_sales_addon',${!r.has_sales_addon})"
+              style="font-size:10px;padding:2px 7px;border-radius:4px;border:none;cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:600;
+                background:${r.has_sales_addon?'rgba(0,255,148,.15)':'rgba(255,255,255,.06)'};
+                color:${r.has_sales_addon?'var(--accent2)':'var(--muted)'};"
+              title="${r.has_sales_addon?'Disable':'Enable'} Sales Tracking">
+              Sales ${r.has_sales_addon?'✓':'—'}
+            </button>
+          </div>
+          <div style="display:flex;align-items:center;gap:4px;">
+            <button onclick="adminSave('${r.user_id}','has_member_analysis',${!r.has_member_analysis})"
+              style="font-size:10px;padding:2px 7px;border-radius:4px;border:none;cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:600;
+                background:${r.has_member_analysis?'rgba(0,212,255,.15)':'rgba(255,255,255,.06)'};
+                color:${r.has_member_analysis?'var(--accent)':'var(--muted)'};"
+              title="${r.has_member_analysis?'Disable':'Enable'} Member Analysis">
+              Analysis ${r.has_member_analysis?'✓':'—'}
+            </button>
+            ${r.has_member_analysis ? `<input type="number" min="1" max="99" value="${r.member_analysis_count||1}"
+              onblur="adminSave('${r.user_id}','member_analysis_count',parseInt(this.value)||1)"
+              title="Agent seats"
+              style="width:38px;padding:2px 5px;font-size:11px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:4px;text-align:center;">` : ''}
+          </div>
+        </div>
+      </td>
       <td>${r.is_admin?'✓':''}</td>
       <td style="display:flex;gap:6px;flex-wrap:wrap;">
         <select class="admin-select" onchange="adminSave('${r.user_id}','status',this.value)">
@@ -3913,7 +4006,7 @@ function renderAdminTable(rows) {
         </select>
         ${!r.is_admin ? `<button class="btn btn-danger" style="font-size:11px;padding:4px 8px;" onclick="adminDeleteUser('${r.user_id}','${(r.email||'').replace(/'/g,"\\'")}',this)">Delete</button>` : ''}
       </td>
-    </tr>`).join('') || '<tr><td colspan="11" style="color:var(--muted);text-align:center;padding:20px">No accounts</td></tr>';
+    </tr>`).join('') || '<tr><td colspan="12" style="color:var(--muted);text-align:center;padding:20px">No accounts</td></tr>';
 }
 
 function filterAdminTable() {
@@ -4399,6 +4492,20 @@ window.addEventListener('DOMContentLoaded', init);
 
 // ── DIRECTIVE 2: SALES TRACKING ADD-ON ───────────────────────────────────────
 
+const ET_DEFAULT_BODY_PARA1    = "We’re excited to have you as part of our State Farm family. Our team is here to support you every step of the way with your insurance needs and provide you with helpful resources.";
+const ET_DEFAULT_BODY_PARA2    = "You should have a copy of your ID cards in your inbox and in your online portal.";
+const ET_DEFAULT_IMPORTANT_TITLE = "Important";
+const ET_DEFAULT_IMPORTANT_BODY  = "If you have monthly payments, please be sure to sign and return your email payment authorization form as soon as possible. This will ensure your payments are processed smoothly and on time.";
+const ET_DEFAULT_RESOURCES_TITLE = "Helpful Online Resources:";
+const ET_DEFAULT_RESOURCES_LINKS = [
+  { label: "Manage your policy: statefarm.com",  url: "https://www.statefarm.com"         },
+  { label: "File a claim: statefarm.com/claims", url: "https://www.statefarm.com/claims"  },
+  { label: "Pay your bill: statefarm.com/billing",url: "https://www.statefarm.com/billing"},
+];
+const ET_DEFAULT_THANK_YOU = "Thank you again for trusting [AgencyName]. We look forward to serving you!";
+
+let _etResourcesLinks = [];   // in-editor state for resources links
+
 const LEAD_SOURCES = [
   'Aged Lead Store','Agent Tagged Media','Call In','Contractors List',
   'Current Customer','Customer Letter','Direct Mail','Events',
@@ -4504,10 +4611,10 @@ function renderSalesAddonSection(acct) {
   document.getElementById('ma-agents-section').style.display = hasMa ? '' : 'none';
   if (hasMa) renderMemberAnalysisAgentPicker();
 
-  // Hours section: pro plan, sales addon, or member analysis
-  const showHours = hasSub || hasMa || isPro;
-  document.getElementById('ma-hours-section').style.display = showHours ? '' : 'none';
-  if (showHours) renderMaHoursPeriods();
+  // Hours section: sales add-on only; teaser for pro/member-analysis users who don't have it
+  document.getElementById('ma-hours-section').style.display = hasSub ? '' : 'none';
+  document.getElementById('ma-hours-teaser').style.display  = (!hasSub && showContent) ? '' : 'none';
+  if (hasSub) renderMaHoursPeriods();
 
   if (!hasSub) return;
 
@@ -4539,6 +4646,20 @@ function renderSalesAddonSection(acct) {
   document.getElementById('et-footer').value           = cfg.footer          || '';
   document.getElementById('et-internal-email').value   = cfg.internal_email  || '';
   document.getElementById('et-penalty-warning').value  = cfg.penalty_warning || '';
+  // Email body sections — seed defaults if not yet saved
+  document.getElementById('et-body-para1').value           = cfg.body_para1         ?? ET_DEFAULT_BODY_PARA1;
+  document.getElementById('et-body-para1-enabled').checked = cfg.body_para1_enabled  ?? true;
+  document.getElementById('et-body-para2').value           = cfg.body_para2         ?? ET_DEFAULT_BODY_PARA2;
+  document.getElementById('et-body-para2-enabled').checked = cfg.body_para2_enabled  ?? true;
+  document.getElementById('et-important-enabled').checked  = cfg.important_enabled   ?? true;
+  document.getElementById('et-important-title').value      = cfg.important_title    ?? ET_DEFAULT_IMPORTANT_TITLE;
+  document.getElementById('et-important-body').value       = cfg.important_body     ?? ET_DEFAULT_IMPORTANT_BODY;
+  document.getElementById('et-resources-enabled').checked  = cfg.resources_enabled   ?? true;
+  document.getElementById('et-resources-title').value      = cfg.resources_title    ?? ET_DEFAULT_RESOURCES_TITLE;
+  _etResourcesLinks = cfg.resources_links ? JSON.parse(JSON.stringify(cfg.resources_links)) : JSON.parse(JSON.stringify(ET_DEFAULT_RESOURCES_LINKS));
+  renderEtResourcesList();
+  document.getElementById('et-thank-you').value           = cfg.thank_you           ?? ET_DEFAULT_THANK_YOU;
+  document.getElementById('et-thank-you-enabled').checked = cfg.thank_you_enabled    ?? true;
   // Form items + required fields
   renderFormItemsConfig();
 
@@ -5087,20 +5208,58 @@ async function addSubcategory() {
   }
 }
 
+function renderEtResourcesList() {
+  const el = document.getElementById('et-resources-list');
+  if (!el) return;
+  if (!_etResourcesLinks.length) { el.innerHTML = '<div style="font-size:12px;color:var(--muted);margin-bottom:.25rem;">No links yet.</div>'; return; }
+  el.innerHTML = _etResourcesLinks.map((lnk, i) =>
+    `<div style="display:grid;grid-template-columns:1fr 1fr auto;gap:6px;align-items:center;margin-bottom:5px;">
+      <input type="text" value="${escHtml(lnk.label)}" oninput="_etResourcesLinks[${i}].label=this.value" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:12px;outline:none;">
+      <input type="url"  value="${escHtml(lnk.url)}"   oninput="_etResourcesLinks[${i}].url=this.value"   style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:12px;outline:none;">
+      <button class="btn btn-secondary" style="padding:4px 8px;font-size:11px;" onclick="etRemoveResourceLink(${i})">✕</button>
+    </div>`
+  ).join('');
+}
+function etAddResourceLink() {
+  const label = document.getElementById('et-new-res-label').value.trim();
+  const url   = document.getElementById('et-new-res-url').value.trim();
+  if (!label && !url) return;
+  _etResourcesLinks.push({ label, url });
+  document.getElementById('et-new-res-label').value = '';
+  document.getElementById('et-new-res-url').value   = '';
+  renderEtResourcesList();
+}
+function etRemoveResourceLink(i) {
+  _etResourcesLinks.splice(i, 1);
+  renderEtResourcesList();
+}
+
 async function saveEmailTemplate(btn) {
   btn.disabled = true;
   try {
     const cfg = {
-      subject:         document.getElementById('et-subject').value.trim(),
-      agency_name:     document.getElementById('et-agency').value.trim(),
-      brand_color:     document.getElementById('et-color').value,
-      agent_name:      document.getElementById('et-agent-name').value.trim(),
-      agent_phone:     document.getElementById('et-agent-phone').value.trim(),
-      agent_email:     document.getElementById('et-agent-email').value.trim(),
-      greeting:        document.getElementById('et-greeting').value.trim(),
-      footer:          document.getElementById('et-footer').value.trim(),
-      internal_email:  document.getElementById('et-internal-email').value.trim(),
-      penalty_warning: document.getElementById('et-penalty-warning').value.trim(),
+      subject:          document.getElementById('et-subject').value.trim(),
+      agency_name:      document.getElementById('et-agency').value.trim(),
+      brand_color:      document.getElementById('et-color').value,
+      agent_name:       document.getElementById('et-agent-name').value.trim(),
+      agent_phone:      document.getElementById('et-agent-phone').value.trim(),
+      agent_email:      document.getElementById('et-agent-email').value.trim(),
+      greeting:         document.getElementById('et-greeting').value.trim(),
+      footer:           document.getElementById('et-footer').value.trim(),
+      internal_email:   document.getElementById('et-internal-email').value.trim(),
+      penalty_warning:  document.getElementById('et-penalty-warning').value.trim(),
+      body_para1:         document.getElementById('et-body-para1').value.trim(),
+      body_para1_enabled: document.getElementById('et-body-para1-enabled').checked,
+      body_para2:         document.getElementById('et-body-para2').value.trim(),
+      body_para2_enabled: document.getElementById('et-body-para2-enabled').checked,
+      important_enabled:  document.getElementById('et-important-enabled').checked,
+      important_title:    document.getElementById('et-important-title').value.trim(),
+      important_body:     document.getElementById('et-important-body').value.trim(),
+      resources_enabled:  document.getElementById('et-resources-enabled').checked,
+      resources_title:    document.getElementById('et-resources-title').value.trim(),
+      resources_links:    _etResourcesLinks,
+      thank_you:          document.getElementById('et-thank-you').value.trim(),
+      thank_you_enabled:  document.getElementById('et-thank-you-enabled').checked,
     };
     const r = await fetch('/api/checklist-config', {
       method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
@@ -5115,14 +5274,26 @@ async function saveEmailTemplate(btn) {
 
 function previewEmailTemplate() {
   const cfg = {
-    agencyName:  document.getElementById('et-agency').value.trim()     || 'Your Agency Name',
-    brandColor:  document.getElementById('et-color').value             || '#D62311',
-    agentName:   document.getElementById('et-agent-name').value.trim() || '',
-    agentPhone:  document.getElementById('et-agent-phone').value.trim()|| '',
-    agentEmail:  document.getElementById('et-agent-email').value.trim()|| '',
-    greeting:    document.getElementById('et-greeting').value.trim()   || '',
-    footer:      document.getElementById('et-footer').value.trim()     || '',
-    subject:     document.getElementById('et-subject').value.trim()    || 'New Customer — Checklist Completed',
+    agencyName:       document.getElementById('et-agency').value.trim()     || 'Your Agency Name',
+    brandColor:       document.getElementById('et-color').value             || '#D62311',
+    agentName:        document.getElementById('et-agent-name').value.trim() || '',
+    agentPhone:       document.getElementById('et-agent-phone').value.trim()|| '',
+    agentEmail:       document.getElementById('et-agent-email').value.trim()|| '',
+    greeting:         document.getElementById('et-greeting').value.trim()   || '',
+    footer:           document.getElementById('et-footer').value.trim()     || '',
+    subject:          document.getElementById('et-subject').value.trim()    || 'New Customer — Checklist Completed',
+    bodyPara1:        document.getElementById('et-body-para1').value.trim(),
+    bodyPara1Enabled: document.getElementById('et-body-para1-enabled').checked,
+    bodyPara2:        document.getElementById('et-body-para2').value.trim(),
+    bodyPara2Enabled: document.getElementById('et-body-para2-enabled').checked,
+    importantEnabled: document.getElementById('et-important-enabled').checked,
+    importantTitle:   document.getElementById('et-important-title').value.trim(),
+    importantBody:    document.getElementById('et-important-body').value.trim(),
+    resourcesEnabled: document.getElementById('et-resources-enabled').checked,
+    resourcesTitle:   document.getElementById('et-resources-title').value.trim(),
+    resourcesLinks:   _etResourcesLinks,
+    thankYou:         document.getElementById('et-thank-you').value.trim(),
+    thankYouEnabled:  document.getElementById('et-thank-you-enabled').checked,
   };
   const dummyPayload = {
     ...cfg,
@@ -6511,11 +6682,10 @@ async function clSubmit() {
   }
   // ─────────────────────────────────────────────────────────────────────────
 
-  // Warning modal always fires after validation passes — mandatory confirmation step
-  if (!_clPenaltyAcknowledged) {
+  // Warning modal only fires if penalty warning text is configured
+  if (_clPenaltyWarning && !_clPenaltyAcknowledged) {
     _clPendingFormData = { apptTime, meetingType, wfolderApplied, formCompletions };
-    document.getElementById('cl-penalty-text').textContent =
-      _clPenaltyWarning || 'Please review all items carefully before submitting.';
+    document.getElementById('cl-penalty-text').textContent = _clPenaltyWarning;
     document.getElementById('cl-penalty-modal').style.display = 'flex';
     return;
   }
@@ -6682,6 +6852,19 @@ function buildCustomerEmailHtml(payload) {
   const agentName  = payload.agentName  || '';
   const agentPhone = payload.agentPhone || '';
   const agentEmail = payload.agentEmail || '';
+  // Configurable body sections (fallback to defaults when not set)
+  const bodyPara1        = payload.bodyPara1        ?? ET_DEFAULT_BODY_PARA1;
+  const bodyPara1Enabled = payload.bodyPara1Enabled ?? true;
+  const bodyPara2        = payload.bodyPara2        ?? ET_DEFAULT_BODY_PARA2;
+  const bodyPara2Enabled = payload.bodyPara2Enabled ?? true;
+  const importantEnabled = payload.importantEnabled ?? true;
+  const importantTitle   = payload.importantTitle   ?? ET_DEFAULT_IMPORTANT_TITLE;
+  const importantBody    = payload.importantBody    ?? ET_DEFAULT_IMPORTANT_BODY;
+  const resourcesEnabled = payload.resourcesEnabled ?? true;
+  const resourcesTitle   = payload.resourcesTitle   ?? ET_DEFAULT_RESOURCES_TITLE;
+  const resourcesLinks   = payload.resourcesLinks   ?? ET_DEFAULT_RESOURCES_LINKS;
+  const thankYou         = (payload.thankYou        ?? ET_DEFAULT_THANK_YOU).replace('[AgencyName]', agencyName);
+  const thankYouEnabled  = payload.thankYouEnabled  ?? true;
 
   // Build config-driven form item sections
   let discountHtml = '', discountPlain = '';
@@ -6745,8 +6928,8 @@ function buildCustomerEmailHtml(payload) {
 <tr><td style="padding:32px 32px 24px;">
 
 <p style="margin:0 0 14px;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:15px;color:#403C3C;line-height:1.6;">${greeting}</p>
-<p ${P}>We're excited to have you as part of our State Farm family. Our team is here to support you every step of the way with your insurance needs and provide you with helpful resources.</p>
-<p ${P}>You should have a copy of your ID cards in your inbox and in your online portal.</p>
+${bodyPara1Enabled && bodyPara1 ? `<p ${P}>${escHtml(bodyPara1)}</p>` : ''}
+${bodyPara2Enabled && bodyPara2 ? `<p ${P}>${escHtml(bodyPara2)}</p>` : ''}
 
 ${apptLine ? `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
 <tr><td bgcolor="#f5f5f5" style="background-color:#f5f5f5;border-left:4px solid ${brandColor};padding:16px 20px;">
@@ -6758,21 +6941,19 @@ ${discounts.html}
 
 <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 20px;"><tr><td style="border-top:1px solid #DCDCDC;height:1px;font-size:1px;line-height:1px;">&nbsp;</td></tr></table>
 
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
+${importantEnabled && importantBody ? `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
 <tr><td bgcolor="#fff8e6" style="background-color:#fff8e6;border-left:4px solid #e8a020;padding:14px 18px;">
-<p style="margin:0 0 4px;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:11px;font-weight:bold;color:#856404;text-transform:uppercase;letter-spacing:0.08em;">Important</p>
-<p style="margin:0;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:13px;color:#403C3C;line-height:1.6;">If you have monthly payments, please be sure to sign and return your email payment authorization form as soon as possible. This will ensure your payments are processed smoothly and on time.</p>
-</td></tr></table>
+<p style="margin:0 0 4px;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:11px;font-weight:bold;color:#856404;text-transform:uppercase;letter-spacing:0.08em;">${escHtml(importantTitle)}</p>
+<p style="margin:0;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:13px;color:#403C3C;line-height:1.6;">${escHtml(importantBody)}</p>
+</td></tr></table>` : ''}
 
-<p style="margin:0 0 8px;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:14px;font-weight:bold;color:#403C3C;">Helpful Online Resources:</p>
+${resourcesEnabled && resourcesLinks.length ? `<p style="margin:0 0 8px;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:14px;font-weight:bold;color:#403C3C;">${escHtml(resourcesTitle)}</p>
 <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:20px;">
-<tr><td style="padding:3px 0;"><a href="https://www.statefarm.com" style="font-family:Arial,Calibri,Helvetica,sans-serif;font-size:13px;color:#D62311;text-decoration:none;">&#8250; Manage your policy: statefarm.com</a></td></tr>
-<tr><td style="padding:3px 0;"><a href="https://www.statefarm.com/claims" style="font-family:Arial,Calibri,Helvetica,sans-serif;font-size:13px;color:#D62311;text-decoration:none;">&#8250; File a claim: statefarm.com/claims</a></td></tr>
-<tr><td style="padding:3px 0;"><a href="https://www.statefarm.com/billing" style="font-family:Arial,Calibri,Helvetica,sans-serif;font-size:13px;color:#D62311;text-decoration:none;">&#8250; Pay your bill: statefarm.com/billing</a></td></tr>
-</table>
+${resourcesLinks.map(lnk => `<tr><td style="padding:3px 0;"><a href="${escHtml(lnk.url)}" style="font-family:Arial,Calibri,Helvetica,sans-serif;font-size:13px;color:#D62311;text-decoration:none;">&#8250; ${escHtml(lnk.label)}</a></td></tr>`).join('')}
+</table>` : ''}
 
 <p ${P}>${footer}</p>
-<p style="margin:0 0 24px;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:14px;color:#403C3C;line-height:1.7;">Thank you again for trusting ${escHtml(agencyName)}. We look forward to serving you!</p>
+${thankYouEnabled && thankYou ? `<p style="margin:0 0 24px;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:14px;color:#403C3C;line-height:1.7;">${escHtml(thankYou)}</p>` : ''}
 
 <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:12px;"><tr><td style="border-top:1px solid #DCDCDC;height:1px;font-size:1px;line-height:1px;">&nbsp;</td></tr></table>
 <p style="margin:14px 0 2px;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:13px;color:#403C3C;">Best regards,</p>
@@ -6822,17 +7003,30 @@ function showChecklistEmailModal(payload) {
     const sectionTitle = item.title || displayLabel;
     custPlainDiscounts += `\n${sectionTitle}\n${desc.split('\n')[0]}\n`;
   });
-  _clCustPlain = 'Hello and welcome to ' + (payload.agencyName || 'our agency') + '!\n\n'
+  const _cpAgency    = payload.agencyName || 'our agency';
+  const _cpPara1En   = payload.bodyPara1Enabled ?? true;
+  const _cpPara1     = payload.bodyPara1 ?? ET_DEFAULT_BODY_PARA1;
+  const _cpPara2En   = payload.bodyPara2Enabled ?? true;
+  const _cpPara2     = payload.bodyPara2 ?? ET_DEFAULT_BODY_PARA2;
+  const _cpImpEn     = payload.importantEnabled ?? true;
+  const _cpImpTitle  = payload.importantTitle   ?? ET_DEFAULT_IMPORTANT_TITLE;
+  const _cpImpBody   = payload.importantBody    ?? ET_DEFAULT_IMPORTANT_BODY;
+  const _cpResEn     = payload.resourcesEnabled ?? true;
+  const _cpResTitle  = payload.resourcesTitle   ?? ET_DEFAULT_RESOURCES_TITLE;
+  const _cpResLinks  = payload.resourcesLinks   ?? ET_DEFAULT_RESOURCES_LINKS;
+  const _cpTyEn      = payload.thankYouEnabled  ?? true;
+  const _cpTy        = (payload.thankYou ?? ET_DEFAULT_THANK_YOU).replace('[AgencyName]', _cpAgency);
+  _clCustPlain = 'Hello and welcome to ' + _cpAgency + '!\n\n'
     + (payload.greeting || '') + '\n\n'
+    + (_cpPara1En && _cpPara1 ? _cpPara1 + '\n\n' : '')
+    + (_cpPara2En && _cpPara2 ? _cpPara2 + '\n\n' : '')
     + 'YOUR NEXT APPOINTMENT: ' + clApptLine(payload) + '\n'
     + custPlainDiscounts
-    + '\nIMPORTANT: If you have monthly payments, please sign and return your email payment authorization form.\n\n'
-    + 'Helpful Resources:\n'
-    + '* Manage policy: https://www.statefarm.com\n'
-    + '* File a claim: https://www.statefarm.com/claims\n'
-    + '* Pay your bill: https://www.statefarm.com/billing\n\n'
+    + (_cpImpEn && _cpImpBody ? '\n' + _cpImpTitle.toUpperCase() + ': ' + _cpImpBody + '\n\n' : '')
+    + (_cpResEn && _cpResLinks.length ? _cpResTitle + '\n' + _cpResLinks.map(l => '* ' + l.label + ': ' + l.url).join('\n') + '\n\n' : '')
     + (payload.footer || '') + '\n\n'
-    + 'Best regards,\n' + (payload.agentName || (payload.agencyName || '') + ' Team');
+    + (_cpTyEn && _cpTy ? _cpTy + '\n\n' : '')
+    + 'Best regards,\n' + (payload.agentName || _cpAgency + ' Team');
   document.getElementById('cl-email-preview-body').innerHTML = cust.bodyHtml;
 
   document.getElementById('cl-email-modal').style.display = 'flex';
