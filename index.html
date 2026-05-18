@@ -2105,7 +2105,7 @@ async function handleForgotPassword() {
   const email = document.getElementById('fp-email').value.trim();
   if (!email) return showMsg('fp-msg', 'Please enter your email.');
   const { error } = await _supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: window.location.href
+    redirectTo: window.location.origin + '/app'
   });
   if (error) return showMsg('fp-msg', error.message);
   showMsg('fp-msg', 'Reset link sent! Check your email.', 'ok');
