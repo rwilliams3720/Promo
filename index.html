@@ -5506,10 +5506,39 @@ function renderCommissionStructuresList() {
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0;">
         <button class="btn btn-secondary" style="font-size:11px;padding:3px 10px;" onclick="openStructureById('${escHtml(s.id)}')">Edit</button>
+        <button class="btn btn-secondary" style="font-size:11px;padding:3px 10px;" onclick="duplicateCommissionStructure('${escHtml(s.id)}')">Duplicate</button>
         <button class="btn btn-secondary" style="font-size:11px;padding:3px 10px;color:var(--danger);" onclick="deleteCommissionStructure('${escHtml(s.id)}')">Delete</button>
       </div>
     </div>`;
   }).join('');
+}
+
+async function duplicateCommissionStructure(id) {
+  const src = _commissionStructures.find(s => s.id === id);
+  if (!src) return;
+  const baseName = src.name.replace(/^Copy of /i, '').replace(/ \(\d+\)$/, '').trim();
+  let newName = `Copy of ${baseName}`;
+  let attempt = 2;
+  while (_commissionStructures.some(s => s.name.toLowerCase() === newName.toLowerCase())) {
+    newName = `Copy of ${baseName} (${attempt++})`;
+  }
+  const r = await fetch('/api/commission-structures', {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name:                 newName,
+      default_split_ratio:  src.default_split_ratio,
+      pay_on_issue:         src.pay_on_issue,
+      thresholds:           JSON.parse(JSON.stringify(src.thresholds || [])),
+      rates:                JSON.parse(JSON.stringify(src.rates     || {})),
+    }),
+  });
+  const d = await r.json();
+  if (!r.ok) { alert(d.error || 'Duplicate failed'); return; }
+  _commissionStructures.push(d);
+  _commissionStructures.sort((a, b) => a.name.localeCompare(b.name));
+  renderCommissionStructuresList();
+  renderAgentRoster();
 }
 
 async function csFileChange(input) {
