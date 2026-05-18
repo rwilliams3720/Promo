@@ -693,9 +693,10 @@
   <div id="tab-perf" style="display:none">
     <!-- Sub-tab nav -->
     <div style="display:flex;gap:0;border-bottom:1px solid var(--border2);margin-bottom:1.25rem;overflow-x:auto;">
-      <button class="acct-stab active" id="perf-stab-callperf" onclick="showPerfSubTab('callperf',this)" style="font-size:13px;">Call Performance</button>
-      <button class="acct-stab" id="perf-stab-saleslog" onclick="showPerfSubTab('saleslog',this)" style="font-size:13px;">Sales Log</button>
-      <button class="acct-stab" id="perf-stab-salesperf" onclick="showPerfSubTab('salesperf',this)" style="font-size:13px;">Sales Performance</button>
+      <button class="acct-stab active" id="perf-stab-callperf"    onclick="showPerfSubTab('callperf',this)"    style="font-size:13px;">Call Performance</button>
+      <button class="acct-stab"        id="perf-stab-saleslog"    onclick="showPerfSubTab('saleslog',this)"    style="font-size:13px;">Sales Log</button>
+      <button class="acct-stab"        id="perf-stab-salesperf"   onclick="showPerfSubTab('salesperf',this)"   style="font-size:13px;">Sales Performance</button>
+      <button class="acct-stab"        id="perf-stab-commissions" onclick="showPerfSubTab('commissions',this)" style="font-size:13px;">Commissions</button>
     </div>
 
     <!-- Call Performance sub-pane -->
@@ -853,6 +854,134 @@
       </div>
       </div><!-- /perf-salesperf-content -->
     </div>
+
+    <!-- Commissions sub-pane -->
+    <div id="perf-sub-commissions" style="display:none">
+      <!-- Teaser when no commissions add-on -->
+      <div id="perf-commissions-teaser" style="display:none">
+        <div class="panel" style="text-align:center;padding:3rem 2rem;">
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:1.6rem;letter-spacing:.04em;margin-bottom:.75rem;">Commissions Calculator</div>
+          <p style="font-size:14px;color:var(--muted);max-width:480px;margin:0 auto 1.5rem;line-height:1.7;">
+            Calculate and track agent commissions by month. Define rate structures per product, handle split sales, and mark payments as paid. Available with the Commissions add-on.
+          </p>
+          <button class="btn btn-primary" onclick="goToAccountTab('billing')">Learn More</button>
+        </div>
+      </div>
+      <!-- Content when add-on active -->
+      <div id="perf-commissions-content">
+        <!-- Month nav -->
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:1.25rem;">
+          <button class="btn btn-secondary" style="padding:4px 12px;font-size:13px;" onclick="commPrevMonth()">&#8592;</button>
+          <span id="comm-month-label" style="font-size:15px;font-weight:600;min-width:120px;text-align:center;"></span>
+          <button class="btn btn-secondary" style="padding:4px 12px;font-size:13px;" onclick="commNextMonth()">&#8594;</button>
+          <button class="btn btn-secondary" style="padding:4px 10px;font-size:12px;margin-left:auto;" onclick="loadCommissions()">Refresh</button>
+        </div>
+        <!-- Owner view: full agent table -->
+        <div id="comm-owner-view">
+          <div class="panel">
+            <div class="panel-title" style="margin-bottom:1rem;">Agent Commissions</div>
+            <div id="comm-table-wrap" style="font-size:13px;color:var(--muted);">Select a month to load commissions.</div>
+          </div>
+          <!-- Pay modal inline area -->
+          <div id="comm-pay-modal" style="display:none;"></div>
+        </div>
+
+        <!-- Commission math explanation -->
+        <div class="panel" style="margin-top:1rem;">
+          <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'':'none';this.querySelector('.comm-exp-arrow').textContent=this.nextElementSibling.style.display===''?'▲':'▼';">
+            <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">How commissions are calculated</div>
+            <span class="comm-exp-arrow" style="font-size:11px;color:var(--muted);">▼</span>
+          </div>
+          <div style="display:none;margin-top:.9rem;">
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1rem;">
+
+              <div>
+                <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.4rem;">Base Rate Calculation</div>
+                <div style="font-size:12px;color:var(--muted);line-height:1.7;">
+                  <div><strong style="color:var(--text);">Percent type</strong> — <code style="font-size:11px;background:rgba(255,255,255,.06);padding:1px 5px;border-radius:3px;">share × rate%</code></div>
+                  <div style="margin-top:.25rem;"><strong style="color:var(--text);">Flat type</strong> — fixed dollar amount per policy, regardless of premium</div>
+                  <div style="margin-top:.5rem;padding:.4rem .6rem;background:rgba(255,255,255,.04);border-left:2px solid var(--accent);border-radius:0 4px 4px 0;font-size:11px;">
+                    <strong>Split sale:</strong> primary gets <em>split_ratio</em> of written premium as their share; teammate gets the remainder.<br>
+                    <strong>Whole sale:</strong> agent's share = 100% of written premium.
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.4rem;">Rate Priority Order</div>
+                <div style="font-size:12px;color:var(--muted);line-height:1.8;">
+                  <div><span style="display:inline-block;width:18px;text-align:center;font-weight:700;color:var(--accent2);">1</span> Subcategory override <span style="font-size:10px;">(if sold subcategory has its own rate)</span></div>
+                  <div><span style="display:inline-block;width:18px;text-align:center;font-weight:700;color:var(--accent2);">2</span> Financial Service rate <span style="font-size:10px;">(if subcategory is tagged FS, no subcat override)</span></div>
+                  <div><span style="display:inline-block;width:18px;text-align:center;font-weight:700;color:var(--accent2);">3</span> Product default rate</div>
+                </div>
+              </div>
+
+              <div>
+                <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.4rem;">Minimums &amp; Date Rules</div>
+                <div style="font-size:12px;color:var(--muted);line-height:1.7;">
+                  <div><strong style="color:var(--text);">Min Premium</strong> — written premium must exceed the threshold or the product pays $0 for that sale.</div>
+                  <div style="margin-top:.35rem;"><strong style="color:var(--text);">Pay on Issue</strong> — when enabled, only sales whose <em>issued date</em> falls in the selected month are counted (instead of sale date).</div>
+                </div>
+              </div>
+
+              <div>
+                <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.4rem;">Production Group Thresholds</div>
+                <div style="font-size:12px;color:var(--muted);line-height:1.7;">
+                  <div>Groups combine policy counts across selected products. All conditions must be met before the group's earned commission is released.</div>
+                  <div style="margin-top:.35rem;"><strong style="color:var(--text);">Commission floor</strong> — only the amount <em>above</em> the floor pays. <span style="font-size:11px;">E.g. floor $500, earned $800 → pays $300.</span></div>
+                  <div style="margin-top:.35rem;"><strong style="color:var(--text);">Requires</strong> — a group can require other groups to pass first.</div>
+                  <div style="margin-top:.35rem;font-size:11px;padding:.35rem .55rem;background:rgba(255,255,255,.04);border-left:2px solid rgba(255,179,0,.5);border-radius:0 4px 4px 0;">Products not assigned to any group always pay regardless of threshold results.</div>
+                </div>
+              </div>
+
+            </div>
+
+            <div style="border-top:1px solid var(--border2);padding-top:.75rem;">
+              <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.4rem;">Bonus Escalators</div>
+              <div style="font-size:12px;color:var(--muted);line-height:1.7;max-width:640px;">
+                The bonus % adds <em>rate points</em> directly to the effective commission rate — it is applied to the group's <strong style="color:var(--text);">premium shares</strong>, not to the already-calculated commission. This means 12% + 2% escalator behaves exactly like a 14% rate.<br>
+                <span style="font-size:11px;display:block;margin-top:.4rem;padding:.35rem .55rem;background:rgba(255,255,255,.04);border-radius:4px;">
+                  Example: Auto &amp; Fire share = $8,333 @ 12% = $1,000 base commission. Life count = 4 → tier "+2%". Bonus = $8,333 × 2% = $167. Total = <strong style="color:var(--accent2);">$1,167</strong> (same as 14% × $8,333).
+                </span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+        <!-- Member view: own row + what-if -->
+        <div id="comm-member-view" style="display:none">
+          <div class="panel" id="comm-member-own" style="margin-bottom:1rem;"></div>
+          <div class="panel" style="margin-top:1rem;">
+            <div class="panel-title" style="margin-bottom:.75rem;">What-If Calculator</div>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Estimate your commission on a hypothetical sale.</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem;">
+              <div>
+                <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">PRODUCT</label>
+                <select id="wi-product" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;"></select>
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">WRITTEN PREMIUM</label>
+                <input id="wi-premium" type="number" min="0" step="0.01" placeholder="0.00" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;box-sizing:border-box;">
+              </div>
+            </div>
+            <div style="margin-bottom:.75rem;">
+              <label style="font-size:13px;display:flex;align-items:center;gap:7px;cursor:pointer;">
+                <input type="checkbox" id="wi-split" onchange="wiToggleSplit()" style="width:15px;height:15px;accent-color:var(--accent);cursor:pointer;">
+                Split Sale
+              </label>
+              <div id="wi-split-row" style="display:none;margin-top:.5rem;">
+                <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">YOUR PRIMARY %</label>
+                <input id="wi-ratio" type="number" min="1" max="99" value="50" style="width:80px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 8px;font-size:13px;outline:none;">
+              </div>
+            </div>
+            <button class="btn btn-secondary" onclick="calcWhatIf()">Calculate</button>
+            <div id="wi-result" style="font-size:18px;font-weight:700;color:var(--accent2);margin-top:.75rem;display:none;"></div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /perf-sub-commissions -->
+
   </div>
 
   <!-- ── TAB: ANALYSIS ── -->
@@ -1098,10 +1227,11 @@
 
           <!-- Sales sub-tab nav -->
           <div style="display:flex;gap:2px;border-bottom:1px solid var(--border2);margin-bottom:1.25rem;overflow-x:auto;">
-            <button class="acct-stab active" id="sales-stab-team"      onclick="showSalesSubTab('team',this)"      style="font-size:13px;">Team</button>
-            <button class="acct-stab"        id="sales-stab-checklist" onclick="showSalesSubTab('checklist',this)" style="font-size:13px;">Checklist</button>
-            <button class="acct-stab"        id="sales-stab-products"  onclick="showSalesSubTab('products',this)"  style="font-size:13px;">Products</button>
-            <button class="acct-stab"        id="sales-stab-locations" onclick="showSalesSubTab('locations',this)" style="font-size:13px;">Locations</button>
+            <button class="acct-stab active" id="sales-stab-team"        onclick="showSalesSubTab('team',this)"        style="font-size:13px;">Team</button>
+            <button class="acct-stab"        id="sales-stab-checklist"   onclick="showSalesSubTab('checklist',this)"   style="font-size:13px;">Checklist</button>
+            <button class="acct-stab"        id="sales-stab-products"    onclick="showSalesSubTab('products',this)"    style="font-size:13px;">Products</button>
+            <button class="acct-stab"        id="sales-stab-locations"   onclick="showSalesSubTab('locations',this)"   style="font-size:13px;">Locations</button>
+            <button class="acct-stab"        id="sales-stab-commissions" onclick="showSalesSubTab('commissions',this)" style="font-size:13px;">Commissions</button>
           </div>
 
           <!-- ── Team sub-pane ── -->
@@ -1404,6 +1534,95 @@
 
           </div><!-- /sales-sub-locations -->
 
+          <!-- ── Commissions sub-pane ── -->
+          <div id="sales-sub-commissions" style="display:none">
+
+          <!-- Commission Structures -->
+          <div class="acct-section">
+            <h3>Commission Structures</h3>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Define commission rate structures for your agents. Each structure can have per-product rates (percent or flat fee) and a default split ratio.</p>
+
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:.75rem;">
+              <button class="btn btn-secondary" style="font-size:12px;" onclick="downloadCommissionTemplate()">Download XLSX Template</button>
+              <div id="cs-upload-drop" style="border:2px dashed var(--border2);border-radius:8px;padding:.6rem 1rem;text-align:center;cursor:pointer;flex:1;min-width:200px;transition:border-color .15s;"
+                   ondragover="event.preventDefault();document.getElementById('cs-upload-drop').style.borderColor='var(--accent)'"
+                   ondragleave="document.getElementById('cs-upload-drop').style.borderColor='var(--border2)'"
+                   ondrop="csFileDrop(event)"
+                   onclick="document.getElementById('cs-upload-file').click()">
+                <span style="font-size:13px;color:var(--muted);">Drag &amp; drop XLSX or <span style="color:var(--accent);text-decoration:underline;">browse</span></span>
+                <input type="file" id="cs-upload-file" accept=".xlsx,.xls" style="display:none" onchange="csFileChange(this)">
+              </div>
+            </div>
+            <div id="cs-upload-msg" style="font-size:12px;margin-bottom:.5rem;display:none;"></div>
+
+            <div style="border-top:1px solid var(--border2);margin:.75rem 0;"></div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;">
+              <span style="font-size:13px;font-weight:600;">Structures</span>
+              <button class="btn btn-primary" style="font-size:12px;padding:5px 14px;" onclick="openStructureBuilder(null)">+ New Structure</button>
+            </div>
+
+            <!-- In-app structure builder -->
+            <div id="cs-builder" style="display:none;background:var(--deep);border:1px solid var(--border);border-radius:10px;padding:1rem;margin-bottom:.75rem;">
+              <div style="font-size:13px;font-weight:700;margin-bottom:.75rem;">Structure Builder</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem;">
+                <div>
+                  <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">STRUCTURE NAME</label>
+                  <input id="cs-builder-name" type="text" placeholder="e.g. Standard Agent" style="width:100%;background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;box-sizing:border-box;">
+                </div>
+                <div>
+                  <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">DEFAULT PRIMARY SPLIT %</label>
+                  <input id="cs-builder-split" type="number" min="0" max="100" step="1" value="50" style="width:100%;background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;box-sizing:border-box;">
+                </div>
+              </div>
+              <div style="margin-bottom:.75rem;">
+                <label style="font-size:12px;display:flex;align-items:center;gap:8px;cursor:pointer;">
+                  <input type="checkbox" id="cs-builder-pay-on-issue" style="width:14px;height:14px;accent-color:var(--accent);cursor:pointer;">
+                  Pay on <strong>issue date</strong> — only count sales where the policy was issued within the month
+                </label>
+              </div>
+              <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem;">Per-Product &amp; Subcategory Rates</div>
+              <p style="font-size:11px;color:var(--muted);margin:0 0 .5rem;">Set a default rate per product. <strong>Min Premium $</strong>: written premium must exceed this threshold before any commission is paid on that product (e.g. $2,500 minimum). <strong>Fin. Svc Rate</strong>: used <em>instead of</em> the base Rate when the subcategory sold is tagged as a Financial Service and has no individual override — e.g. auto normally pays 12% but 12.5% when a financial-service-tagged auto product is sold.</p>
+              <div style="overflow-x:auto;">
+                <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:.75rem;">
+                  <thead>
+                    <tr style="border-bottom:1px solid var(--border2);">
+                      <th style="text-align:left;padding:6px 8px;color:var(--muted);font-weight:600;">Product / Subcategory</th>
+                      <th style="text-align:left;padding:6px 8px;color:var(--muted);font-weight:600;">Type</th>
+                      <th style="text-align:left;padding:6px 8px;color:var(--muted);font-weight:600;">Rate</th>
+                      <th style="text-align:left;padding:6px 8px;color:var(--muted);font-weight:600;">Min Premium $</th>
+                      <th style="text-align:left;padding:6px 8px;color:var(--muted);font-weight:600;" title="Rate applied when a Financial Service subcategory is sold and no individual subcategory override exists">Fin. Svc Rate</th>
+                    </tr>
+                  </thead>
+                  <tbody id="cs-builder-rates"></tbody>
+                </table>
+              </div>
+              <!-- Production Thresholds -->
+              <div style="margin:.75rem 0 .75rem;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem;">
+                  <div>
+                    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">Production Thresholds <span style="text-transform:none;font-weight:400;">(optional)</span></div>
+                    <div style="font-size:11px;color:var(--muted);margin-top:2px;">All groups must be satisfied before any commission is paid for the month. Link products to count them together (e.g. 2 life sales = WL + UL + Term combined).</div>
+                  </div>
+                  <button class="btn btn-secondary" style="font-size:11px;padding:3px 10px;white-space:nowrap;margin-left:12px;" onclick="addThresholdGroup()">+ Add Group</button>
+                </div>
+                <div id="cs-thresholds-list"></div>
+              </div>
+
+              <div id="cs-builder-id" style="display:none;"></div>
+              <div style="display:flex;gap:8px;">
+                <button class="btn btn-primary" style="font-size:13px;" onclick="saveStructureFromBuilder(this)">Save Structure</button>
+                <button class="btn btn-secondary" style="font-size:13px;" onclick="closeStructureBuilder()">Cancel</button>
+              </div>
+              <div id="cs-builder-msg" style="font-size:12px;margin-top:6px;display:none;"></div>
+            </div>
+
+            <!-- Structures list -->
+            <div id="cs-structures-list"></div>
+          </div>
+
+          </div><!-- /sales-sub-commissions -->
+
         </div>
       </div>
 
@@ -1422,7 +1641,7 @@
               <label>ACCESS ROLE</label>
               <select id="ag-invite-role" onchange="toggleCustomTabsUI()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;max-width:320px;outline:none;">
                 <option value="bosun">Bosun — Race tab only</option>
-                <option value="chief_officer">Chief Officer — Scoring, Manage &amp; Performance</option>
+                <option value="chief_officer">Chief Officer — Race, Scoring, Manage &amp; Performance</option>
                 <option value="captain">Captain — Full dashboard access</option>
                 <option value="custom">Custom — Choose specific tabs</option>
               </select>
@@ -1712,6 +1931,12 @@ let _raceWideVm     = 0;
 // ── DIRECTIVE 2 — Sales Add-On state ─────────────────────────────────────────
 let _hasSalesAddon    = false;
 let _salesEntryMode   = 'upload';   // 'upload' | 'manual'
+// ── Commissions Add-On state ─────────────────────────────────────────────────
+let _hasCommissionsAddon = false;
+let _commissionStructures = [];     // [{id, name, default_split_ratio, rates}]
+let _commMonth    = '';             // 'YYYY-MM'
+let _commData     = null;           // last loaded commissions response
+let _commPayments = {};             // agentId → paid object (populated by renderCommissions)
 let _checklistToken   = null;
 let _checklistEmailCfg= null;
 let _checklistFormCfg = [];         // [{form_key,label,active,sort_order}]
@@ -1921,13 +2146,16 @@ async function checkAccountAndShow(session) {
         _dataUserId       = _ownerUserId;
         const { data: ownerAcct } = await _supabase
           .from('accounts')
-          .select('company_name, plan, status, trial_ends_at')
+          .select('company_name, plan, status, trial_ends_at, has_sales_addon, has_commissions_addon, sales_entry_mode')
           .eq('user_id', _ownerUserId)
           .single();
         if (ownerAcct) {
-          _ownerCompany = ownerAcct.company_name || '';
-          _currentPlan  = ownerAcct.plan         || 'basic';
-          _acctStatus   = ownerAcct.status        || 'trial';
+          _ownerCompany        = ownerAcct.company_name        || '';
+          _currentPlan         = ownerAcct.plan                || 'basic';
+          _acctStatus          = ownerAcct.status              || 'trial';
+          _hasSalesAddon       = ownerAcct.has_sales_addon     || false;
+          _hasCommissionsAddon = ownerAcct.has_commissions_addon || false;
+          _salesEntryMode      = ownerAcct.sales_entry_mode    || 'upload';
           if (_acctStatus === 'trial' && ownerAcct.trial_ends_at && new Date(ownerAcct.trial_ends_at) < new Date()) {
             _acctStatus = 'past_due'; _trialExpired = true;
           }
@@ -1939,7 +2167,10 @@ async function checkAccountAndShow(session) {
       }
     }
 
-    if (!_isMember) await loadAddonConfig().catch(e => console.error('loadAddonConfig:', e));
+    // Load add-on config for owners and for captain/chief_officer members (they need agent roster, subcats, etc.)
+    if (!_isMember || ['captain', 'chief_officer'].includes(_memberRole)) {
+      await loadAddonConfig().catch(e => console.error('loadAddonConfig:', e));
+    }
 
     showScreen('app');
     document.getElementById('user-info').textContent = _isMember
@@ -2158,13 +2389,14 @@ function showAccountSubTab(name, btn) {
 }
 
 function showSalesSubTab(name, btn) {
-  ['team','checklist','products','locations'].forEach(n => {
+  ['team','checklist','products','locations','commissions'].forEach(n => {
     const p = document.getElementById('sales-sub-' + n);
     if (p) p.style.display = n === name ? '' : 'none';
   });
   document.querySelectorAll('#sales-pane-content .acct-stab').forEach(b => b.classList.remove('active'));
   const activeBtn = btn || document.getElementById('sales-stab-' + name);
   if (activeBtn) activeBtn.classList.add('active');
+  if (name === 'commissions') renderCommissionStructuresList();
 }
 
 function showManageSubTab(name, btn) {
@@ -2172,7 +2404,7 @@ function showManageSubTab(name, btn) {
 }
 
 function showPerfSubTab(name, btn) {
-  ['callperf','saleslog','salesperf'].forEach(n => {
+  ['callperf','saleslog','salesperf','commissions'].forEach(n => {
     const p = document.getElementById('perf-sub-' + n);
     if (p) p.style.display = n === name ? '' : 'none';
   });
@@ -2204,6 +2436,17 @@ function showPerfSubTab(name, btn) {
     if (!hasSales) return;
     if (name === 'saleslog')  loadChecklistSubmissions();
     if (name === 'salesperf') initSalesPerf();
+    return;
+  }
+
+  if (name === 'commissions') {
+    const hasComm   = _hasCommissionsAddon || _isAdmin;
+    const teaser    = document.getElementById('perf-commissions-teaser');
+    const content   = document.getElementById('perf-commissions-content');
+    if (teaser)  teaser.style.display  = hasComm ? 'none' : '';
+    if (content) content.style.display = hasComm ? '' : 'none';
+    if (!hasComm) return;
+    loadCommissions();
   }
 }
 
@@ -4169,7 +4412,7 @@ function getAllowedTabs() {
   if (!_isMember) return null;
   switch (_memberRole) {
     case 'captain':       return ['race','scoring','manage','perf','analysis','history'];
-    case 'chief_officer': return ['scoring','manage','perf','history'];
+    case 'chief_officer': return ['race','scoring','manage','perf','history'];
     case 'bosun':         return ['race','history'];
     case 'custom':        return _memberCustomTabs.length ? _memberCustomTabs : ['race'];
     default:              return ['race'];
@@ -4304,7 +4547,7 @@ async function changeMemberPassword() {
 // ── AGENCY MANAGEMENT ────────────────────────────────────────────────────────
 const ROLE_DESC = {
   bosun:         'Can view the Race tab only — scores, rankings, and team standings.',
-  chief_officer: 'Can view Scoring, Manage, and Performance tabs.',
+  chief_officer: 'Can view Race, Scoring, Manage, and Performance tabs.',
   captain:       'Full dashboard access — all tabs except billing and account management.',
   custom:        'Choose which specific tabs this person can access.',
 };
@@ -4325,6 +4568,9 @@ function renderMemberRow(m) {
   const resendBtn = m.status === 'invited'
     ? `<button onclick="resendInvite('${m.id}','${escHtml(m.email)}',this)" style="background:none;border:1px solid rgba(255,255,255,.15);color:var(--muted);border-radius:5px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;margin-right:6px;">Resend</button>`
     : '';
+  const rosterOpts = _agentRoster.map(a =>
+    `<option value="${escHtml(a.agent_id)}"${m.roster_agent_id === a.agent_id ? ' selected' : ''}>${escHtml(a.name)}</option>`
+  ).join('');
   return `<tr>
       <td style="padding:6px 8px;border-bottom:1px solid var(--border2);font-family:'DM Mono',monospace;font-size:12px;">${escHtml(m.email)}</td>
       <td style="padding:6px 8px;border-bottom:1px solid var(--border2);">
@@ -4335,6 +4581,19 @@ function renderMemberRow(m) {
       </td>
       <td style="padding:6px 8px;border-bottom:1px solid var(--border2);text-align:right;white-space:nowrap;">
         ${resendBtn}<button onclick="removeMember('${m.id}',this)" style="background:none;border:1px solid rgba(255,77,109,.3);color:var(--danger);border-radius:5px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">Remove</button>
+      </td>
+    </tr>
+    <tr id="agent-link-row-${m.id}">
+      <td colspan="4" style="padding:0 8px 8px 8px;border-bottom:1px solid var(--border2);">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="font-size:11px;color:var(--muted);">Agent Profile:</span>
+          <select id="agent-link-sel-${m.id}" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:3px 6px;font-size:12px;outline:none;">
+            <option value="">— Not linked —</option>
+            ${rosterOpts}
+          </select>
+          <button onclick="saveMemberRosterAgent('${m.id}',this)" style="background:none;border:1px solid rgba(0,212,255,.3);color:var(--accent);border-radius:5px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">Save</button>
+          <span id="agent-link-msg-${m.id}" style="font-size:11px;display:none;"></span>
+        </div>
       </td>
     </tr>
     <tr id="custom-tabs-row-${m.id}" style="${m.role==='custom'?'':'display:none'}">
@@ -4378,6 +4637,28 @@ async function loadAgencyMembers() {
       </table>`;
   } catch(e) {
     container.innerHTML = `<div style="color:var(--danger);font-size:13px;">Error loading members: ${e.message}</div>`;
+  }
+}
+
+async function saveMemberRosterAgent(memberId, btn) {
+  const sel    = document.getElementById('agent-link-sel-' + memberId);
+  const msgEl  = document.getElementById('agent-link-msg-' + memberId);
+  const agentId = sel?.value || null;
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/members', {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ memberId, roster_agent_id: agentId }),
+    });
+    const d = await r.json();
+    if (!r.ok) { msgEl.style.color='var(--danger)'; msgEl.textContent=d.error||'Error'; }
+    else { msgEl.style.color='var(--accent2)'; msgEl.textContent='Saved'; }
+  } catch(e) {
+    msgEl.style.color='var(--danger)'; msgEl.textContent=e.message;
+  } finally {
+    btn.disabled = false;
+    if (msgEl) { msgEl.style.display=''; setTimeout(() => { msgEl.style.display='none'; }, 3000); }
   }
 }
 
@@ -4678,14 +4959,921 @@ function renderAgentRoster() {
     container.innerHTML = '<div style="font-size:13px;color:var(--muted);margin-bottom:.5rem;">No agents yet — add one below or upload a sales/call file.</div>';
     return;
   }
-  container.innerHTML = _agentRoster.map(a =>
-    `<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
+  const showStructure = _hasCommissionsAddon || _isAdmin;
+  container.innerHTML = _agentRoster.map(a => {
+    const structureSelect = showStructure ? `
+      <select onchange="assignAgentStructure('${escHtml(a.agent_id)}', this.value)" title="Commission Structure" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:3px 6px;font-size:11px;outline:none;max-width:160px;">
+        <option value="">— No Structure —</option>
+        ${_commissionStructures.map(s => `<option value="${escHtml(s.id)}"${a.commission_structure_id === s.id ? ' selected' : ''}>${escHtml(s.name)}</option>`).join('')}
+      </select>` : '';
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap;">
       <input type="checkbox" ${a.active !== false ? 'checked' : ''} onchange="toggleAgentRoster('${escHtml(a.id)}', this.checked)" title="Active in dropdowns">
       <span style="font-size:13px;flex:1;">${escHtml(a.name)}</span>
       <span style="font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;">${escHtml(a.agent_id)}</span>
+      ${structureSelect}
       <button class="btn btn-secondary" style="padding:2px 8px;font-size:11px;" onclick="deleteAgentRoster('${escHtml(a.id)}', this)">✕</button>
-    </div>`
-  ).join('');
+    </div>`;
+  }).join('');
+}
+
+async function assignAgentStructure(agentId, structureId) {
+  const a = _agentRoster.find(r => r.agent_id === agentId);
+  if (!a) return;
+  await fetch('/api/agent-roster', {
+    method: 'PATCH',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: a.id, commission_structure_id: structureId || null }),
+  });
+  a.commission_structure_id = structureId || null;
+}
+
+// ── COMMISSION STRUCTURES ──────────────────────────────────────────────────────
+
+// Commission builder uses the same product list as the rest of the app (user-configurable)
+function csProducts() { return activeCats(); }
+
+function downloadCommissionTemplate() {
+  if (typeof XLSX === 'undefined') { alert('XLSX library not loaded.'); return; }
+  const rows = [
+    ['Structure Name', 'My Structure Name'],
+    ['Default Primary Split %', 50],
+    [],
+    ['Product Key', 'Subcategory (blank = product default)', 'Type (percent / flat / none)', 'Rate'],
+  ];
+  for (const p of csProducts()) {
+    rows.push([p.key, '', 'none', '']);
+    const subcats = _salesSubcats.filter(s => s.scoring_category === p.key && s.active !== false);
+    for (const sub of subcats) rows.push([p.key, sub.label, 'inherit', '']);
+  }
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{ wch: 12 }, { wch: 36 }, { wch: 28 }, { wch: 10 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Commission Structure');
+  XLSX.writeFile(wb, 'commission_structure_template.xlsx');
+}
+
+function csRateTypeChanged(product) {
+  const type  = document.getElementById('cs-rate-type-' + product)?.value;
+  const valEl = document.getElementById('cs-rate-val-' + product);
+  const fsEl  = document.getElementById('cs-fs-rate-' + product);
+  const show  = type && type !== 'none';
+  if (valEl) valEl.style.display = show ? '' : 'none';
+  if (fsEl)  fsEl.style.display  = show ? '' : 'none';
+}
+
+function csSubRateTypeChanged(product, idx) {
+  const type  = document.getElementById(`cs-sub-type-${product}-${idx}`)?.value;
+  const valEl = document.getElementById(`cs-sub-val-${product}-${idx}`);
+  if (valEl) valEl.style.display = (type && type !== 'inherit') ? '' : 'none';
+}
+
+function buildRatesTable(existingRates) {
+  const tbody = document.getElementById('cs-builder-rates');
+  if (!tbody) return;
+  const sel  = 'background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px;font-size:12px;';
+  const inp  = 'width:72px;background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px;font-size:12px;';
+
+  tbody.innerHTML = csProducts().map(p => {
+    const prodCfg  = existingRates?.[p.key] || {};
+    const prodType = prodCfg.type   || 'none';
+    const prodRate = prodCfg.rate   != null ? prodCfg.rate   : '';
+    const prodMin  = prodCfg.minimum != null ? prodCfg.minimum : '';
+    const prodFsR  = prodCfg.fs_rate != null ? prodCfg.fs_rate : '';
+    const subcats  = _salesSubcats.filter(s => s.scoring_category === p.key && s.active !== false);
+    const hasFsSub = subcats.some(s => s.is_financial_service);
+    const show     = prodType !== 'none';
+
+    let html = `<tr style="background:rgba(255,255,255,.03);border-bottom:1px solid var(--border2);">
+      <td style="padding:6px 8px;font-weight:700;">${escHtml(p.label)}</td>
+      <td style="padding:5px 8px;">
+        <select id="cs-rate-type-${p.key}" onchange="csRateTypeChanged('${p.key}')" style="${sel}">
+          <option value="none"${prodType==='none'?' selected':''}>None</option>
+          <option value="percent"${prodType==='percent'?' selected':''}>Percent %</option>
+          <option value="flat"${prodType==='flat'?' selected':''}>Flat $</option>
+        </select>
+      </td>
+      <td style="padding:5px 8px;">
+        <input id="cs-rate-val-${p.key}" type="number" min="0" step="0.01" value="${prodRate}" placeholder="e.g. 10"
+          style="${inp}display:${show?'':'none'};">
+      </td>
+      <td style="padding:5px 8px;">
+        <input id="cs-min-${p.key}" type="number" min="0" step="1" value="${prodMin}" placeholder="0"
+          title="Minimum written premium" style="${inp}width:72px;">
+      </td>
+      <td style="padding:5px 8px;">
+        ${hasFsSub ? `<input id="cs-fs-rate-${p.key}" type="number" min="0" step="0.01" value="${prodFsR}" placeholder="FS rate"
+          title="Rate for financial-service subcategories" style="${inp}width:72px;display:${show?'':'none'};">` : '<span style="font-size:11px;color:var(--border2);">—</span>'}
+      </td>
+    </tr>`;
+
+    html += subcats.map((sub, idx) => {
+      const subCfg  = prodCfg.subcategories?.[sub.label] || {};
+      const subType = subCfg.type || 'inherit';
+      const subRate = subCfg.rate != null ? subCfg.rate : '';
+      return `<tr style="border-bottom:1px solid var(--border2);">
+        <td style="padding:4px 8px 4px 22px;font-size:11px;color:var(--muted);">↳ ${escHtml(sub.label)}${sub.is_financial_service ? ' <span style="font-size:10px;color:var(--accent);">FS</span>' : ''}</td>
+        <td style="padding:3px 8px;">
+          <select id="cs-sub-type-${p.key}-${idx}" onchange="csSubRateTypeChanged('${p.key}','${idx}')" style="${sel}font-size:11px;">
+            <option value="inherit"${subType==='inherit'?' selected':''}>Use Default</option>
+            <option value="percent"${subType==='percent'?' selected':''}>Percent %</option>
+            <option value="flat"${subType==='flat'?' selected':''}>Flat $</option>
+          </select>
+        </td>
+        <td style="padding:3px 8px;">
+          <input id="cs-sub-val-${p.key}-${idx}" type="number" min="0" step="0.01" value="${subRate}" placeholder="e.g. 10"
+            style="${inp}font-size:11px;display:${subType!=='inherit'?'':'none'};">
+        </td>
+        <td></td><td></td>
+      </tr>`;
+    }).join('');
+
+    return html;
+  }).join('');
+}
+
+function openStructureBuilder(structure) {
+  const builder = document.getElementById('cs-builder');
+  if (!builder) return;
+  builder.style.display = '';
+  document.getElementById('cs-builder-id').textContent = structure?.id  || '';
+  document.getElementById('cs-builder-name').value     = structure?.name || '';
+  document.getElementById('cs-builder-split').value    = structure ? Math.round((structure.default_split_ratio || 0.5) * 100) : 50;
+  const poiEl = document.getElementById('cs-builder-pay-on-issue');
+  if (poiEl) poiEl.checked = structure?.pay_on_issue || false;
+  // Restore thresholds; preserve group IDs from saved data so requires references work
+  const thrIdMap = {};
+  _csEscSeq = 0;
+  _csThresholds = (structure?.thresholds || []).map(t => {
+    const newId = t.id || ('thr' + (++_csThresholdSeq));
+    thrIdMap[t.id] = newId;
+    return {
+      id:             newId,
+      label:          t.label || '',
+      products:       t.products || [],
+      min_count:      t.min_count || 0,
+      min_commission: t.min_commission || 0,
+      requires:       [],  // filled in below after all IDs are mapped
+      escalators:     (t.escalators || []).map(e => ({
+        id:               e.id || ('esc' + (++_csEscSeq)),
+        trigger_group_id: e.trigger_group_id || '',  // remapped in second pass
+        tiers:            (e.tiers || []).map(tier => ({
+          min:       tier.min ?? 0,
+          max:       tier.max ?? null,
+          bonus_pct: tier.bonus_pct ?? 0,
+        })),
+      })),
+    };
+  });
+  _csThresholds.forEach((t, i) => {
+    const orig = (structure?.thresholds || [])[i];
+    t.requires = (orig?.requires || []).map(r => thrIdMap[r] || r).filter(r => _csThresholds.some(x => x.id === r));
+    t.escalators.forEach(esc => {
+      esc.trigger_group_id = thrIdMap[esc.trigger_group_id] || esc.trigger_group_id;
+    });
+  });
+  buildRatesTable(structure?.rates || {});
+  renderThresholdGroups();
+  const msgEl = document.getElementById('cs-builder-msg');
+  if (msgEl) { msgEl.style.display = 'none'; }
+  builder.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function openStructureById(id) {
+  const s = _commissionStructures.find(s => s.id === id);
+  if (s) openStructureBuilder(s);
+}
+
+function closeStructureBuilder() {
+  const builder = document.getElementById('cs-builder');
+  if (builder) builder.style.display = 'none';
+  _csThresholds = [];
+}
+
+// ── Production threshold state ─────────────────────────────────────────────
+// Each group: {id, label, products:[], min_count, min_commission, requires:[ids], escalators:[]}
+// min_count:      combined policy count across products must be >= this (0 = no count check)
+// min_commission: group's total earned must EXCEED this floor; only the overage is paid (0 = no floor)
+// requires:       other group IDs — all must pass before this group pays anything
+// escalators:     [{id, trigger_group_id, tiers:[{min, max, bonus_pct}]}]
+//   → after group passes, find the tier where trigger group count falls; add bonus_pct% to payout
+let _csThresholds = [];
+let _csThresholdSeq = 0;
+let _csEscSeq = 0;
+
+function syncThresholdsFromDOM() {
+  _csThresholds = _csThresholds.map(t => {
+    const labelEl   = document.getElementById('cs-thr-label-'   + t.id);
+    const countEl   = document.getElementById('cs-thr-count-'   + t.id);
+    const mincommEl = document.getElementById('cs-thr-mincomm-' + t.id);
+    const prodCbs   = document.querySelectorAll('.cs-thr-prod-' + t.id + ':checked');
+    return {
+      ...t,
+      label:          labelEl   ? (labelEl.value   || '')           : (t.label          || ''),
+      products:       prodCbs.length ? [...prodCbs].map(cb => cb.value) : (t.products   || []),
+      min_count:      countEl   ? (parseInt(countEl.value)    || 0)  : (t.min_count      || 0),
+      min_commission: mincommEl ? (parseFloat(mincommEl.value) || 0) : (t.min_commission || 0),
+      // requires tracked directly in state via updateThresholdRequires
+    };
+  });
+}
+
+function thrGroupName(t, idx) {
+  return (t.label || '').trim() || `Group ${idx + 1}`;
+}
+
+function renderThresholdGroups() {
+  const list = document.getElementById('cs-thresholds-list');
+  if (!list) return;
+  const prods = csProducts();
+  const inp = 'background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:3px 7px;font-size:12px;outline:none;';
+  const btnSm = 'font-size:11px;padding:3px 10px;white-space:nowrap;';
+  if (!_csThresholds.length) {
+    list.innerHTML = '<div style="font-size:11px;color:var(--border2);font-style:italic;padding:.25rem 0;">No thresholds — all commissions pay regardless of production volume.</div>';
+    return;
+  }
+  list.innerHTML = _csThresholds.map((t, tIdx) => {
+    const others = _csThresholds.map((x, i) => ({ ...x, _idx: i })).filter(x => x.id !== t.id);
+    const escs   = t.escalators || [];
+
+    const escHtml2 = escs.map(esc => {
+      const tierRows = (esc.tiers || []).map((tier, ti) => `
+        <div style="display:grid;grid-template-columns:60px 60px 60px 22px;gap:4px;align-items:center;margin-bottom:3px;">
+          <input type="number" min="0" step="1" value="${tier.min ?? 0}" placeholder="0"
+            oninput="updateEscTier('${t.id}','${esc.id}',${ti},'min',this.value)"
+            style="${inp}width:100%;font-size:11px;padding:2px 5px;">
+          <input type="number" min="0" step="1" value="${tier.max ?? ''}" placeholder="∞"
+            oninput="updateEscTier('${t.id}','${esc.id}',${ti},'max',this.value)"
+            style="${inp}width:100%;font-size:11px;padding:2px 5px;">
+          <input type="number" min="0" step="0.1" value="${tier.bonus_pct ?? 0}" placeholder="0"
+            oninput="updateEscTier('${t.id}','${esc.id}',${ti},'bonus_pct',this.value)"
+            style="${inp}width:100%;font-size:11px;padding:2px 5px;">
+          <button onclick="removeEscTier('${t.id}','${esc.id}',${ti})" style="background:none;border:none;color:var(--danger);font-size:13px;cursor:pointer;padding:0;line-height:1;opacity:.7;">✕</button>
+        </div>`).join('');
+
+      const triggerOpts = others.map(og =>
+        `<option value="${og.id}"${esc.trigger_group_id === og.id ? ' selected' : ''}>${escHtml(thrGroupName(og, og._idx))}</option>`
+      ).join('');
+
+      return `<div style="background:rgba(0,212,255,.04);border:1px solid rgba(0,212,255,.15);border-radius:6px;padding:.4rem .55rem;margin-bottom:.35rem;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.3rem;">
+          <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">
+            <div style="font-size:10px;color:var(--muted);white-space:nowrap;">Triggered by count in:</div>
+            <select onchange="updateEscTrigger('${t.id}','${esc.id}',this.value)"
+              style="${inp}font-size:11px;padding:2px 5px;">
+              <option value="">— Select group —</option>
+              ${triggerOpts}
+            </select>
+          </div>
+          <button onclick="removeEscalator('${t.id}','${esc.id}')" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:0 2px;line-height:1;opacity:.6;" title="Remove escalator">✕</button>
+        </div>
+        <div style="display:grid;grid-template-columns:60px 60px 60px 22px;gap:4px;font-size:10px;color:var(--muted);margin-bottom:2px;padding-left:1px;">
+          <span>Count ≥</span><span>Count ≤</span><span>Bonus %</span><span></span>
+        </div>
+        ${tierRows}
+        <button class="btn btn-secondary" onclick="addEscTier('${t.id}','${esc.id}')" style="${btnSm}margin-top:2px;">+ Add Tier</button>
+      </div>`;
+    }).join('');
+
+    return `<div style="background:rgba(255,255,255,.03);border:1px solid var(--border2);border-radius:8px;padding:.65rem .75rem;margin-bottom:.5rem;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;gap:8px;">
+        <div style="flex:1;">
+          <label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:2px;">Group Label</label>
+          <input id="cs-thr-label-${t.id}" type="text" value="${escHtml(t.label||'')}" placeholder="e.g. Life, Auto &amp; Fire"
+            oninput="updateThresholdLabel('${t.id}',this.value)"
+            style="${inp}width:100%;max-width:240px;">
+        </div>
+        <button onclick="removeThresholdGroup('${t.id}')" style="background:none;border:1px solid rgba(255,77,109,.3);color:var(--danger);border-radius:5px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap;flex-shrink:0;">✕ Remove</button>
+      </div>
+
+      <div style="margin-bottom:.5rem;">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Products (policy counts combined)</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${prods.map(p => `<label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;background:rgba(255,255,255,.04);border:1px solid var(--border2);border-radius:5px;padding:2px 8px;white-space:nowrap;">
+            <input type="checkbox" class="cs-thr-prod-${t.id}" value="${escHtml(p.key)}"${(t.products||[]).includes(p.key)?' checked':''} style="accent-color:var(--accent);cursor:pointer;">
+            ${escHtml(p.label)}
+          </label>`).join('')}
+        </div>
+      </div>
+
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:.5rem;">
+        <div>
+          <label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:2px;">Min Policy Count</label>
+          <input id="cs-thr-count-${t.id}" type="number" min="0" step="1" value="${t.min_count||0}" placeholder="0"
+            style="${inp}width:64px;">
+          <div style="font-size:10px;color:var(--muted);margin-top:2px;">0 = no count required</div>
+        </div>
+        <div>
+          <label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:2px;">Commission Floor $</label>
+          <input id="cs-thr-mincomm-${t.id}" type="number" min="0" step="0.01" value="${t.min_commission||''}" placeholder="0.00"
+            style="${inp}width:90px;">
+          <div style="font-size:10px;color:var(--muted);margin-top:2px;">Only pays amount above floor</div>
+        </div>
+      </div>
+
+      ${others.length ? `<div style="margin-bottom:.5rem;">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Requires these groups to qualify first</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${others.map(og => `<label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;background:rgba(255,255,255,.04);border:1px solid var(--border2);border-radius:5px;padding:2px 8px;white-space:nowrap;">
+            <input type="checkbox"${(t.requires||[]).includes(og.id)?' checked':''} style="accent-color:var(--warn);cursor:pointer;"
+              onchange="updateThresholdRequires('${t.id}','${og.id}',this.checked)">
+            <span class="cs-req-label-${og.id}">${escHtml(thrGroupName(og, og._idx))}</span>
+          </label>`).join('')}
+        </div>
+      </div>` : ''}
+
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.3rem;">
+          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">Bonus Escalators</div>
+          ${others.length
+            ? `<button class="btn btn-secondary" onclick="addEscalator('${t.id}')" style="${btnSm}">+ Add Escalator</button>`
+            : `<span style="font-size:10px;color:var(--border2);font-style:italic;">Add more groups to enable</span>`}
+        </div>
+        ${escs.length
+          ? escHtml2
+          : `<div style="font-size:10px;color:var(--border2);font-style:italic;">${others.length ? 'No escalators — commission pays at face value.' : ''}</div>`}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function updateThresholdLabel(id, val) {
+  const grp = _csThresholds.find(t => t.id === id);
+  if (grp) grp.label = val;
+  // Update the display text in every other group's requires section without re-rendering
+  const idx = _csThresholds.indexOf(grp);
+  const display = (val || '').trim() || `Group ${idx + 1}`;
+  document.querySelectorAll(`.cs-req-label-${id}`).forEach(el => { el.textContent = display; });
+}
+
+function addThresholdGroup() {
+  syncThresholdsFromDOM();
+  const id = 'thr' + (++_csThresholdSeq);
+  _csThresholds.push({ id, label: '', products: [], min_count: 0, min_commission: 0, requires: [], escalators: [] });
+  renderThresholdGroups();
+}
+
+function removeThresholdGroup(id) {
+  syncThresholdsFromDOM();
+  _csThresholds = _csThresholds.filter(t => t.id !== id);
+  // Remove this id from any other group's requires
+  _csThresholds.forEach(t => { t.requires = (t.requires || []).filter(r => r !== id); });
+  renderThresholdGroups();
+}
+
+function updateThresholdRequires(groupId, reqId, checked) {
+  const grp = _csThresholds.find(t => t.id === groupId);
+  if (!grp) return;
+  grp.requires = grp.requires || [];
+  if (checked) { if (!grp.requires.includes(reqId)) grp.requires.push(reqId); }
+  else { grp.requires = grp.requires.filter(r => r !== reqId); }
+}
+
+function addEscalator(groupId) {
+  syncThresholdsFromDOM();
+  const grp = _csThresholds.find(t => t.id === groupId);
+  if (!grp) return;
+  grp.escalators = grp.escalators || [];
+  grp.escalators.push({ id: 'esc' + (++_csEscSeq), trigger_group_id: '', tiers: [] });
+  renderThresholdGroups();
+}
+
+function removeEscalator(groupId, escId) {
+  syncThresholdsFromDOM();
+  const grp = _csThresholds.find(t => t.id === groupId);
+  if (!grp) return;
+  grp.escalators = (grp.escalators || []).filter(e => e.id !== escId);
+  renderThresholdGroups();
+}
+
+function addEscTier(groupId, escId) {
+  syncThresholdsFromDOM();
+  const grp = _csThresholds.find(t => t.id === groupId);
+  if (!grp) return;
+  const esc = (grp.escalators || []).find(e => e.id === escId);
+  if (!esc) return;
+  esc.tiers = esc.tiers || [];
+  const prevMax = esc.tiers.length ? (esc.tiers[esc.tiers.length - 1].max ?? null) : null;
+  esc.tiers.push({ min: prevMax != null ? prevMax + 1 : 0, max: null, bonus_pct: 0 });
+  renderThresholdGroups();
+}
+
+function removeEscTier(groupId, escId, tierIdx) {
+  syncThresholdsFromDOM();
+  const grp = _csThresholds.find(t => t.id === groupId);
+  if (!grp) return;
+  const esc = (grp.escalators || []).find(e => e.id === escId);
+  if (!esc) return;
+  esc.tiers.splice(tierIdx, 1);
+  renderThresholdGroups();
+}
+
+function updateEscTrigger(groupId, escId, val) {
+  const grp = _csThresholds.find(t => t.id === groupId);
+  if (!grp) return;
+  const esc = (grp.escalators || []).find(e => e.id === escId);
+  if (esc) esc.trigger_group_id = val;
+}
+
+function updateEscTier(groupId, escId, tierIdx, field, val) {
+  const grp = _csThresholds.find(t => t.id === groupId);
+  if (!grp) return;
+  const esc = (grp.escalators || []).find(e => e.id === escId);
+  if (!esc || !esc.tiers[tierIdx]) return;
+  const num = parseFloat(val);
+  if (field === 'max') esc.tiers[tierIdx].max = (val === '' || isNaN(num)) ? null : num;
+  else esc.tiers[tierIdx][field] = isNaN(num) ? 0 : num;
+}
+
+function collectThresholds() {
+  syncThresholdsFromDOM();
+  return _csThresholds
+    .filter(t => (t.products||[]).length > 0 || t.min_commission > 0)
+    .map(t => ({
+      id:             t.id,
+      label:          t.label || '',
+      products:       t.products || [],
+      min_count:      t.min_count || 0,
+      min_commission: t.min_commission || 0,
+      requires:       t.requires || [],
+      escalators:     (t.escalators || []).filter(e => e.trigger_group_id && (e.tiers||[]).length > 0).map(e => ({
+        id:               e.id,
+        trigger_group_id: e.trigger_group_id,
+        tiers:            (e.tiers || []).map(tier => ({
+          min:       tier.min ?? 0,
+          max:       tier.max ?? null,
+          bonus_pct: tier.bonus_pct ?? 0,
+        })),
+      })),
+    }));
+}
+
+async function saveStructureFromBuilder(btn) {
+  const name     = (document.getElementById('cs-builder-name')?.value || '').trim();
+  const splitPct = parseFloat(document.getElementById('cs-builder-split')?.value) || 50;
+  const id       = document.getElementById('cs-builder-id')?.textContent.trim() || null;
+  if (!name) { showInlineMsg('cs-builder-msg', 'Structure name is required.', 'err'); return; }
+
+  const payOnIssue = document.getElementById('cs-builder-pay-on-issue')?.checked || false;
+
+  const rates = {};
+  for (const p of csProducts()) {
+    const type = document.getElementById('cs-rate-type-' + p.key)?.value || 'none';
+    const entry = {};
+    if (type && type !== 'none') {
+      const rate = parseFloat(document.getElementById('cs-rate-val-' + p.key)?.value);
+      if (!isNaN(rate) && rate >= 0) { entry.type = type; entry.rate = rate; }
+      const fsRate = parseFloat(document.getElementById('cs-fs-rate-' + p.key)?.value);
+      if (!isNaN(fsRate) && fsRate >= 0) entry.fs_rate = fsRate;
+    }
+    const minVal = parseFloat(document.getElementById('cs-min-' + p.key)?.value);
+    if (!isNaN(minVal) && minVal > 0) entry.minimum = minVal;
+    // Collect subcategory overrides
+    const subcats = _salesSubcats.filter(s => s.scoring_category === p.key && s.active !== false);
+    const subRates = {};
+    subcats.forEach((sub, idx) => {
+      const subType = document.getElementById(`cs-sub-type-${p.key}-${idx}`)?.value || 'inherit';
+      if (subType !== 'inherit') {
+        const subRate = parseFloat(document.getElementById(`cs-sub-val-${p.key}-${idx}`)?.value);
+        if (!isNaN(subRate) && subRate >= 0) subRates[sub.label] = { type: subType, rate: subRate };
+      }
+    });
+    if (Object.keys(subRates).length) entry.subcategories = subRates;
+    if (Object.keys(entry).length) rates[p.key] = entry;
+  }
+
+  const thresholds = collectThresholds();
+  const payload = { name, default_split_ratio: splitPct / 100, pay_on_issue: payOnIssue, thresholds, rates };
+  btn.disabled = true;
+  try {
+    const method = id ? 'PATCH' : 'POST';
+    const body   = id ? { id, ...payload } : payload;
+    const r = await fetch('/api/commission-structures', {
+      method,
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (!r.ok) { showInlineMsg('cs-builder-msg', d.error || 'Error saving.', 'err'); return; }
+    if (id) {
+      const idx = _commissionStructures.findIndex(s => s.id === id);
+      if (idx >= 0) _commissionStructures[idx] = d;
+      else _commissionStructures.push(d);
+    } else {
+      _commissionStructures.push(d);
+    }
+    _commissionStructures.sort((a, b) => a.name.localeCompare(b.name));
+    closeStructureBuilder();
+    renderCommissionStructuresList();
+    renderAgentRoster();
+  } catch(e) { showInlineMsg('cs-builder-msg', e.message, 'err'); }
+  finally { btn.disabled = false; }
+}
+
+async function deleteCommissionStructure(id) {
+  if (!confirm('Delete this structure? Agents assigned to it will lose their rate.')) return;
+  const r = await fetch(`/api/commission-structures?id=${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders() });
+  if (!r.ok) { alert('Error deleting structure.'); return; }
+  _commissionStructures = _commissionStructures.filter(s => s.id !== id);
+  for (const a of _agentRoster) { if (a.commission_structure_id === id) a.commission_structure_id = null; }
+  renderCommissionStructuresList();
+  renderAgentRoster();
+}
+
+function renderCommissionStructuresList() {
+  const el = document.getElementById('cs-structures-list');
+  if (!el) return;
+  if (!_commissionStructures.length) {
+    el.innerHTML = '<p style="font-size:13px;color:var(--muted);">No structures yet. Create one above or upload a template.</p>';
+    return;
+  }
+  el.innerHTML = _commissionStructures.map(s => {
+    const splitPrimary = Math.round((s.default_split_ratio || 0.5) * 100);
+    const rateLines = csProducts()
+      .filter(p => s.rates?.[p.key]?.type && s.rates[p.key].type !== 'none')
+      .map(p => {
+        const r = s.rates[p.key];
+        return `<span style="font-size:11px;color:var(--muted);">${escHtml(p.label)}: ${r.type === 'percent' ? r.rate + '%' : '$' + r.rate}</span>`;
+      }).join('<span style="color:var(--border2);margin:0 4px;">·</span>');
+    return `<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:.65rem .75rem;background:var(--card2);border:1px solid var(--border2);border-radius:8px;margin-bottom:.5rem;gap:.75rem;flex-wrap:wrap;">
+      <div>
+        <div style="font-weight:600;font-size:13px;margin-bottom:3px;">${escHtml(s.name)}</div>
+        <div style="margin-bottom:${rateLines ? '3px' : '0'};">
+          <span style="font-size:11px;color:var(--muted);">Split: ${splitPrimary}/${100 - splitPrimary}</span>
+          ${s.pay_on_issue ? '<span style="font-size:10px;color:var(--accent);margin-left:8px;">Pay on Issue</span>' : ''}
+          ${(s.thresholds||[]).length ? `<span style="font-size:10px;color:var(--warn);margin-left:8px;" title="${(s.thresholds||[]).map(t=>`${t.label||'Group'}: ${t.min_count?t.min_count+' policies':''}${t.min_commission?` $${t.min_commission} floor`:''}${(t.requires||[]).length?' (requires others)':''}`).join(' | ')}">${s.thresholds.length} prod. group${s.thresholds.length>1?'s':''}</span>` : ''}
+        </div>
+        ${rateLines ? `<div style="display:flex;flex-wrap:wrap;gap:4px;">${rateLines}</div>` : ''}
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0;">
+        <button class="btn btn-secondary" style="font-size:11px;padding:3px 10px;" onclick="openStructureById('${escHtml(s.id)}')">Edit</button>
+        <button class="btn btn-secondary" style="font-size:11px;padding:3px 10px;color:var(--danger);" onclick="deleteCommissionStructure('${escHtml(s.id)}')">Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function csFileChange(input) {
+  if (input.files?.[0]) await parseAndUploadCommissionXlsx(input.files[0]);
+  input.value = '';
+}
+
+function csFileDrop(event) {
+  event.preventDefault();
+  document.getElementById('cs-upload-drop').style.borderColor = 'var(--border2)';
+  const file = event.dataTransfer.files?.[0];
+  if (file) parseAndUploadCommissionXlsx(file);
+}
+
+async function parseAndUploadCommissionXlsx(file) {
+  const msgEl = document.getElementById('cs-upload-msg');
+  if (msgEl) { msgEl.style.display = ''; msgEl.style.color = 'var(--muted)'; msgEl.textContent = 'Parsing…'; }
+  try {
+    const buf = await file.arrayBuffer();
+    const wb  = XLSX.read(buf, { type: 'array' });
+    const ws  = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+    const name       = String(rows[0]?.[1] || '').trim();
+    const splitPct   = parseFloat(rows[1]?.[1]) || 50;
+    if (!name) throw new Error('Structure Name cell is empty (row 1, column B).');
+
+    const rates = {};
+    for (let i = 3; i < rows.length; i++) {
+      const [col0, col1, col2, col3] = rows[i];
+      // Support both 3-col (old: key, type, rate) and 4-col (new: key, subcat, type, rate)
+      const hasFourCols = col3 !== undefined;
+      const productKey  = String(col0 || '').toLowerCase().trim();
+      const subcatLabel = hasFourCols ? String(col1 || '').trim() : '';
+      const typeRaw     = hasFourCols ? String(col2 || '') : String(col1 || '');
+      const rateRaw     = hasFourCols ? col3 : col2;
+
+      if (!productKey || !csProducts().find(p => p.key === productKey)) continue;
+      const typeStr = typeRaw.toLowerCase().trim();
+      if (!typeStr || typeStr === 'none' || typeStr === 'inherit') continue;
+      const t = typeStr.includes('flat') ? 'flat' : 'percent';
+      const r = parseFloat(rateRaw);
+      if (isNaN(r) || r < 0) continue;
+
+      if (!rates[productKey]) rates[productKey] = {};
+      if (subcatLabel) {
+        if (!rates[productKey].subcategories) rates[productKey].subcategories = {};
+        rates[productKey].subcategories[subcatLabel] = { type: t, rate: r };
+      } else {
+        rates[productKey].type = t;
+        rates[productKey].rate = r;
+      }
+    }
+
+    const existing = _commissionStructures.find(s => s.name.toLowerCase() === name.toLowerCase());
+    const method   = existing ? 'PATCH' : 'POST';
+    const body     = existing
+      ? { id: existing.id, name, default_split_ratio: splitPct / 100, rates }
+      : { name, default_split_ratio: splitPct / 100, rates };
+
+    const r = await fetch('/api/commission-structures', {
+      method,
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Save failed');
+
+    if (existing) {
+      const idx = _commissionStructures.findIndex(s => s.id === existing.id);
+      if (idx >= 0) _commissionStructures[idx] = d;
+    } else {
+      _commissionStructures.push(d);
+    }
+    _commissionStructures.sort((a, b) => a.name.localeCompare(b.name));
+    renderCommissionStructuresList();
+    renderAgentRoster();
+    if (msgEl) { msgEl.style.color = 'var(--accent2)'; msgEl.textContent = `"${escHtml(name)}" saved successfully.`; }
+  } catch(e) {
+    if (msgEl) { msgEl.style.color = 'var(--danger)'; msgEl.textContent = e.message; }
+  }
+}
+
+// ── COMMISSIONS REPORT ─────────────────────────────────────────────────────────
+
+function commPrevMonth() {
+  const [yr, mo] = _commMonth.split('-').map(Number);
+  const d = new Date(yr, mo - 2);
+  _commMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  loadCommissions();
+}
+
+function commNextMonth() {
+  const [yr, mo] = _commMonth.split('-').map(Number);
+  const d = new Date(yr, mo);
+  _commMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  loadCommissions();
+}
+
+function updateCommMonthDisplay() {
+  const [yr, mo] = _commMonth.split('-').map(Number);
+  const label = new Date(yr, mo - 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+  const el = document.getElementById('comm-month-label');
+  if (el) el.textContent = label;
+}
+
+async function loadCommissions() {
+  if (!_commMonth) {
+    const now = new Date();
+    _commMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  }
+  updateCommMonthDisplay();
+  const wrap = document.getElementById('comm-table-wrap');
+  if (wrap) { wrap.innerHTML = '<span style="color:var(--muted);font-size:13px;">Loading…</span>'; }
+  try {
+    const r = await fetch(`/api/commissions?month=${_commMonth}`, { headers: authHeaders() });
+    if (!r.ok) { if (wrap) wrap.innerHTML = '<span style="color:var(--danger);font-size:13px;">Error loading commissions.</span>'; return; }
+    _commData = await r.json();
+    renderCommissions();
+    if (_isMember) populateWhatIfProducts();
+  } catch(e) {
+    if (wrap) wrap.innerHTML = `<span style="color:var(--danger);font-size:13px;">${escHtml(e.message)}</span>`;
+  }
+}
+
+function renderCommissions() {
+  if (!_commData) return;
+  const results = _commData.results || [];
+  const month   = _commData.month   || '';
+
+  if (_isMember) {
+    document.getElementById('comm-owner-view').style.display  = 'none';
+    document.getElementById('comm-member-view').style.display = '';
+    // Find the member's own entry by matching any agent they appear in as primary
+    const memberPane = document.getElementById('comm-member-own');
+    if (!memberPane) return;
+    if (!results.length) { memberPane.innerHTML = '<p style="font-size:13px;color:var(--muted);">No commission data for this month.</p>'; return; }
+    memberPane.innerHTML = results.map(r => `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;gap:.5rem;">
+        <span style="font-size:14px;font-weight:600;">${escHtml(r.name)}</span>
+        <span style="font-size:18px;font-weight:700;color:var(--accent2);">$${r.earned.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+      </div>
+      ${r.breakdown.length ? `<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:.75rem;">
+        <thead><tr style="border-bottom:1px solid var(--border2);">
+          <th style="text-align:left;padding:4px 8px;color:var(--muted);">Product</th>
+          <th style="text-align:right;padding:4px 8px;color:var(--muted);">Premium</th>
+          <th style="text-align:right;padding:4px 8px;color:var(--muted);">Your Share</th>
+          <th style="text-align:right;padding:4px 8px;color:var(--muted);">Commission</th>
+        </tr></thead>
+        <tbody>${r.breakdown.map(b => `<tr style="border-bottom:1px solid var(--border2);">
+          <td style="padding:4px 8px;">${escHtml(b.product)}${b.split ? ' <span style="font-size:10px;color:var(--muted);">('+b.role+')</span>' : ''}</td>
+          <td style="padding:4px 8px;text-align:right;">$${(b.premium||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+          <td style="padding:4px 8px;text-align:right;">$${(b.share||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+          <td style="padding:4px 8px;text-align:right;font-weight:600;">$${(b.commission||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+        </tr>`).join('')}</tbody>
+      </table>` : '<p style="font-size:12px;color:var(--muted);">No sales this month.</p>'}
+    `).join('<hr style="border:none;border-top:1px solid var(--border2);margin:.75rem 0;">');
+    return;
+  }
+
+  // Owner view — rebuild payment lookup map (avoids embedding JSON in onclick attributes)
+  _commPayments = {};
+  for (const r of results) { if (r.paid?.amount_paid != null) _commPayments[r.agent_id] = r.paid; }
+
+  document.getElementById('comm-owner-view').style.display  = '';
+  document.getElementById('comm-member-view').style.display = 'none';
+  const wrap = document.getElementById('comm-table-wrap');
+  if (!wrap) return;
+
+  if (!results.length) {
+    wrap.innerHTML = '<p style="font-size:13px;color:var(--muted);">No agent data found.</p>';
+    return;
+  }
+
+  wrap.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px;">
+    <thead>
+      <tr style="border-bottom:1px solid var(--border2);">
+        <th style="text-align:left;padding:8px 10px;color:var(--muted);font-weight:600;">Agent</th>
+        <th style="text-align:right;padding:8px 10px;color:var(--muted);font-weight:600;">Earned</th>
+        <th style="text-align:right;padding:8px 10px;color:var(--muted);font-weight:600;">Paid</th>
+        <th style="text-align:center;padding:8px 10px;color:var(--muted);font-weight:600;">Status</th>
+        <th style="padding:8px 10px;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      ${results.map(r => {
+        const isPaid = r.paid?.amount_paid != null;
+        const notes  = r.paid?.notes || '';
+        return `<tr style="border-bottom:1px solid var(--border2);" id="comm-row-${escHtml(r.agent_id)}">
+          <td style="padding:8px 10px;">${escHtml(r.name)}</td>
+          <td style="padding:8px 10px;text-align:right;font-weight:600;">$${r.earned.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+          <td style="padding:8px 10px;text-align:right;">
+            ${isPaid
+              ? `<div style="font-weight:600;">$${parseFloat(r.paid.amount_paid).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+                 ${notes ? `<div style="font-size:10px;color:var(--muted);margin-top:1px;">${escHtml(notes)}</div>` : ''}`
+              : `<span style="color:var(--muted);">—</span>`}
+          </td>
+          <td style="padding:8px 10px;text-align:center;">
+            ${r.threshold_note
+              ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(255,179,0,.12);color:#ffb300;cursor:help;" title="${escHtml(r.threshold_note)}">⚠ Min not met</span>`
+              : `<span style="font-size:11px;padding:2px 8px;border-radius:20px;${isPaid ? 'background:rgba(0,229,180,.15);color:var(--accent2)' : 'background:rgba(255,255,255,.06);color:var(--muted)'};">${isPaid ? 'Paid' : 'Unpaid'}</span>`}
+          </td>
+          <td style="padding:8px 10px;display:flex;gap:4px;align-items:center;">
+            <button class="btn btn-secondary" style="font-size:11px;padding:3px 9px;" onclick="toggleCommBreakdown('${escHtml(r.agent_id)}')">&darr;</button>
+            <button class="btn btn-secondary" style="font-size:11px;padding:3px 9px;" onclick="openPayForm('${escHtml(r.agent_id)}','${escHtml(r.name)}',${r.earned},'${escHtml(month)}')">${isPaid ? 'Edit' : 'Mark Paid'}</button>
+          </td>
+        </tr>
+        <tr id="comm-breakdown-${escHtml(r.agent_id)}" style="display:none;">
+          <td colspan="5" style="padding:4px 10px 16px 28px;">
+            ${r.breakdown.length ? `<table style="font-size:12px;border-collapse:collapse;margin-bottom:10px;">
+              <thead><tr style="border-bottom:1px solid var(--border2);">
+                <th style="text-align:left;padding:3px 8px;color:var(--muted);">Product</th>
+                <th style="text-align:right;padding:3px 8px;color:var(--muted);">Premium</th>
+                <th style="text-align:right;padding:3px 8px;color:var(--muted);">Share</th>
+                <th style="text-align:right;padding:3px 8px;color:var(--muted);">Rate Commission</th>
+              </tr></thead>
+              <tbody>${r.breakdown.map(b => `<tr>
+                <td style="padding:3px 8px;">${escHtml(b.product)}${b.split ? ` <span style="font-size:10px;color:var(--muted);">(${b.role})</span>` : ''}</td>
+                <td style="padding:3px 8px;text-align:right;">$${(b.premium||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+                <td style="padding:3px 8px;text-align:right;">$${(b.share||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+                <td style="padding:3px 8px;text-align:right;font-weight:600;">$${(b.commission||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+              </tr>`).join('')}</tbody>
+            </table>` : '<span style="font-size:12px;color:var(--muted);">No sales this month.</span>'}
+            ${r.group_details ? (() => {
+              const fmt = n => '$' + (n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+              const rows = r.group_details.map(g => {
+                const statusColor = g.passes ? 'var(--accent2)' : '#ff6b6b';
+                const statusIcon  = g.passes ? '✓' : '✗';
+                return `<tr style="border-bottom:1px solid var(--border2);">
+                  <td style="padding:3px 8px;font-weight:600;">${escHtml(g.label)}</td>
+                  <td style="padding:3px 8px;text-align:right;">${g.count}</td>
+                  <td style="padding:3px 8px;text-align:right;">${fmt(g.earned)}</td>
+                  <td style="padding:3px 8px;text-align:right;color:var(--muted);">${g.floor ? '-'+fmt(g.floor)+' floor' : '—'}</td>
+                  <td style="padding:3px 8px;text-align:right;color:var(--accent);">${g.esc_bonus ? '+'+fmt(g.esc_bonus)+' esc' : '—'}</td>
+                  <td style="padding:3px 8px;text-align:right;font-weight:700;">${fmt(g.payout)}</td>
+                  <td style="padding:3px 8px;text-align:center;color:${statusColor};">${statusIcon}</td>
+                </tr>`;
+              }).join('');
+              const ungroupedRow = (r.ungrouped_earned != null && r.ungrouped_earned !== 0)
+                ? `<tr><td style="padding:3px 8px;color:var(--muted);" colspan="5">No-group products</td><td style="padding:3px 8px;text-align:right;font-weight:700;">${fmt(r.ungrouped_earned)}</td><td></td></tr>` : '';
+              return `<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">Threshold Groups</div>
+                <table style="font-size:12px;border-collapse:collapse;width:100%;max-width:520px;">
+                  <thead><tr style="border-bottom:1px solid var(--border2);">
+                    <th style="text-align:left;padding:3px 8px;color:var(--muted);">Group</th>
+                    <th style="text-align:right;padding:3px 8px;color:var(--muted);">Policies</th>
+                    <th style="text-align:right;padding:3px 8px;color:var(--muted);">Earned</th>
+                    <th style="text-align:right;padding:3px 8px;color:var(--muted);">Floor</th>
+                    <th style="text-align:right;padding:3px 8px;color:var(--muted);">Escalator</th>
+                    <th style="text-align:right;padding:3px 8px;color:var(--muted);">Payout</th>
+                    <th style="padding:3px 8px;"></th>
+                  </tr></thead>
+                  <tbody>${rows}${ungroupedRow}</tbody>
+                </table>`;
+            })() : ''}
+          </td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>`;
+}
+
+function toggleCommBreakdown(agentId) {
+  const row = document.getElementById('comm-breakdown-' + agentId);
+  if (row) row.style.display = row.style.display === 'none' ? '' : 'none';
+}
+
+function openPayForm(agentId, agentName, earned, month) {
+  const container = document.getElementById('comm-pay-modal');
+  if (!container) return;
+  const existing = _commPayments[agentId] || null;
+  const paid = existing?.amount_paid != null;
+  container.style.display = '';
+  container.innerHTML = `
+    <div class="panel" style="margin-top:1rem;border:1px solid var(--border);border-radius:10px;padding:1rem;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:.75rem;">Record Payment — ${escHtml(agentName)}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;margin-bottom:.75rem;">
+        <div>
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">AMOUNT PAID</label>
+          <input id="pay-amount" type="number" min="0" step="0.01" value="${paid ? existing.amount_paid : earned}" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 8px;font-size:13px;outline:none;box-sizing:border-box;">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">PAID DATE</label>
+          <input id="pay-date" type="date" value="${paid ? (existing.paid_date || '') : new Date().toISOString().slice(0,10)}" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 8px;font-size:13px;outline:none;box-sizing:border-box;">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">NOTES</label>
+          <input id="pay-notes" type="text" value="${paid ? escHtml(existing.notes || '') : ''}" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 8px;font-size:13px;outline:none;box-sizing:border-box;">
+        </div>
+      </div>
+      <div id="pay-msg" style="font-size:12px;margin-bottom:.5rem;display:none;"></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" style="font-size:13px;" onclick="saveCommissionPayment('${escHtml(agentId)}','${escHtml(month)}',this)">Save</button>
+        <button class="btn btn-secondary" style="font-size:13px;" onclick="document.getElementById('comm-pay-modal').style.display='none'">Cancel</button>
+      </div>
+    </div>`;
+  container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+async function saveCommissionPayment(agentId, month, btn) {
+  const amountPaid = parseFloat(document.getElementById('pay-amount')?.value);
+  const paidDate   = document.getElementById('pay-date')?.value || null;
+  const notes      = document.getElementById('pay-notes')?.value || null;
+  if (isNaN(amountPaid) || amountPaid < 0) { showInlineMsg('pay-msg', 'Enter a valid amount.', 'err'); return; }
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/commissions', {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agentId, month, amountPaid, paidDate, notes }),
+    });
+    if (!r.ok) { const d = await r.json(); showInlineMsg('pay-msg', d.error || 'Error', 'err'); return; }
+    document.getElementById('comm-pay-modal').style.display = 'none';
+    await loadCommissions();
+  } catch(e) { showInlineMsg('pay-msg', e.message, 'err'); }
+  finally { btn.disabled = false; }
+}
+
+// ── WHAT-IF CALCULATOR ─────────────────────────────────────────────────────────
+
+function wiToggleSplit() {
+  const show = document.getElementById('wi-split')?.checked;
+  const row  = document.getElementById('wi-split-row');
+  if (row) row.style.display = show ? '' : 'none';
+}
+
+function populateWhatIfProducts() {
+  const sel = document.getElementById('wi-product');
+  if (!sel) return;
+  sel.innerHTML = csProducts().map(p => `<option value="${escHtml(p.key)}">${escHtml(p.label)}</option>`).join('');
+}
+
+function calcWhatIf() {
+  const product = document.getElementById('wi-product')?.value;
+  const premium = parseFloat(document.getElementById('wi-premium')?.value) || 0;
+  const isSplit = document.getElementById('wi-split')?.checked || false;
+  const ratioPct = parseFloat(document.getElementById('wi-ratio')?.value) || 50;
+  const ratio   = isSplit ? ratioPct / 100 : 1;
+  const share   = premium * ratio;
+  const resultEl = document.getElementById('wi-result');
+  if (!resultEl) return;
+
+  // Find a structure from _commissionStructures to use (first one found if any; agent selection not available in member view easily)
+  // For more accuracy, use the first structure assigned to any roster agent as a proxy
+  let structure = null;
+  if (_commissionStructures.length > 0) structure = _commissionStructures[0];
+
+  if (!structure) {
+    resultEl.style.display = '';
+    resultEl.style.color = 'var(--muted)';
+    resultEl.innerHTML = 'No commission structure assigned yet.';
+    return;
+  }
+
+  const rateConfig = structure.rates?.[product];
+  let commission = 0;
+  if (rateConfig && rateConfig.type && rateConfig.type !== 'none') {
+    if (rateConfig.type === 'percent') commission = share * (rateConfig.rate / 100);
+    else commission = rateConfig.rate || 0;
+  }
+
+  resultEl.style.display = '';
+  resultEl.style.color = 'var(--accent2)';
+  resultEl.innerHTML = `Estimated commission: <strong>$${commission.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</strong>
+    <div style="font-size:12px;color:var(--muted);font-weight:400;margin-top:4px;">Based on "${escHtml(structure.name)}" · ${escHtml(product)} · $${share.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} share</div>`;
 }
 
 async function addAgentToRoster(btn) {
@@ -5398,7 +6586,9 @@ async function loadAddonConfig() {
   const r = await fetch('/api/checklist-config', { headers: authHeaders() });
   if (!r.ok) return;
   const d = await r.json();
-  _hasSalesAddon    = d.hasSalesAddon;
+  _hasSalesAddon        = d.hasSalesAddon;
+  _hasCommissionsAddon  = d.hasCommissionsAddon || false;
+  _commissionStructures = d.commissionStructures || [];
   _salesEntryMode   = d.salesEntryMode || 'upload';
   _checklistToken   = d.checklistToken;
   _checklistEmailCfg= d.emailConfig;
@@ -5523,9 +6713,17 @@ function manualAddRow(opts = {}) {
         <button class="btn btn-danger" style="padding:4px 10px;font-size:12px;" onclick="document.getElementById('msr-${id}').remove()">Remove</button>
       </div>
     </div>
-    <div id="msr-teammate-row-${id}" style="display:none;margin-top:.5rem;">
-      <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">TEAMMATE NAME</label>
-      <input class="msr-teammate" type="text" placeholder="Teammate name" style="${msrInputStyle()}; max-width:240px;">
+    <div id="msr-teammate-row-${id}" style="display:none;margin-top:.5rem;display:none;">
+      <div style="display:flex;gap:.75rem;align-items:flex-end;flex-wrap:wrap;">
+        <div>
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">TEAMMATE NAME</label>
+          <input class="msr-teammate" type="text" placeholder="Teammate name" style="${msrInputStyle()}; max-width:240px;">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">PRIMARY %</label>
+          <input class="msr-split-ratio" type="number" min="1" max="99" value="50" placeholder="Primary %" style="${msrInputStyle()}; max-width:90px;">
+        </div>
+      </div>
     </div>
   </div>`;
   document.getElementById('manual-sales-rows').insertAdjacentHTML('beforeend', html);
@@ -5562,6 +6760,11 @@ function msrUpdateSubcat(productSel, id) {
 function msrToggleTeammate(cb, id) {
   const row = document.getElementById(`msr-teammate-row-${id}`);
   if (row) row.style.display = cb.checked ? '' : 'none';
+  // Primary % default reset on toggle
+  if (cb.checked) {
+    const ratioInput = row?.querySelector('.msr-split-ratio');
+    if (ratioInput && !ratioInput.value) ratioInput.value = '50';
+  }
 }
 
 async function manualSubmitAll(btn) {
@@ -5589,6 +6792,9 @@ async function manualSubmitAll(btn) {
       autoIssued:    row.querySelector('.msr-issued')?.checked    ?? null,
       issuedDate:    row.querySelector('.msr-issued-date')?.value || null,
       splitSale:     row.querySelector('.msr-split')?.checked     ?? null,
+      splitRatio:    row.querySelector('.msr-split')?.checked && row.querySelector('.msr-split-ratio')?.value
+                       ? parseFloat(row.querySelector('.msr-split-ratio').value) / 100 || 0.5
+                       : null,
       teammate:      row.querySelector('.msr-teammate')?.value    || null,
       location:      row.querySelector('.msr-location')?.value    || null,
     };
@@ -5699,8 +6905,15 @@ function _buildSlEditForm(e) {
       <label style="font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer;">
         <input id="sl-split-${h}" type="checkbox"${splitChk} onchange="slToggleTeammate(this,'${h}')"> Split Sale
       </label>
-      <div id="sl-teammate-row-${h}" style="display:${e.split_sale ? '' : 'none'};flex:1;">
-        <input id="sl-teammate-${h}" type="text" value="${escHtml(e.teammate || '')}" placeholder="Teammate name" style="${si};max-width:200px;">
+      <div id="sl-teammate-row-${h}" style="display:${e.split_sale ? '' : 'none'};flex:1;display:flex;gap:.75rem;align-items:flex-end;flex-wrap:wrap;">
+        <div>
+          <span style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">TEAMMATE</span>
+          <input id="sl-teammate-${h}" type="text" value="${escHtml(e.teammate || '')}" placeholder="Teammate name" style="${si};max-width:200px;">
+        </div>
+        <div>
+          <span style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">PRIMARY %</span>
+          <input id="sl-split-ratio-${h}" type="number" min="1" max="99" value="${e.split_ratio != null ? Math.round(e.split_ratio * 100) : 50}" placeholder="Primary %" style="${si};max-width:90px;">
+        </div>
       </div>
       <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
         <div id="sl-msg-${h}" style="font-size:12px;display:none;"></div>
@@ -5749,6 +6962,9 @@ async function saveSalesLogRow(h, btn) {
       lead_source:   document.getElementById('sl-source-' + h)?.value      || null,
       period:        document.getElementById('sl-period-' + h)?.value       || null,
       split_sale:    document.getElementById('sl-split-' + h)?.checked      ?? null,
+      split_ratio:   document.getElementById('sl-split-' + h)?.checked && document.getElementById('sl-split-ratio-' + h)?.value
+                       ? parseFloat(document.getElementById('sl-split-ratio-' + h).value) / 100 || null
+                       : null,
       teammate:      document.getElementById('sl-teammate-' + h)?.value     || null,
       location:      document.getElementById('sl-location-' + h)?.value     || null,
     };
