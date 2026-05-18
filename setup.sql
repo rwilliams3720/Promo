@@ -161,6 +161,23 @@ CREATE INDEX IF NOT EXISTS historical_wins_user_month ON historical_wins (user_i
 -- sales_log written premium
 ALTER TABLE sales_log ADD COLUMN IF NOT EXISTS written_premium numeric;
 
+-- sales_log product column: ensure it is plain text (no enum/check constraint).
+-- Needed to support 'deposit', 'other', 'other2'–'other5' values added in scoring update.
+-- If product is still an enum, this converts it; if already text, this is a no-op.
+ALTER TABLE sales_log ALTER COLUMN product TYPE text USING product::text;
+-- Drop any existing check constraint on product (safe to run even if none exists):
+DO $$
+DECLARE r RECORD;
+BEGIN
+  FOR r IN
+    SELECT conname FROM pg_constraint
+    WHERE conrelid = 'sales_log'::regclass AND contype = 'c'
+      AND conname ILIKE '%product%'
+  LOOP
+    EXECUTE 'ALTER TABLE sales_log DROP CONSTRAINT IF EXISTS ' || quote_ident(r.conname);
+  END LOOP;
+END $$;
+
 -- AI analysis columns (added progressively — safe to re-run)
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS ai_analysis_cache jsonb;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS ai_analysis_at    timestamptz;

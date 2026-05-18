@@ -105,9 +105,11 @@ export default async function handler(req, res) {
     const selYear  = parseInt(year)  || now.getFullYear();
     const selMonth = parseInt(month) || (now.getMonth() + 1);
     const allYear  = req.query.allYear === '1';
-    const fromDate = allYear ? `${selYear}-01-01` : `${selYear}-${String(selMonth).padStart(2,'0')}-01`;
+    let fromDate = allYear ? `${selYear}-01-01` : `${selYear}-${String(selMonth).padStart(2,'0')}-01`;
     const lastDay  = allYear ? 31 : new Date(selYear, selMonth, 0).getDate();
-    const toDate   = allYear ? `${selYear}-12-31` : `${selYear}-${String(selMonth).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+    let toDate   = allYear ? `${selYear}-12-31` : `${selYear}-${String(selMonth).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+    if (req.query.fromDate) fromDate = req.query.fromDate;
+    if (req.query.toDate)   toDate   = req.query.toDate;
 
     const COLS = 'hash, agent_id, product, subcategory, sale_date, issued_date, written_premium, source, customer_name, lead_source, period, auto_issued, split_sale, teammate, checklist_id, hidden, location';
 

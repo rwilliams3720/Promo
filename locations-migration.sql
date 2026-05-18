@@ -21,3 +21,8 @@ CREATE POLICY "member_read" ON sales_locations FOR SELECT USING (
 
 -- Add location column to sales_log
 ALTER TABLE sales_log ADD COLUMN IF NOT EXISTS location text;
+
+-- Add address, phone, and hours to sales_locations
+ALTER TABLE sales_locations ADD COLUMN IF NOT EXISTS address text;
+ALTER TABLE sales_locations ADD COLUMN IF NOT EXISTS phone   text;
+ALTER TABLE sales_locations ADD COLUMN IF NOT EXISTS hours   text;

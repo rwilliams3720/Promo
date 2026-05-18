@@ -114,7 +114,7 @@ export default async function handler(req, res) {
 
   const { data: acct } = await supabase
     .from('accounts')
-    .select('is_admin, has_member_analysis, member_analysis_count, member_analysis_agents, member_analysis_cache, member_analysis_at, has_sales_addon, company_name')
+    .select('is_admin, has_member_analysis, member_analysis_count, member_analysis_agents, member_analysis_cache, member_analysis_at, has_sales_addon, company_name, member_hours_data')
     .eq('user_id', dataUserId)
     .single();
 
@@ -163,7 +163,7 @@ export default async function handler(req, res) {
     const selectedIds = selectedAgents.map(a => (typeof a === 'string' ? a : a.agent_id)).filter(Boolean);
 
     try {
-      const payload = await generateAnalysis(dataUserId, acct, selectedIds, selectedAgents);
+      const payload = await generateAnalysis(dataUserId, acct, selectedIds, selectedAgents, acct.member_hours_data);
       const now = new Date().toISOString();
       supabase.from('accounts').update({
         member_analysis_cache: payload,
@@ -179,7 +179,15 @@ export default async function handler(req, res) {
   return res.status(405).json({ error: 'Method not allowed' });
 }
 
-async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw) {
+// Normalize "April 2026" → "Apr 2026" (same format as historical_wins months)
+function normPeriodLabel(label) {
+  const FULL = { January:'Jan', February:'Feb', March:'Mar', April:'Apr', May:'May', June:'Jun', July:'Jul', August:'Aug', September:'Sep', October:'Oct', November:'Nov', December:'Dec' };
+  const parts = (label || '').trim().split(' ');
+  if (parts.length !== 2) return label;
+  return (FULL[parts[0]] || parts[0]) + ' ' + parts[1];
+}
+
+async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw, hoursDataRaw) {
   const now          = new Date();
   const mtdStart     = `${now.getUTCFullYear()}-${String(now.getUTCMonth()+1).padStart(2,'0')}-01`;
   const ytdStart     = `${now.getUTCFullYear()}-01-01`;
@@ -253,12 +261,34 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
     }
   }
 
+  // Build hours lookup: agentId → { normPeriod → hours }
+  // Also track last uploaded period for the frontend label
+  const hoursPeriodsRaw = hoursDataRaw?.periods || [];
+  let hoursLastPeriod = null;
+  if (hoursPeriodsRaw.length) {
+    const sorted = [...hoursPeriodsRaw].sort((a, b) =>
+      new Date(b.uploaded_at || 0) - new Date(a.uploaded_at || 0));
+    hoursLastPeriod = sorted[0].period;
+  }
+  // hoursByAgent[agentId][normPeriodLabel] = hours
+  const hoursByAgent = {};
+  for (const period of hoursPeriodsRaw) {
+    const normLabel = normPeriodLabel(period.period);
+    for (const row of (period.rows || [])) {
+      const aid = row.agent_id;
+      if (!aid) continue;
+      if (!hoursByAgent[aid]) hoursByAgent[aid] = {};
+      hoursByAgent[aid][normLabel] = (hoursByAgent[aid][normLabel] || 0) + row.hours;
+    }
+  }
+
   // Build per-agent data structures
   const agentData = {};
   for (const agentId of selectedIds) {
     const rd   = raceMap[agentId];
     const name = rd?.name || nameFromRaw[agentId] || rosterMap[agentId] || agentId;
     const team = rd?.team || 'sales';
+    const agHours = hoursByAgent[agentId] || {};
 
     // Archived months sorted oldest→newest
     const histRows = (histWinsRes.data || [])
@@ -270,6 +300,7 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
       const policies = (r.wl||0)+(r.ul||0)+(r.term||0)+(r.health||0)+(r.auto||0)+(r.fire||0);
       const score    = calcScore(r, scoring, r.missed||0, r.voicemail||0);
       const premium  = premByAgentMonth[agentId]?.[r.normMonth] ?? null;
+      const hours    = agHours[r.normMonth] ?? null;
       return {
         month:   r.normMonth,
         placed:  r.placed  || 0,
@@ -278,10 +309,14 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
         policies,
         score,
         premium,
+        hours,
         rank:    r.rank || null,
         byProduct: { wl:r.wl||0, ul:r.ul||0, term:r.term||0, health:r.health||0, auto:r.auto||0, fire:r.fire||0 },
       };
     });
+
+    // Current period hours: look up by curKey
+    const curHours = agHours[curKey] ?? null;
 
     // Current period
     let current = null;
@@ -295,6 +330,7 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
         policies: curPol,
         score:    curScore,
         premium:  premByAgentMtd[agentId] ?? null,
+        hours:    curHours,
         daysElapsed,
         daysInMonth,
         byProduct: { wl:rd.wl||0, ul:rd.ul||0, term:rd.term||0, health:rd.health||0, auto:rd.auto||0, fire:rd.fire||0 },
@@ -327,14 +363,32 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
     ].filter(Boolean).join(', ');
 
     const histLines = ag.months.slice(-6).map(m => {
+      const effParts = [];
+      if (m.hours != null) {
+        effParts.push(`${m.hours}hrs`);
+        if (m.hours > 0) {
+          effParts.push(`${(m.policies / m.hours).toFixed(2)}pol/hr`);
+          if (m.premium != null) effParts.push(`$${Math.round(m.premium / m.hours)}/hr`);
+        }
+      }
       const parts = [
         `${m.placed}p`, `${m.answered}a`, `${m.talkMin}min`, `${m.policies}pol`,
         `score:${m.score}`,
         m.premium != null ? `$${Math.round(m.premium)}prem` : null,
-        m.rank     ? `#${m.rank}rank` : null,
+        ...effParts,
+        m.rank ? `#${m.rank}rank` : null,
       ].filter(Boolean).join(' ');
       return `  ${m.month}: ${parts}`;
     }).join('\n');
+
+    const curEffParts = [];
+    if (ag.current?.hours != null) {
+      curEffParts.push(`${ag.current.hours}hrs`);
+      if (ag.current.hours > 0) {
+        curEffParts.push(`${(ag.current.policies / ag.current.hours).toFixed(2)}pol/hr`);
+        if (ag.current.premium != null) curEffParts.push(`$${Math.round(ag.current.premium / ag.current.hours)}/hr`);
+      }
+    }
 
     const curLine = ag.current ? [
       `${curKey} (day ${daysElapsed}/${daysInMonth}, ${pctElapsed}%):`,
@@ -342,20 +396,25 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
       `${ag.current.talkMin}min`, `${ag.current.policies}pol`,
       `score:${ag.current.score}`,
       ag.current.premium != null ? `$${Math.round(ag.current.premium)}prem` : null,
+      ...curEffParts,
     ].filter(Boolean).join(' ') : 'No current period data';
 
     return `AGENT: ${ag.name} (${ag.team})${standingLine ? ` | Group standing: ${standingLine}` : ''}
-Archived history (oldest→newest, p=placed a=answered min=talk prem=written premium):
+Archived history (oldest→newest, p=placed a=answered min=talk prem=written premium hrs=hours pol/hr=efficiency):
 ${histLines || '  No archived months'}
 Current: ${curLine}`;
   }).join('\n\n');
 
-  const hasPremium = !!acct.has_sales_addon;
-  const groupSize  = selectedIds.length;
+  const hasPremium  = !!acct.has_sales_addon;
+  const hasHours    = hoursPeriodsRaw.length > 0;
+  const groupSize   = selectedIds.length;
+  const hoursNote   = hasHours
+    ? `Hours data: available (${hoursPeriodsRaw.length} period${hoursPeriodsRaw.length !== 1 ? 's' : ''}). Agents without hours for a period are excluded from efficiency comparisons.`
+    : 'Hours data: not uploaded — skip efficiency metrics.';
 
   const prompt = `You are a sales performance coach analyzing ${groupSize} individual team member${groupSize !== 1 ? 's' : ''} for ${acct.company_name || 'a team'}.
 
-Context: ${curKey} (day ${daysElapsed} of ${daysInMonth}, ${pctElapsed}% elapsed) | Group size: ${groupSize} | Premium data: ${hasPremium ? 'yes' : 'no'}
+Context: ${curKey} (day ${daysElapsed} of ${daysInMonth}, ${pctElapsed}% elapsed) | Group size: ${groupSize} | Premium data: ${hasPremium ? 'yes' : 'no'} | ${hoursNote}
 
 ${agentBlocks}
 
@@ -365,9 +424,9 @@ For EACH agent above, write an analysis starting with the exact header "AGENT: [
 
 Cover all four of these in 3–4 sentences per agent:
 1. Month-over-month trend — improving, declining, or plateauing? Name specific months and numbers.
-2. Strengths — where they lead in this group (calls, policies, talk time, or premium if available).
+2. Strengths — where they lead in this group (calls, policies, talk time, premium, or efficiency if hours available).
 3. Gaps/concerns — the single biggest metric holding them back, with evidence from the data.
-4. Group standing — their rank vs peers in score, policies, and premium (if available). Be direct.
+4. Group standing — their rank vs peers in score, policies, premium (if available), and efficiency (if hours available). Be direct. If no hours for this agent, note that efficiency cannot be calculated.
 
 Rules: plain text only, no markdown, no bullets. Use agent names and real numbers. Keep it tight — 3–4 sentences per agent. Separate agents with one blank line.`;
 
@@ -393,6 +452,8 @@ Rules: plain text only, no markdown, no bullets. Use agent names and real number
     agentSections,
     agentData,
     groupSize,
+    curKey,
+    hoursLastPeriod,
     generatedAt: new Date().toISOString(),
   };
 }

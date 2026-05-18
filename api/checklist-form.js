@@ -117,11 +117,13 @@ export default async function handler(req, res) {
 
     const userId = acct.user_id;
 
+    const { data: lsRow } = await supabase.from('accounts').select('lead_sources').eq('user_id', userId).single();
+
     const [formConfigRes, subcatRes, agentsRes, locRes] = await Promise.all([
       supabase.from('checklist_config').select('form_key,label,active,sort_order').eq('user_id', userId).eq('active', true).order('sort_order'),
       supabase.from('sales_subcategories').select('id,scoring_category,label,is_financial_service,sort_order').eq('user_id', userId).eq('active', true).order('scoring_category').order('sort_order'),
       supabase.from('agent_roster').select('agent_id,name').eq('user_id', userId).eq('active', true).order('name'),
-      supabase.from('sales_locations').select('id,name').eq('user_id', userId).eq('active', true).order('sort_order'),
+      supabase.from('sales_locations').select('id,name,address,phone,hours').eq('user_id', userId).eq('active', true).order('sort_order'),
     ]);
 
     const formConfig    = formConfigRes.data?.length ? formConfigRes.data : DEFAULT_FORM_TYPES;
@@ -134,19 +136,24 @@ export default async function handler(req, res) {
     return res.status(200).json({
       companyName:  acct.company_name || '',
       productTypes: acct.sales_product_types || DEFAULT_PRODUCT_TYPES,
+      leadSources:  lsRow?.lead_sources ?? null,
       formConfig,
       subcategories,
       agents,
       locations,
       emailConfig: {
-        agency_name:  emailCfg.agency_name  || acct.company_name || '',
-        agent_name:   emailCfg.agent_name   || '',
-        agent_phone:  emailCfg.agent_phone  || '',
-        agent_email:  emailCfg.agent_email  || '',
-        brand_color:  emailCfg.brand_color  || '#00d4ff',
-        greeting:     emailCfg.greeting     || '',
-        footer:       emailCfg.footer       || '',
-        subject:      emailCfg.subject      || 'New Customer — Checklist Completed',
+        agency_name:     emailCfg.agency_name     || acct.company_name || '',
+        agent_name:      emailCfg.agent_name      || '',
+        agent_phone:     emailCfg.agent_phone     || '',
+        agent_email:     emailCfg.agent_email     || '',
+        brand_color:     emailCfg.brand_color     || '#00d4ff',
+        greeting:        emailCfg.greeting        || '',
+        footer:          emailCfg.footer          || '',
+        subject:         emailCfg.subject         || 'New Customer — Checklist Completed',
+        internal_email:  emailCfg.internal_email  || '',
+        penalty_warning: emailCfg.penalty_warning || '',
+        form_items:      emailCfg.form_items      || {},
+        required_fields: emailCfg.required_fields || {},
       },
     });
   }
@@ -154,8 +161,8 @@ export default async function handler(req, res) {
   // ── POST: submit a completed checklist ────────────────────────────────────
   if (req.method === 'POST') {
     const {
-      token, subDate, apptDate, customerName,
-      salespersonId, formCompletions, sales = [], location,
+      token, subDate, apptDate, apptTime, meetingType, customerName,
+      salespersonId, formCompletions, sales = [], location, apptLocation, wfolderApplied,
     } = req.body || {};
 
     if (!token)        return res.status(400).json({ error: 'Missing token' });
@@ -174,6 +181,14 @@ export default async function handler(req, res) {
     const userId        = acct.user_id;
     const privName      = privacyName(customerName);
 
+    const extendedCompletions = {
+      ...( formCompletions || {} ),
+      _apptTime:       apptTime       || null,
+      _meetingType:    meetingType    || null,
+      _apptLocation:   apptLocation   || null,
+      _wfolderApplied: wfolderApplied || false,
+    };
+
     // Write checklist submission
     const { data: submission, error: subErr } = await supabase
       .from('checklist_submissions')
@@ -183,7 +198,7 @@ export default async function handler(req, res) {
         appt_date:        apptDate || null,
         customer_name:    privName,
         salesperson_id:   salespersonId || null,
-        form_completions: formCompletions || {},
+        form_completions: extendedCompletions,
       })
       .select('id')
       .single();
@@ -236,7 +251,12 @@ export default async function handler(req, res) {
         footer:       emailCfg.footer       || '',
         customerName: privName,
         subDate,
-        apptDate:     apptDate || null,
+        apptDate:        apptDate      || null,
+        apptTime:        apptTime      || null,
+        meetingType:     meetingType   || null,
+        apptLocation:    apptLocation  || null,
+        wfolderApplied:  wfolderApplied || false,
+        location,
         salespersonId,
         formCompletions: formCompletions || {},
         sales,

@@ -51,13 +51,35 @@ Browser (index.html, served by Vercel)
   ↓ GET /api/email-report  (Vercel cron or admin JWT)
     → sends daily performance report to pro/premium paid accounts at their configured hour
     → sends to acct.report_email || acct.email
+  ↓ GET|PATCH /api/checklist-config  (Authorization: Bearer <jwt>, owner only)
+    → GET: returns hasSalesAddon, salesEntryMode, checklistToken, formConfig, subcategories, emailConfig, agents
+    → auto-seeds checklist_config and sales_subcategories on first access
+    → PATCH actions: regenerate_token, update formTypes, subcategoryUpdates, emailConfig, salesEntryMode
+  ↓ GET|POST|PATCH|DELETE /api/sales  (Authorization: Bearer <jwt>)
+    → GET: lists manual + checklist sales_log entries (up to 200, date desc)
+    → GET params: fromDate / toDate (YYYY-MM-DD) override default month window for date-range queries
+    → POST: creates manual entry, writes to sales_log, rebuilds race_data for agent
+    → PATCH: updates any field on manual or checklist entry (no source restriction)
+    → DELETE: removes entry, rebuilds race_data
+    → Access: owner, captain, chief_officer; admin bypasses has_sales_addon check via is_admin flag
+  ↓ GET|POST|PATCH|DELETE /api/agent-roster  (Authorization: Bearer <jwt>, owner only)
+    → CRUD for agent_roster table; POST slugifies name → agent_id
+  ↓ GET /api/checklist-form?token=  (no auth)
+    → public form endpoint; validates checklist_token, returns form config + agent list + lead sources
+  ↓ POST /api/checklist-form  (no auth, token in body)
+    → submits checklist completion, writes to checklist_submissions + sales_log
+    → accepts apptLocation (appointment location name, flows to customer email) and location (sales location name, stored in sales_log)
+  ↓ POST /api/addon-checkout  (Authorization: Bearer <jwt>)
+    → creates Stripe checkout session for sales add-on
+  ↓ DELETE /api/addon-checkout  (Authorization: Bearer <jwt>)
+    → cancels sales add-on Stripe subscription
 ```
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `index.html` | Entire frontend — auth screens, scoring, rendering, upload UI, account tab, admin panel, agency management |
+| `index.html` | Entire frontend — auth screens, scoring, rendering, upload UI, account tab (5 sub-tabs), admin panel, agency management, manual sales entry, sales log, sales performance charts (Chart.js 4), performance tab sub-tabs |
 | `api/upload.js` | Upload processor — JWT auth, XLSX parsing, user-scoped dedup, Supabase writes; member role guard |
 | `api/history.js` | JWT-scoped historical_wins query; resolves dataUserId for members |
 | `api/perf.js` | JWT-scoped call_log aggregation → daily/weekly/monthly/yearly + heatmap; resolves dataUserId |
@@ -69,8 +91,16 @@ Browser (index.html, served by Vercel)
 | `api/signup.js` | Creates auth user via Admin API + sends admin notification email via Resend |
 | `api/invite.js` | Invite lifecycle: create, validate token, accept (creates sub-user), resend |
 | `api/members.js` | Agency member CRUD: list, update role, remove |
+| `api/sales.js` | Manual/checklist sales CRUD — GET/POST/PATCH/DELETE on sales_log; supports `fromDate`/`toDate` params; rebuilds race_data on write |
+| `api/agent-roster.js` | Agent roster CRUD — owner-scoped; POST slugifies name → agent_id |
+| `api/checklist-config.js` | Sales config GET/PATCH — form types, subcategories, email template, entry mode, agents; `lead_sources` fetched in separate graceful query (never in main auth SELECT) |
+| `api/checklist-form.js` | Public checklist form — token-gated; writes checklist_submissions + sales_log; handles `apptLocation` (customer email) and `location` (sales log) separately |
+| `api/addon-checkout.js` | Stripe checkout/cancel for sales tracking add-on |
 | `setup.sql` | Full migration — run once in Supabase SQL Editor |
 | `members-migration.sql` | Directive 1 migration — account_members table + RLS policies; run once after setup.sql |
+| `directive2-migration.sql` | Directive 2 migration — sales tracking tables + accounts columns; run after members-migration.sql |
+| `agent-roster-migration.sql` | agent_roster table + RLS + seed from race_data; run after directive2-migration.sql |
+| `lead-sources-migration.sql` | Adds `lead_sources (jsonb)` column to accounts; run after agent-roster-migration.sql |
 | `vercel.json` | Builds + routes |
 | `package.json` | Dependencies: `@supabase/supabase-js`, `xlsx` |
 
@@ -92,16 +122,25 @@ All data tables have a `user_id uuid` column (FK → auth.users) and RLS policy 
 | `accounts` | One row per user — billing status, company info, column map | `user_id` |
 | `race_data` | Live race totals per agent per user | `(user_id, agent_id)` |
 | `call_log` | Every classified call | `(user_id, hash)` |
-| `sales_log` | Every classified sale | `(user_id, hash)` |
+| `sales_log` | Every classified sale (upload, manual, checklist) | `(user_id, hash)` |
 | `historical_wins` | Archived end-of-month per-agent results | `(user_id, month, agent_id)` |
 | `historical_months` | Archived end-of-month team-level aggregates for trend charts | `(user_id, month)` |
 | `race_config` | Key-value store — `current_month` | `(user_id, key)` |
 | `scoring_config` | Point values per category | `(user_id, config_key)` |
-
 | `account_members` | Sub-user invite/access records | `id (uuid)` |
+| `agent_roster` | Per-account agent list for manual sales entry dropdowns | `(user_id, agent_id)` |
+| `checklist_config` | Active form types per account (GSD, DSS, SCD, etc.) | `(user_id, form_key)` |
+| `sales_subcategories` | Product subcategory options per account | `id (uuid)` |
+| `checklist_submissions` | Public checklist form submissions | `id (uuid)` |
 
 ### accounts columns
 `user_id, email, company_name, contact_name, phone, plan, agent_count, referral_source, status (trial/paid/deferred/past_due/cancelled), is_admin, notes, trial_ends_at, paid_through, stripe_customer_id, sales_column_map (jsonb), ai_analysis_cache (jsonb), ai_analysis_at (timestamptz), ai_history_key (jsonb), timezone, report_hour (smallint, default 7), report_email (text, nullable), last_report_date (date), created_at, last_login`
+
+Added by `directive2-migration.sql`:
+`checklist_token (uuid unique), has_sales_addon (boolean default false), sales_entry_mode (text default 'upload'), checklist_email_config (jsonb)`
+
+Added by `lead-sources-migration.sql`:
+`lead_sources (jsonb)` — array of lead source label strings; editable in Account → Sales → Products. **Never include `lead_sources` in the critical accounts SELECT** (the one that checks auth/plan). Fetch it separately after auth succeeds with a standalone `.select('lead_sources')` query so a missing column doesn't break agents/locations/checklist.
 
 ### account_members columns
 `id (uuid PK), owner_user_id, member_user_id (nullable until accepted), email, role ('captain'|'chief_officer'|'bosun'|'custom'), custom_tabs (jsonb), status ('invited'|'active'|'removed'), invite_token (unique, nullable after accept), invite_expires_at, created_at`
@@ -115,12 +154,114 @@ UNIQUE(owner_user_id, email)
 
 Written by `archiveCallStatsToHistorical` (upload.js) and `confirmArchive` (frontend). Read by `ai-analysis.js` for trend chart and r90 calculation. Deleted on account delete, data delete, and admin sandbox reset.
 
+### sales_log columns (extended)
+Base (from upload): `user_id, hash, agent_id, product, sale_date, written_premium`
+Added by `directive2-migration.sql`: `source ('upload'|'manual'|'checklist'), customer_name, subcategory, lead_source, period (smallint), auto_issued (boolean), split_sale (boolean), teammate, checklist_id (uuid FK → checklist_submissions)`
+Added manually: `issued_date (date)` — run `ALTER TABLE sales_log ADD COLUMN IF NOT EXISTS issued_date date;`
+
+`other` and `deposit` products do NOT increment policy counts in race_data (excluded in `rebuildRaceData`).
+
+### agent_roster columns
+`id (uuid PK), user_id, agent_id (text, slugified name), name (text), active (boolean default true)`
+UNIQUE(user_id, agent_id). Seeded from race_data via `agent-roster-migration.sql`. Used only for manual sales entry dropdowns — completely separate from race_data/call_log. `rebuildRaceData` in sales.js looks up agent name from this table when creating new race_data rows.
+
+### checklist_config columns
+`user_id, form_key, label, active (boolean), sort_order (smallint)`. Auto-seeded on first GET to `/api/checklist-config`. Default form keys: GSD, DSS, SCD, DTD, SFPP.
+
+### sales_subcategories columns
+`id (uuid), user_id, scoring_category, label, is_financial_service (boolean), active (boolean), sort_order (smallint), is_default (boolean)`. ~40 defaults seeded on first access. Filterable by scoring_category in dropdowns.
+
 ### call_log columns
 `user_id, hash, agent_id, disposition, talk_secs, call_dt (DATE), call_slot (SMALLINT 0–47)`
 
 ### scoring_config columns
 `user_id, config_key, config_value`
 Keys: `wl, ul, term, health, auto, fire, placed_sales, placed_service, answered_sales, answered_service, talk_per_min, avg_min, missed_deduct, voicemail_deduct`
+
+## Account Tab Structure
+
+The Account tab uses 5 sub-tabs controlled by `showAccountSubTab(name, btn)`. Sub-tab nav (`#acct-subtab-nav`) is hidden for members (they get a simplified view via `loadMemberAccountTab`).
+
+| Sub-tab | Pane ID | Contents |
+|---------|---------|----------|
+| Profile | `#acct-pane-profile` | Account Info, Contact Info, Change Password |
+| Billing | `#acct-pane-billing` | Plan & Billing, Sales Add-On card (upsell or active+remove) |
+| Sales | `#acct-pane-sales` | Agent Roster, Checklist Link, Data Entry Mode, Email Template, Form Types, Product Subcategories, Lead Sources — locked (`#sales-pane-locked`) without add-on |
+| Team | `#acct-pane-team` | Agency Management (invite/manage members) |
+| Settings | `#acct-pane-settings` | Report Delivery (pro/premium only), Sales Column Mapping |
+
+**Lead Sources** are managed inside Account → Sales → Products (part of the Sales pane). Stored as `accounts.lead_sources (jsonb)`. Frontend state: `_leadSources` (Account tab) and `_clLeadSources` (checklist form). Passed to checklist form via `GET /api/checklist-form` response field `leadSources`.
+
+`loadAccountTab()` always resets to Profile pane on open. `goToAccountTab('billing')` deep-links to Billing (used by upgrade/manage buttons throughout the app).
+
+`renderSalesAddonSection(acct)` drives both Billing pane (upsell vs active card) and Sales pane (locked vs content). Admins see Sales pane content regardless of `has_sales_addon` via `|| _isAdmin` in the `hasSub` check.
+
+## Sales Tracking Add-On
+
+### loadAddonConfig()
+Called `await`-ed at login for all non-member owners (not gated behind `_hasSalesAddon`). Fetches `GET /api/checklist-config` and populates:
+- `_hasSalesAddon`, `_salesEntryMode`, `_checklistToken`, `_checklistEmailCfg`, `_checklistFormCfg`, `_salesSubcats`, `_agentRoster`
+
+**Critical**: must be awaited before `renderManageTabMode()` — race condition existed previously where `_agentRoster` was empty when `manualAddRow()` ran.
+
+### Manual Sales Entry (Manage tab)
+Shown when `_salesEntryMode === 'manual'` (or `_isAdmin`). Entry row fields:
+- Row 1: Agent (from `_agentRoster`) | Product (SCORING_CATS) | Subcategory (filtered by product)
+- Row 2: Sale Date | Issued Date | Premium | Period | Lead Source
+- Row 3: Customer Name | Auto Issued | Split Sale | Remove
+- Conditional: Teammate (when Split Sale checked)
+
+**Auto Issued**: when checked, Issued Date auto-fills from Sale Date and is disabled. `msrSaleDateChanged` keeps them in sync if date changes while checked.
+
+Product dropdown defaults to `— Select —`; subcategory populates on product change via `msrUpdateSubcat`.
+
+Submitted via `POST /api/sales`. On success: row removed, `loadRaceData()` refreshed. `rebuildRaceData` in sales.js re-aggregates all sales_log entries for the affected agent and updates race_data.
+
+### Sales Log (Performance tab → Sales Log sub-tab)
+Panel `#checklist-subs-panel` (title: "Sales Log"). Shows last 200 manual + checklist entries. Located in the Performance tab as the "Sales Log" sub-tab — **not** in the Manage tab. Gated by `_hasSalesAddon || _isAdmin`.
+
+**Sort**: unissued first (no `issued_date`), then by `sale_date` desc within each group.
+**Search**: client-side filter on customer name, agent name, product label, subcategory.
+**Columns**: source icon | sale date | agent | product · subcategory | customer name | premium | Issued badge (green "Issued ✓" / amber "Not Issued") | Edit | ✕
+
+**Scorecard** (`#sl-scorecard`): pill per product type showing count + premium total (formatted as `$X,XXX` below the count in 10px muted text). Rendered by `_renderSlScorecard(entries)`. Products with no entries are omitted.
+
+Editable by: admin, owner (non-member), captain, chief_officer.
+Edit opens inline form (all fields pre-populated) via `editSalesLogRow(hash)`.
+Save calls `PATCH /api/sales`; delete calls `DELETE /api/sales?hash=`.
+No source restriction on PATCH/DELETE — both manual and checklist entries are editable.
+
+`_salesLogEntries` module-level array holds the fetched entries; `filterSalesLog()` → `renderSalesLog()` re-renders without re-fetching.
+
+### Checklist Form — Two Location Fields
+
+The public checklist form has **two separate location selectors** with different purposes:
+
+| Field | Element ID | Panel | Purpose | Flows to |
+|-------|-----------|-------|---------|----------|
+| Appointment Location | `#cl-appt-location` | Customer Info | Location of in-person appointment | Customer notification email |
+| Sales Location | `#cl-location` | Sales panel | Where the sale occurred | `sales_log.location` |
+
+- `cl-appt-location` is only shown when Meeting Type = "In Person" (controlled by `clOnMeetingType`). Its value is sent as `apptLocation` in the POST body and stored in `checklist_submissions._apptLocation`.
+- `cl-location` is shown whenever `_clLocations.length > 0`, always visible in the Sales panel. Its value is sent as `location` and stored in `sales_log.location`. Both use location **names** (not UUIDs) as option values.
+
+`_clLocations` is populated from `_agentRoster`-adjacent location data returned by the checklist config API. Options are populated in `loadChecklistScreen`.
+
+### api/sales.js — resolveUser
+Checks `is_admin` on the accounts row and sets `hasSalesAddon = true` for admins, bypassing the add-on requirement. Members must be captain or chief_officer to access.
+
+### api/sales.js — Date Range Params
+`GET /api/sales` supports optional `fromDate` and `toDate` query params (YYYY-MM-DD format). When provided, they override the default current-month window. Used by `spLoad()` in Sales Performance to fetch entries for custom date ranges.
+
+### Agent Roster
+`agent_roster` table is the canonical source for manual entry agent dropdowns. Completely separate from `race_data`/`call_log` — race tab is unaffected by roster changes. `agent_id` in roster must match `agent_id` in `race_data` for manual sales to roll up under the correct agent on the race tab.
+
+Debug query (SQL editor doesn't have auth context — use email lookup):
+```sql
+SELECT agent_id, name, active FROM agent_roster
+WHERE user_id = (SELECT id FROM auth.users WHERE email = 'user@example.com')
+ORDER BY name;
+```
 
 ## Account Status & Access
 | Status | Dashboard | Uploads | Notes |
@@ -141,6 +282,10 @@ Trial expiry is checked client-side: if `status=trial` and `trial_ends_at < now(
 | Call Performance table | Teaser → "Upgrade to Pro" | Teaser → "Upgrade to Pro" | ✓ | ✓ | ✓ |
 | Voicemail Heatmap | — | Upsell panel | ✓ | ✓ | ✓ |
 | AI Analysis tab | Teaser → "Upgrade to Premium" | Teaser → "Upgrade to Premium" | Teaser → "Upgrade to Premium" | ✓ | ✓ |
+| Sales Log (Perf tab) | Teaser → "Add to Account" | Teaser → "Add to Account" (requires Sales add-on) | Requires Sales add-on | Requires Sales add-on | ✓ |
+| Sales Performance (Perf tab) | Teaser → "Add to Account" | Teaser → "Add to Account" (requires Sales add-on) | Requires Sales add-on | Requires Sales add-on | ✓ |
+
+Sales Log and Sales Performance require `has_sales_addon = true` (`_hasSalesAddon || _isAdmin`). When not subscribed, a teaser is shown with a link to Account → Billing ("Add to Account"). Gating is enforced in `showPerfSubTab` at click time.
 
 **Access logic:**
 ```js
@@ -153,6 +298,80 @@ const analysisFullAccess = _isAdmin || (_currentPlan === 'premium' && !_trialExp
 const heatmapAllowed = _isAdmin || (['pro','premium'].includes(_currentPlan) && !_trialExpired && ['paid','deferred'].includes(_acctStatus));
 ```
 Shows `#heatmap-panel` if allowed; shows `#heatmap-upsell` (description + "Manage Subscription" → account tab) otherwise.
+
+## Performance Tab Structure
+
+The Performance tab has 3 sub-tabs controlled by `showPerfSubTab(name, btn)`:
+
+| Sub-tab | Button ID | Pane ID | Contents | Gating |
+|---------|-----------|---------|----------|--------|
+| Call Performance | `#perf-stab-callperf` | `#perf-sub-callperf` | Existing perf table + heatmap | Pro/Premium plan (same as before) |
+| Sales Log | `#perf-stab-saleslog` | `#perf-sub-saleslog` | `#checklist-subs-panel` | `_hasSalesAddon \|\| _isAdmin` |
+| Sales Performance | `#perf-stab-salesperf` | `#perf-sub-salesperf` | SP chart panels | `_hasSalesAddon \|\| _isAdmin` |
+
+`showTab('perf')` now calls `showPerfSubTab('callperf')` directly (no manual active class management).
+
+Each sales sub-tab has a teaser div (`#perf-saleslog-teaser` / `#perf-salesperf-teaser`) and a content div (`#perf-saleslog-content` / `#perf-salesperf-content`). On click, `showPerfSubTab` checks `_hasSalesAddon || _isAdmin` and shows the appropriate div, then calls `loadChecklistSubmissions()` or `initSalesPerf()`.
+
+### Manage Tab
+Sub-tab nav has been removed from the Manage tab. Sales Log and Sales Performance sub-tabs were moved to the Performance tab. Only the file upload content remains directly visible in Manage. `showManageSubTab(name, btn)` is retained as a no-op stub to avoid breaking any residual calls.
+
+## Sales Performance Charts
+
+Interactive dual-pie-chart view in Performance → Sales Performance. Requires `_hasSalesAddon || _isAdmin`.
+
+### State Variables
+```javascript
+let _spEntries   = [];         // separate from _salesLogEntries; fetched by spLoad()
+let _spMetric    = 'count';    // 'count' | 'premium'
+let _spDateMode  = 'month';    // 'month' | 'year' | 'custom'
+let _spDateMonth = '';         // YYYY-MM (current month default)
+let _spDateYear  = '';         // YYYY (current year default)
+let _spDateStart = '';         // custom range start YYYY-MM-DD
+let _spDateEnd   = '';         // custom range end YYYY-MM-DD
+let _spDim1      = 'product';  // left chart dimension
+let _spDim2      = 'lead_source'; // right chart dimension
+let _spCrumbs    = [];         // drill-down stack [{field, value, label, fromChart, prevDim}]
+let _spChart1    = null;       // Chart.js instance, left
+let _spChart2    = null;       // Chart.js instance, right
+```
+
+### Constants
+```javascript
+const SP_DIMS = [
+  { key: 'product', label: 'Product Type' },
+  { key: 'lead_source', label: 'Lead Source' },
+  { key: 'agent', label: 'Agent' },
+  { key: 'subcategory', label: 'Subcategory' },
+  { key: 'location', label: 'Location' },
+  { key: 'period', label: 'Period' },
+  { key: 'auto_issued', label: 'Auto Issued' },
+  { key: 'split_sale', label: 'Split Sale' },
+];
+// Auto-advance on drill-down click
+const SP_NEXT = { product: 'subcategory', subcategory: 'agent', agent: 'product', lead_source: 'agent' };
+const SP_COLORS = ['#00d4ff','#7b61ff','#00e5b4', ...]; // 14 colors, cycling
+```
+
+### Key Functions
+- **`initSalesPerf()`** — entry point; initializes date controls to current month, calls `spLoad()`
+- **`spLoad()`** — fetches `GET /api/sales?fromDate=&toDate=` with date range from current `_spDateMode`; stores result in `_spEntries`; calls `spRender()`
+- **`spRender()`** — applies crumb filters to `_spEntries`, builds data for both charts, calls `spBuildChart()`
+- **`spBuildChart(canvasId, dim, filteredEntries, chartRef)`** — destroys prior Chart.js instance, creates new pie/doughnut; returns new chart instance
+- **`spHandleClick(chartIndex, sliceIndex)`** — pushes to `_spCrumbs` with `{ field: currentDim, value: sliceKey, label, fromChart: chartIndex, prevDim: currentDim }`; auto-advances the clicked chart's dimension via `SP_NEXT`; calls `spRender()`
+- **`spPopCrumb(index)`** — pops crumbs back to `index`; restores dimension; calls `spRender()`
+- **`spSetMetric(m)`** — sets `_spMetric`; calls `spRender()`
+- **`spSetDim(chartIndex, dim)`** — changes a chart's base dimension; calls `spRender()`
+- **`spSetDateMode(mode)`** — shows/hides date sub-controls; calls `spLoad()`
+
+### Drill-Down Behavior
+Clicking a slice pushes a filter crumb and auto-advances that chart to the next logical dimension (`SP_NEXT`). Both charts are re-rendered with the active crumb filters applied. Breadcrumbs appear above the charts; clicking a crumb pops the stack back to that point. The other chart cross-filters based on all active crumbs regardless of which chart was clicked.
+
+### Chart.js Dependency
+Chart.js 4 is loaded via CDN in `index.html`. Must appear before app code:
+```html
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+```
 
 ## Sandbox Reset (Admin only)
 Account tab shows a "Sandbox — Reset My Data" section for `_isAdmin` accounts. Two-click confirm (5s timeout). Deletes `call_log`, `sales_log`, `historical_wins`, `historical_months`, resets `race_data` to zero, clears `race_config.current_month`. No server endpoint needed — uses anon Supabase client with RLS (user deletes their own rows). Intended for `wilrus01` sandbox testing; grant `is_admin=true` to that account via SQL.
@@ -295,7 +514,7 @@ Cron: `0 * * * *` (every hour). Fires for each eligible account when `currentHou
 3. **Forgot Password** — sends Supabase reset link to email
 4. **Password Recovery** — shown when user clicks reset link in email (`PASSWORD_RECOVERY` event)
 5. **Invite Accept** — shown when URL contains `?invite=<token>`; validates token, collects name + password
-6. **App** — full dashboard with Account tab (password change, account info, column map, agency management, danger zone) and Admin tab (is_admin only)
+6. **App** — full dashboard with Account tab (5 sub-tabs: Profile, Billing, Sales, Team, Settings) and Admin tab (is_admin only)
 
 ## Auth Flow (index.html)
 
@@ -415,8 +634,10 @@ Scripts in `index.html` must load in this order — Supabase **before** app code
 ```html
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script>/* app code */</script>
 ```
+Chart.js 4 is required for Sales Performance charts (`initSalesPerf`, `spBuildChart`). It must load before the app's inline script.
 `window.supabase.createClient(...)` is called inside `init()` on `DOMContentLoaded`. If the Supabase script loads after the inline script, `window.supabase` may be undefined and `_supabase` stays null, causing silent failures on every auth call.
 
 ## Vercel Analytics
@@ -447,6 +668,18 @@ Added to `<head>` in both `index.html` and `landing.html`. No configuration need
 2. Ensure `russelsaiassistant@gmail.com` exists in Supabase Auth **before** running the seed
 3. Disable email confirmation: Supabase → Auth → Providers → Email → Confirm email **OFF**
 4. Set Vercel env vars: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY`
+5. Run `members-migration.sql` (Directive 1 — agency sub-users)
+6. Run `directive2-migration.sql` (Directive 2 — sales tracking tables + accounts columns)
+7. Run `agent-roster-migration.sql` (agent_roster table + seed from race_data)
+8. Run `ALTER TABLE sales_log ADD COLUMN IF NOT EXISTS issued_date date;` (issued date field)
+9. Run `lead-sources-migration.sql` (adds `lead_sources jsonb` to accounts — required for lead source dropdowns in checklist form and Account → Sales → Products)
+
+### Enable sales features for admin sandbox
+```sql
+-- Not strictly required (admin bypasses has_sales_addon check in code),
+-- but set true to test the full non-admin flow:
+UPDATE accounts SET has_sales_addon = true WHERE email = 'russelsaiassistant@gmail.com';
+```
 
 ### Add historical_months table (if missing)
 ```sql

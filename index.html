@@ -419,14 +419,29 @@
       <div class="panel-title">Customer Info</div>
       <div class="acct-field"><label>CUSTOMER FULL NAME <span style="color:var(--muted);font-weight:400;">(stored as first 2 initials + last name)</span></label>
         <input id="cl-cust-name" type="text" placeholder="John Smith"></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;">
         <div class="acct-field"><label>SUBMISSION DATE</label><input id="cl-sub-date" type="date"></div>
         <div class="acct-field"><label>APPOINTMENT DATE</label><input id="cl-appt-date" type="date"></div>
+        <div class="acct-field"><label>APPOINTMENT TIME</label><input id="cl-appt-time" type="time"></div>
       </div>
-      <div class="acct-field"><label>SALESPERSON</label>
-        <select id="cl-salesperson" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;width:100%;max-width:320px;outline:none;">
-          <option value="">— Select Agent —</option>
-        </select>
+      <div class="acct-field"><label>MEETING TYPE</label>
+        <div style="display:flex;gap:1.25rem;flex-wrap:wrap;padding:6px 0;" id="cl-meeting-type-group">
+          <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;"><input type="radio" name="cl-meeting-type" value="Virtually" onchange="clOnMeetingType(this.value)"> Virtually</label>
+          <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;"><input type="radio" name="cl-meeting-type" value="Phone" onchange="clOnMeetingType(this.value)"> Phone</label>
+          <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;"><input type="radio" name="cl-meeting-type" value="In Person" onchange="clOnMeetingType(this.value)"> In Person</label>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+        <div class="acct-field"><label id="cl-label-salesperson">SALESPERSON</label>
+          <select id="cl-salesperson" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;width:100%;outline:none;">
+            <option value="">— Select Agent —</option>
+          </select>
+        </div>
+        <div class="acct-field" id="cl-appt-location-wrap" style="display:none;"><label>APPOINTMENT LOCATION</label>
+          <select id="cl-appt-location" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;width:100%;outline:none;">
+            <option value="">— Select Location —</option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -437,6 +452,12 @@
 
     <div class="panel">
       <div class="panel-title">Sales</div>
+      <div id="cl-location-wrap" style="display:none;margin-bottom:.85rem;">
+        <label style="font-size:11px;color:var(--muted);letter-spacing:.06em;display:block;margin-bottom:4px;">LOCATION</label>
+        <select id="cl-location" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;width:100%;max-width:320px;outline:none;">
+          <option value="">— Select Location —</option>
+        </select>
+      </div>
       <div id="cl-sales-rows"></div>
       <button class="btn btn-secondary" style="margin-top:.75rem;" onclick="clAddSaleRow()">+ Add Sale</button>
     </div>
@@ -447,23 +468,79 @@
   </div>
 </div>
 
-<!-- Checklist email modal -->
+<!-- Checklist submission modal (Internal Summary + Customer Email) -->
 <div id="cl-email-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
-  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:2rem;max-width:600px;width:calc(100%-2rem);max-height:80vh;overflow-y:auto;">
-    <div style="font-family:'Bebas Neue',sans-serif;font-size:1.4rem;letter-spacing:.04em;margin-bottom:1rem;color:var(--accent);">Checklist Submitted</div>
-    <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Copy the email below and paste it into Outlook to send to the customer.</p>
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;width:calc(100% - 2rem);max-width:680px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;">
+    <!-- Header with tabs -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:1.25rem 1.5rem 0;border-bottom:1px solid var(--border);flex-shrink:0;">
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:1.3rem;letter-spacing:.04em;color:var(--accent);">Checklist Submitted</div>
+      <div style="display:flex;gap:4px;">
+        <button id="cl-tab-btn-summary" class="acct-stab active" onclick="clShowTab('summary',this)" style="font-size:12px;padding:6px 14px;">Internal Summary</button>
+        <button id="cl-tab-btn-customer" class="acct-stab" onclick="clShowTab('customer',this)" style="font-size:12px;padding:6px 14px;">Customer Email</button>
+      </div>
+    </div>
+
+    <!-- Internal Summary tab -->
+    <div id="cl-tab-summary" style="flex:1;overflow-y:auto;padding:1.25rem 1.5rem;">
+      <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Copy and send this summary to the internal team address.</p>
+      <div style="background:var(--deep);border:1px solid var(--border);border-radius:8px;padding:1rem;margin-bottom:1rem;">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">Subject</div>
+        <div id="cl-sum-subject" style="font-size:13px;font-weight:600;margin-bottom:.75rem;"></div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">Body</div>
+        <pre id="cl-sum-body" style="font-size:12px;font-family:'DM Mono',monospace;white-space:pre-wrap;line-height:1.6;margin:0;"></pre>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="clCopySummary()">Copy Summary</button>
+        <button class="btn btn-secondary" onclick="clOpenSummaryMailto()">Open in Email App</button>
+        <button class="btn btn-secondary" onclick="document.getElementById('cl-email-modal').style.display='none'">Close &amp; Edit</button>
+        <button class="btn btn-secondary" onclick="clNewSubmission()">New Submission</button>
+      </div>
+      <div id="cl-sum-copy-msg" style="font-size:12px;color:var(--accent2);margin-top:8px;display:none;">Copied!</div>
+    </div>
+
+    <!-- Customer Email tab -->
+    <div id="cl-tab-customer" style="flex:1;overflow-y:auto;padding:0;display:none;">
+      <div style="padding:.75rem 1.5rem;background:var(--card2);border-bottom:1px solid var(--border);font-size:13px;color:var(--muted);">
+        Copy this email, then paste directly into a new Outlook message — formatting is preserved.
+      </div>
+      <div id="cl-email-preview-body" style="background:#f4f8fc;"></div>
+      <div style="padding:1rem 1.5rem;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="clCopyCustomerEmail()">Copy Email (Rich HTML)</button>
+        <button class="btn btn-secondary" onclick="clOpenCustomerMailto()">Open in Email App</button>
+        <button class="btn btn-secondary" onclick="document.getElementById('cl-email-modal').style.display='none'">Close &amp; Edit</button>
+        <button class="btn btn-secondary" onclick="clNewSubmission()">New Submission</button>
+      </div>
+      <div id="cl-cust-copy-msg" style="font-size:12px;color:var(--accent2);padding:0 1.5rem .75rem;display:none;">Copied! Paste into Outlook — formatting preserved.</div>
+    </div>
+  </div>
+</div>
+
+<!-- Penalty warning modal -->
+<div id="cl-penalty-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1010;align-items:center;justify-content:center;">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:2rem;max-width:440px;width:calc(100% - 2rem);text-align:center;">
+    <div style="width:52px;height:52px;border-radius:50%;background:#fff3cd;display:grid;place-items:center;margin:0 auto 1rem;">
+      <svg viewBox="0 0 16 16" width="26" height="26" fill="#856404"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/><path d="M7.002 11a1 1 0 1 1 2 0 1 1 0 0 1-2 0M7.1 4.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0z"/></svg>
+    </div>
+    <div style="font-size:18px;font-weight:700;color:var(--text);margin-bottom:.5rem;">Are you sure?</div>
+    <p id="cl-penalty-text" style="font-size:14px;color:var(--muted);line-height:1.6;margin-bottom:1.5rem;"></p>
+    <div style="display:flex;gap:10px;justify-content:center;">
+      <button class="btn btn-secondary" onclick="document.getElementById('cl-penalty-modal').style.display='none'">Go Back &amp; Fix</button>
+      <button class="btn btn-danger" onclick="clPenaltyContinue()" style="background:#c0392b;color:white;">Submit Anyway</button>
+    </div>
+  </div>
+</div>
+
+<!-- Email template preview modal -->
+<div id="et-preview-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:2rem;max-width:600px;width:calc(100% - 2rem);max-height:80vh;overflow-y:auto;">
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:1.4rem;letter-spacing:.04em;margin-bottom:1rem;color:var(--accent);">Email Preview</div>
     <div style="background:var(--deep);border:1px solid var(--border);border-radius:8px;padding:1rem;margin-bottom:1rem;">
-      <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">SUBJECT</div>
-      <div id="cl-email-subject" style="font-size:13px;font-weight:600;margin-bottom:1rem;"></div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">SUBJECT</div>
+      <div id="et-preview-subject" style="font-size:13px;font-weight:600;margin-bottom:1rem;"></div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">BODY</div>
-      <pre id="cl-email-body" style="font-size:12px;font-family:'DM Mono',monospace;white-space:pre-wrap;line-height:1.6;"></pre>
+      <div id="et-preview-body" style="font-size:12px;line-height:1.6;"></div>
     </div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <button class="btn btn-primary" onclick="clCopyEmail()">Copy Email Body</button>
-      <button class="btn btn-secondary" onclick="clOpenMailto()">Open in Mail App</button>
-      <button class="btn btn-secondary" onclick="clNewSubmission()">New Submission</button>
-    </div>
-    <div id="cl-copy-msg" style="font-size:12px;color:var(--accent2);margin-top:8px;display:none;">Copied!</div>
+    <button class="btn btn-secondary" onclick="document.getElementById('et-preview-modal').style.display='none'">Close</button>
   </div>
 </div>
 
@@ -554,77 +631,75 @@
 
   <!-- ── TAB: MANAGE ── -->
   <div id="tab-manage" style="display:none">
-    <!-- Mode indicator (hidden unless has add-on) -->
-    <div id="manage-mode-banner" style="display:none;background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:.75rem 1rem;margin-bottom:1rem;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
-      <div style="font-size:13px;color:var(--muted);">Sales entry mode: <strong id="manage-mode-label" style="color:var(--text);">Upload</strong></div>
-      <button class="btn btn-secondary" style="font-size:12px;padding:5px 12px;" onclick=\"goToAccountTab('billing')\">Change Mode</button>
+    <!-- Upload -->
+    <div id="manage-sub-upload">
+      <!-- Mode indicator (hidden unless has add-on) -->
+      <div id="manage-mode-banner" style="display:none;background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:.75rem 1rem;margin-bottom:1rem;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+        <div style="font-size:13px;color:var(--muted);">Sales entry mode: <strong id="manage-mode-label" style="color:var(--text);">Upload</strong></div>
+        <button class="btn btn-secondary" style="font-size:12px;padding:5px 12px;" onclick="goToAccountTab('billing')">Change Mode</button>
+      </div>
+
+      <div class="panel" id="upload-panel-calls">
+        <div class="panel-title">Upload Call Log</div>
+        <div class="drop-zone" id="dz-calls"
+             onclick="document.getElementById('fi-calls').click()"
+             ondragover="dzDragOver(event,'dz-calls')"
+             ondragleave="dzDragLeave('dz-calls')"
+             ondrop="dzDrop(event,'calls')">
+          <input type="file" id="fi-calls" accept=".xlsx,.xls,.csv" onchange="handleFile('calls',this)" onclick="event.stopPropagation()">
+          <div class="drop-icon">📞</div>
+          <div class="drop-label">Drop call log here or click to browse</div>
+          <div class="drop-sub">XLSX, XLS, CSV — call disposition data</div>
+        </div>
+        <div class="upload-log" id="ul-calls"></div>
+      </div>
+      <div class="panel" id="upload-panel-sales">
+        <div class="panel-title">Upload Sales Log</div>
+        <div class="drop-zone" id="dz-sales"
+             onclick="document.getElementById('fi-sales').click()"
+             ondragover="dzDragOver(event,'dz-sales')"
+             ondragleave="dzDragLeave('dz-sales')"
+             ondrop="dzDrop(event,'sales')">
+          <input type="file" id="fi-sales" accept=".xlsx,.xls,.csv" onchange="handleFile('sales',this)" onclick="event.stopPropagation()">
+          <div class="drop-icon">📈</div>
+          <div class="drop-label">Drop sales log here or click to browse</div>
+          <div class="drop-sub">XLSX, XLS, CSV — replaces current month's sales</div>
+        </div>
+        <div class="upload-log" id="ul-sales"></div>
+      </div>
+      <!-- Manual entry panel (shown when sales_entry_mode = 'manual') -->
+      <div class="panel" id="manual-entry-panel" style="display:none">
+        <div class="panel-title">Manual Sales Entry</div>
+        <div id="manual-sales-rows"></div>
+        <button class="btn btn-secondary" style="margin-top:.75rem;" onclick="manualAddRow()">+ Add Row</button>
+        <div style="display:flex;gap:10px;margin-top:.75rem;align-items:center;">
+          <button class="btn btn-primary" onclick="manualSubmitAll(this)">Save Entries</button>
+          <div id="manual-entry-msg" style="font-size:13px;display:none;"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Race Controls</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+          <button class="btn btn-secondary" onclick="loadRaceData()">Refresh Data</button>
+          <button class="btn btn-danger" onclick="confirmArchive()">Archive Month &amp; Reset</button>
+        </div>
+      </div>
     </div>
 
-    <div class="panel" id="upload-panel-calls">
-      <div class="panel-title">Upload Call Log</div>
-      <div class="drop-zone" id="dz-calls"
-           onclick="document.getElementById('fi-calls').click()"
-           ondragover="dzDragOver(event,'dz-calls')"
-           ondragleave="dzDragLeave('dz-calls')"
-           ondrop="dzDrop(event,'calls')">
-        <input type="file" id="fi-calls" accept=".xlsx,.xls,.csv" onchange="handleFile('calls',this)" onclick="event.stopPropagation()">
-        <div class="drop-icon">📞</div>
-        <div class="drop-label">Drop call log here or click to browse</div>
-        <div class="drop-sub">XLSX, XLS, CSV — call disposition data</div>
-      </div>
-      <div class="upload-log" id="ul-calls"></div>
-    </div>
-    <div class="panel" id="upload-panel-sales">
-      <div class="panel-title">Upload Sales Log</div>
-      <div class="drop-zone" id="dz-sales"
-           onclick="document.getElementById('fi-sales').click()"
-           ondragover="dzDragOver(event,'dz-sales')"
-           ondragleave="dzDragLeave('dz-sales')"
-           ondrop="dzDrop(event,'sales')">
-        <input type="file" id="fi-sales" accept=".xlsx,.xls,.csv" onchange="handleFile('sales',this)" onclick="event.stopPropagation()">
-        <div class="drop-icon">📈</div>
-        <div class="drop-label">Drop sales log here or click to browse</div>
-        <div class="drop-sub">XLSX, XLS, CSV — replaces current month's sales</div>
-      </div>
-      <div class="upload-log" id="ul-sales"></div>
-    </div>
-    <!-- Manual entry panel (shown when sales_entry_mode = 'manual') -->
-    <div class="panel" id="manual-entry-panel" style="display:none">
-      <div class="panel-title">Manual Sales Entry</div>
-      <div id="manual-sales-rows"></div>
-      <button class="btn btn-secondary" style="margin-top:.75rem;" onclick="manualAddRow()">+ Add Row</button>
-      <div style="display:flex;gap:10px;margin-top:.75rem;align-items:center;">
-        <button class="btn btn-primary" onclick="manualSubmitAll(this)">Save Entries</button>
-        <div id="manual-entry-msg" style="font-size:13px;display:none;"></div>
-      </div>
-    </div>
-
-    <!-- Sales log (shown if has add-on) -->
-    <div class="panel" id="checklist-subs-panel" style="display:none">
-      <div class="panel-title">Sales Log</div>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:.6rem;">
-        <select id="sl-month-sel" onchange="onSalesLogMonthChange()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;"></select>
-        <select id="sl-year-sel" onchange="onSalesLogMonthChange()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;"></select>
-        <label style="font-size:12px;color:var(--text);display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;user-select:none;"><input type="checkbox" id="sl-all-year" onchange="onSalesLogAllYearChange()"> All Year</label>
-        <label style="font-size:12px;color:var(--text);display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;user-select:none;"><input type="checkbox" id="sl-show-unissued" onchange="onSalesLogFilterChange()"> Show unissued from other months</label>
-        <label style="font-size:12px;color:var(--text);display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;user-select:none;"><input type="checkbox" id="sl-show-hidden" onchange="onSalesLogFilterChange()"> Show hidden</label>
-        <button class="btn btn-secondary" style="margin-left:auto;padding:4px 12px;font-size:12px;white-space:nowrap;" onclick="downloadSalesLogXlsx()">↓ Download .xlsx</button>
-      </div>
-      <input id="sales-log-search" type="text" placeholder="Search customer, agent, product, subcategory…" oninput="filterSalesLog()" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;box-sizing:border-box;margin-bottom:.75rem;">
-      <div id="checklist-subs-list" style="font-size:13px;color:var(--muted);">Loading…</div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-title">Race Controls</div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-        <button class="btn btn-secondary" onclick="loadRaceData()">Refresh Data</button>
-        <button class="btn btn-danger" onclick="confirmArchive()">Archive Month &amp; Reset</button>
-      </div>
-    </div>
   </div>
 
   <!-- ── TAB: PERFORMANCE ── -->
   <div id="tab-perf" style="display:none">
+    <!-- Sub-tab nav -->
+    <div style="display:flex;gap:0;border-bottom:1px solid var(--border2);margin-bottom:1.25rem;overflow-x:auto;">
+      <button class="acct-stab active" id="perf-stab-callperf" onclick="showPerfSubTab('callperf',this)" style="font-size:13px;">Call Performance</button>
+      <button class="acct-stab" id="perf-stab-saleslog" onclick="showPerfSubTab('saleslog',this)" style="font-size:13px;">Sales Log</button>
+      <button class="acct-stab" id="perf-stab-salesperf" onclick="showPerfSubTab('salesperf',this)" style="font-size:13px;">Sales Performance</button>
+    </div>
+
+    <!-- Call Performance sub-pane -->
+    <div id="perf-sub-callperf">
     <div id="perf-trial-teaser" style="display:none">
       <div class="panel" style="text-align:center;padding:3rem 2rem;">
         <div style="font-size:2rem;margin-bottom:1rem;">📊</div>
@@ -680,6 +755,104 @@
       <p style="color:var(--muted);margin:0 0 1.5rem;font-size:13px;">Available on Pro and Premium plans.</p>
       <button class="btn btn-primary" onclick="goToAccountTab()">Manage Subscription</button>
     </div>
+    </div><!-- /perf-sub-callperf -->
+
+    <!-- Sales Log sub-pane (from Manage tab) -->
+    <div id="perf-sub-saleslog" style="display:none">
+      <div id="perf-saleslog-teaser" style="display:none">
+        <div class="panel" style="text-align:center;padding:3rem 2rem;">
+          <div style="font-size:2rem;margin-bottom:1rem;">📋</div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:1.6rem;letter-spacing:.04em;margin-bottom:.75rem;">Sales Log</div>
+          <p style="font-size:14px;color:var(--muted);max-width:480px;margin:0 auto 1.5rem;line-height:1.7;">
+            Track every sale with full detail — agent, product, subcategory, premium, lead source, and location. Filter by month, search across all records, and download a full spreadsheet. Available with the Sales Tracking add-on.
+          </p>
+          <button class="btn btn-primary" onclick="goToAccountTab('billing')">Add to Account</button>
+        </div>
+      </div>
+      <div id="perf-saleslog-content">
+      <div class="panel" id="checklist-subs-panel">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.75rem;">
+          <div class="panel-title" style="margin:0">Sales Log</div>
+          <div id="sl-scorecard" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"></div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:.6rem;">
+          <select id="sl-month-sel" onchange="onSalesLogMonthChange()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;"></select>
+          <select id="sl-year-sel" onchange="onSalesLogMonthChange()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;"></select>
+          <select id="sl-location-filter" onchange="onSalesLogLocationChange()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;display:none;">
+            <option value="all">All Locations</option>
+          </select>
+          <label style="font-size:12px;color:var(--text);display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;user-select:none;"><input type="checkbox" id="sl-all-year" onchange="onSalesLogAllYearChange()"> All Year</label>
+          <label style="font-size:12px;color:var(--text);display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;user-select:none;"><input type="checkbox" id="sl-show-unissued" onchange="onSalesLogFilterChange()"> Show unissued from other months</label>
+          <label style="font-size:12px;color:var(--text);display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;user-select:none;"><input type="checkbox" id="sl-show-hidden" onchange="onSalesLogFilterChange()"> Show hidden</label>
+          <button class="btn btn-secondary" style="margin-left:auto;padding:4px 12px;font-size:12px;white-space:nowrap;" onclick="downloadSalesLogXlsx()">↓ Download .xlsx</button>
+        </div>
+        <input id="sales-log-search" type="text" placeholder="Search customer, agent, product, subcategory…" oninput="filterSalesLog()" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;box-sizing:border-box;margin-bottom:.75rem;">
+        <div id="checklist-subs-list" style="font-size:13px;color:var(--muted);">Loading…</div>
+      </div>
+      </div><!-- /perf-saleslog-content -->
+    </div>
+
+    <!-- Sales Performance sub-pane (from Manage tab) -->
+    <div id="perf-sub-salesperf" style="display:none">
+      <div id="perf-salesperf-teaser" style="display:none">
+        <div class="panel" style="text-align:center;padding:3rem 2rem;">
+          <div style="font-size:2rem;margin-bottom:1rem;">📊</div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:1.6rem;letter-spacing:.04em;margin-bottom:.75rem;">Sales Performance</div>
+          <p style="font-size:14px;color:var(--muted);max-width:480px;margin:0 auto 1.5rem;line-height:1.7;">
+            Interactive pie charts that let you drill into your sales by product type, lead source, agent, subcategory, location, and more — with cross-filtering and premium totals. Available with the Sales Tracking add-on.
+          </p>
+          <button class="btn btn-primary" onclick="goToAccountTab('billing')">Add to Account</button>
+        </div>
+      </div>
+      <div id="perf-salesperf-content">
+      <div class="panel">
+        <!-- Date range + metric row -->
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:1rem;">
+          <div id="sp-date-modes" style="display:flex;gap:0;">
+            <button class="acct-stab active" id="sp-mode-month"  onclick="spSetMode('month',this)">Month</button>
+            <button class="acct-stab"        id="sp-mode-year"   onclick="spSetMode('year',this)">Year</button>
+            <button class="acct-stab"        id="sp-mode-custom" onclick="spSetMode('custom',this)">Custom</button>
+          </div>
+          <div id="sp-range-month" style="display:flex;align-items:center;gap:6px;">
+            <input type="month" id="sp-month-input" onchange="spRangeChanged()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;font-size:13px;outline:none;">
+          </div>
+          <div id="sp-range-year" style="display:none;align-items:center;gap:6px;">
+            <select id="sp-year-input" onchange="spRangeChanged()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;font-size:13px;outline:none;"></select>
+          </div>
+          <div id="sp-range-custom" style="display:none;align-items:center;gap:6px;">
+            <input type="date" id="sp-date-start" onchange="spRangeChanged()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;font-size:13px;outline:none;">
+            <span style="color:var(--muted);">—</span>
+            <input type="date" id="sp-date-end" onchange="spRangeChanged()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;font-size:13px;outline:none;">
+          </div>
+          <div id="sp-metric-toggle" style="display:flex;gap:0;margin-left:auto;">
+            <button class="acct-stab active" id="sp-metric-count"   onclick="spSetMetric('count',this)">Count</button>
+            <button class="acct-stab"        id="sp-metric-premium" onclick="spSetMetric('premium',this)">Premium</button>
+          </div>
+        </div>
+        <!-- Summary line -->
+        <div id="sp-summary" style="font-size:13px;color:var(--muted);margin-bottom:.4rem;min-height:1.4em;"></div>
+        <!-- Breadcrumbs -->
+        <div id="sp-crumbs" style="margin-bottom:.85rem;"></div>
+        <!-- Loading -->
+        <div id="sp-loading" style="display:none;text-align:center;padding:2rem 0;color:var(--muted);font-size:13px;">Loading…</div>
+        <!-- Charts grid -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.5rem;" id="sp-charts-grid">
+          <div>
+            <div style="margin-bottom:.5rem;">
+              <select id="sp-dim1" onchange="spDimChanged(1,this)" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;outline:none;"></select>
+            </div>
+            <div style="position:relative;height:300px;" id="sp-chart1-wrap"><canvas id="sp-chart1"></canvas></div>
+          </div>
+          <div>
+            <div style="margin-bottom:.5rem;">
+              <select id="sp-dim2" onchange="spDimChanged(2,this)" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;outline:none;"></select>
+            </div>
+            <div style="position:relative;height:300px;" id="sp-chart2-wrap"><canvas id="sp-chart2"></canvas></div>
+          </div>
+        </div>
+      </div>
+      </div><!-- /perf-salesperf-content -->
+    </div>
   </div>
 
   <!-- ── TAB: ANALYSIS ── -->
@@ -692,6 +865,7 @@
 
     <!-- Sub-pane: Team Trends -->
     <div id="analysis-pane-trends">
+      <div id="ma-hours-label-trends" style="font-size:12px;color:var(--muted);margin-bottom:.5rem;display:none;"></div>
       <div class="panel" id="analysis-charts-panel">
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.2rem;">
           <div class="panel-title" style="margin:0">Performance Trends</div>
@@ -726,6 +900,7 @@
 
     <!-- Sub-pane: Team Member Analysis -->
     <div id="analysis-pane-members" style="display:none">
+      <div id="ma-hours-label-members" style="font-size:12px;color:var(--muted);margin-bottom:.5rem;display:none;"></div>
       <div class="panel" id="member-analysis-panel">
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.2rem;">
           <div class="panel-title" style="margin:0">Individual Agent Analysis</div>
@@ -921,13 +1096,81 @@
         <!-- Content (has add-on) -->
         <div id="sales-pane-content" style="display:none">
 
+          <!-- Sales sub-tab nav -->
+          <div style="display:flex;gap:2px;border-bottom:1px solid var(--border2);margin-bottom:1.25rem;overflow-x:auto;">
+            <button class="acct-stab active" id="sales-stab-team"      onclick="showSalesSubTab('team',this)"      style="font-size:13px;">Team</button>
+            <button class="acct-stab"        id="sales-stab-checklist" onclick="showSalesSubTab('checklist',this)" style="font-size:13px;">Checklist</button>
+            <button class="acct-stab"        id="sales-stab-products"  onclick="showSalesSubTab('products',this)"  style="font-size:13px;">Products</button>
+            <button class="acct-stab"        id="sales-stab-locations" onclick="showSalesSubTab('locations',this)" style="font-size:13px;">Locations</button>
+          </div>
+
+          <!-- ── Team sub-pane ── -->
+          <div id="sales-sub-team">
+
           <!-- Member Analysis Agent Selection (shown when member analysis add-on is active) -->
           <div class="acct-section" id="ma-agents-section" style="display:none">
             <h3>Team Member Analysis — Agent Selection</h3>
             <p id="ma-agents-desc" style="font-size:13px;color:var(--muted);margin-bottom:.75rem;"></p>
             <div id="ma-agent-picker" style="margin-bottom:.75rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px;"></div>
+            <div id="ma-seat-counter" style="font-size:12px;color:var(--muted);margin-bottom:.5rem;"></div>
             <button class="btn btn-primary" onclick="saveMemberAnalysisAgents(this)">Save Selection</button>
             <div id="ma-agents-msg" style="font-size:13px;margin-top:8px;display:none;"></div>
+          </div>
+
+          <!-- Team Member Hours Uploader -->
+          <div class="acct-section" id="ma-hours-section" style="display:none">
+            <h3>Team Member Hours</h3>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Upload an XLSX or CSV with agent hours by period. Used for efficiency calculations in Team Member Analysis. Uploading a period replaces any prior data for that same period.</p>
+
+            <div id="ma-hours-drop" style="border:2px dashed var(--border2);border-radius:8px;padding:1.5rem 1rem;text-align:center;cursor:pointer;margin-bottom:.75rem;transition:border-color .15s;"
+                 ondragover="event.preventDefault();document.getElementById('ma-hours-drop').style.borderColor='var(--accent)'"
+                 ondragleave="document.getElementById('ma-hours-drop').style.borderColor='var(--border2)'"
+                 ondrop="maHoursDrop(event)"
+                 onclick="document.getElementById('ma-hours-file-input').click()">
+              <div style="font-size:13px;color:var(--muted);">Drag &amp; drop XLSX or CSV, or <span style="color:var(--accent);text-decoration:underline;cursor:pointer;">browse</span></div>
+              <div id="ma-hours-drop-name" style="font-size:12px;color:var(--accent);margin-top:4px;"></div>
+              <input type="file" id="ma-hours-file-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="maHoursFileChange(this)">
+            </div>
+
+            <!-- Column mapper — shown after file is parsed -->
+            <div id="ma-hours-mapper" style="display:none;margin-bottom:.75rem;padding:.75rem;background:var(--deep);border:1px solid var(--border2);border-radius:8px;">
+              <div style="font-size:13px;font-weight:600;margin-bottom:.6rem;">Map Columns</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem;">
+                <div>
+                  <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:.4px;">Agent Name Column</label>
+                  <select id="ma-hours-col-name" style="width:100%;padding:6px 8px;background:var(--card2);border:1px solid var(--border2);color:var(--text);border-radius:6px;font-size:13px;"></select>
+                </div>
+                <div>
+                  <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:.4px;">Hours Column</label>
+                  <select id="ma-hours-col-hours" style="width:100%;padding:6px 8px;background:var(--card2);border:1px solid var(--border2);color:var(--text);border-radius:6px;font-size:13px;"></select>
+                </div>
+              </div>
+              <button class="btn btn-secondary" style="font-size:12px;" onclick="maHoursApplyMapping()">Apply Mapping →</button>
+            </div>
+
+            <!-- Agent name matching — shown after mapping applied -->
+            <div id="ma-hours-match" style="display:none;margin-bottom:.75rem;padding:.75rem;background:var(--deep);border:1px solid var(--border2);border-radius:8px;">
+              <div style="font-size:13px;font-weight:600;margin-bottom:.6rem;">Match Agents to Roster</div>
+              <p style="font-size:12px;color:var(--muted);margin:0 0 .6rem;">Map each name from the file to an agent in your roster. Names not matched will be excluded.</p>
+              <div id="ma-hours-match-table"></div>
+            </div>
+
+            <!-- Period + save — shown after matching -->
+            <div id="ma-hours-save-area" style="display:none;margin-bottom:.75rem;">
+              <div style="display:flex;gap:.75rem;align-items:flex-end;flex-wrap:wrap;">
+                <div>
+                  <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:.4px;">Period Label</label>
+                  <input type="text" id="ma-hours-period" placeholder="e.g. April 2026" style="padding:6px 10px;background:var(--card2);border:1px solid var(--border2);color:var(--text);border-radius:6px;font-size:13px;width:180px;">
+                </div>
+                <button class="btn btn-primary" style="font-size:13px;" onclick="maHoursSave(this)">Save Hours</button>
+              </div>
+            </div>
+
+            <!-- Status message -->
+            <div id="ma-hours-msg" style="font-size:12px;margin-bottom:.5rem;display:none;"></div>
+
+            <!-- Uploaded periods list -->
+            <div id="ma-hours-periods"></div>
           </div>
 
           <!-- Agent Roster -->
@@ -942,17 +1185,10 @@
             <div id="agent-roster-msg" style="font-size:13px;margin-top:6px;display:none;"></div>
           </div>
 
-          <!-- Locations -->
-          <div class="acct-section">
-            <h3>Locations</h3>
-            <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Named locations (offices, events, etc.) appear as an optional field in manual entry and on checklist forms — useful for tracking where a sale originated.</p>
-            <div id="locations-list" style="margin-bottom:.75rem;"></div>
-            <div style="display:flex;gap:8px;align-items:center;">
-              <input id="new-location-name" type="text" placeholder="e.g. Main Office" style="flex:1;max-width:280px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;">
-              <button class="btn btn-secondary" onclick="addLocation(this)">Add Location</button>
-            </div>
-            <div id="location-msg" style="font-size:13px;margin-top:6px;display:none;"></div>
-          </div>
+          </div><!-- /sales-sub-team -->
+
+          <!-- ── Checklist sub-pane ── -->
+          <div id="sales-sub-checklist" style="display:none">
 
           <!-- Checklist Link -->
           <div class="acct-section">
@@ -993,23 +1229,44 @@
             </div>
             <div class="acct-field"><label>GREETING</label><textarea id="et-greeting" rows="2" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;resize:vertical;outline:none;" placeholder="Thank you for your business! Your agent has completed your new customer checklist."></textarea></div>
             <div class="acct-field"><label>CLOSING</label><textarea id="et-footer" rows="2" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;resize:vertical;outline:none;" placeholder="If you have any questions, please don't hesitate to reach out."></textarea></div>
-            <button class="btn btn-primary" onclick="saveEmailTemplate(this)">Save Email Template</button>
+            <div class="acct-field"><label>INTERNAL SUMMARY EMAIL <span style="color:var(--muted);font-weight:400;">(where to send agent copy)</span></label>
+              <input id="et-internal-email" type="email" placeholder="agent@office.com" style="max-width:320px;"></div>
+            <div class="acct-field"><label>PENALTY WARNING MESSAGE <span style="color:var(--muted);font-weight:400;">(shown before submit if checklist incomplete — leave blank to disable)</span></label>
+              <textarea id="et-penalty-warning" rows="2" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;resize:vertical;outline:none;" placeholder="If submitted inaccurately, you risk 80% of your commissions. Please review all items before continuing."></textarea></div>
+
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:.75rem;">
+              <button class="btn btn-primary" onclick="saveEmailTemplate(this)">Save Email Template</button>
+              <button class="btn btn-secondary" onclick="previewEmailTemplate()">Preview Email</button>
+            </div>
             <div id="et-msg" style="font-size:13px;margin-top:8px;display:none;"></div>
           </div>
 
-          <!-- Form Types -->
+          <!-- Checklist Form Items -->
           <div class="acct-section">
-            <h3>Checklist Form Types</h3>
-            <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Customize which forms appear on your checklist link.</p>
-            <div id="form-types-list" style="margin-bottom:.75rem;"></div>
-            <div style="display:flex;gap:8px;align-items:center;margin-bottom:.5rem;">
-              <input id="new-form-key" type="text" placeholder="Key (e.g. MVR)" style="width:100px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;">
-              <input id="new-form-label" type="text" placeholder="Label (e.g. MVR Check)" style="flex:1;max-width:240px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;">
-              <button class="btn btn-secondary" onclick="addFormType()">Add</button>
-            </div>
-            <button class="btn btn-primary" onclick="saveFormTypes(this)">Save Form Types</button>
-            <div id="ft-msg" style="font-size:13px;margin-top:8px;display:none;"></div>
+            <h3>Checklist Form Items</h3>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Configure each form item that appears on the checklist. Set a description to include it in the customer email when Applied is checked. Toggle Required to block submission until that item is checked Applied or N/A.</p>
+            <div id="form-items-config"></div>
+            <button class="btn btn-primary" style="margin-top:.75rem;" onclick="saveFormItems(this)">Save Form Items</button>
+            <div id="fi-msg" style="font-size:13px;margin-top:8px;display:none;"></div>
           </div>
+
+          <!-- Required Submission Fields -->
+          <div class="acct-section">
+            <h3>Required Submission Fields</h3>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Block submission if these fields are left blank. Customer Name, Submission Date, and Salesperson are always required.</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem .5rem;">
+              <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;"><input type="checkbox" id="req-appt-date" style="width:15px;height:15px;accent-color:var(--accent);cursor:pointer;"> Appointment Date</label>
+              <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;"><input type="checkbox" id="req-appt-time" style="width:15px;height:15px;accent-color:var(--accent);cursor:pointer;"> Appointment Time</label>
+              <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;"><input type="checkbox" id="req-meeting-type" style="width:15px;height:15px;accent-color:var(--accent);cursor:pointer;"> Meeting Type</label>
+              <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;"><input type="checkbox" id="req-location" style="width:15px;height:15px;accent-color:var(--accent);cursor:pointer;"> Location (when In Person)</label>
+            </div>
+            <button class="btn btn-primary" style="margin-top:.75rem;" onclick="saveFormItems(this)">Save</button>
+          </div>
+
+          </div><!-- /sales-sub-checklist -->
+
+          <!-- ── Products sub-pane ── -->
+          <div id="sales-sub-products" style="display:none">
 
           <!-- Product Types & Subcategories -->
           <div class="acct-section">
@@ -1047,6 +1304,38 @@
               <div id="sc-msg" style="font-size:13px;margin-top:8px;display:none;"></div>
             </div>
           </div>
+
+          <!-- Lead Sources -->
+          <div class="acct-section">
+            <h3>Lead Sources</h3>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Customize the lead source options available in manual entry and on the checklist form. Saved sources replace the default list for your account.</p>
+            <div id="lead-sources-list" style="margin-bottom:.75rem;"></div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:.75rem;">
+              <input id="new-lead-source" type="text" placeholder="e.g. Referral" style="flex:1;max-width:280px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;">
+              <button class="btn btn-secondary" onclick="addLeadSource()">Add</button>
+            </div>
+            <button class="btn btn-primary" onclick="saveLeadSources(this)">Save Lead Sources</button>
+            <div id="lead-sources-msg" style="font-size:13px;margin-top:8px;display:none;"></div>
+          </div>
+
+          </div><!-- /sales-sub-products -->
+
+          <!-- ── Locations sub-pane ── -->
+          <div id="sales-sub-locations" style="display:none">
+
+          <!-- Locations -->
+          <div class="acct-section">
+            <h3>Locations</h3>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Named locations (offices, events, etc.) appear as a field in manual entry and on checklist forms — useful for tracking where a sale originated.</p>
+            <div id="locations-list" style="margin-bottom:.75rem;"></div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <input id="new-location-name" type="text" placeholder="e.g. Main Office" style="flex:1;max-width:280px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;">
+              <button class="btn btn-secondary" onclick="addLocation(this)">Add Location</button>
+            </div>
+            <div id="location-msg" style="font-size:13px;margin-top:6px;display:none;"></div>
+          </div>
+
+          </div><!-- /sales-sub-locations -->
 
         </div>
       </div>
@@ -1302,6 +1591,43 @@ const FIELD_HINTS = {
 };
 
 const COLORS = ['#00d4ff','#00ff94','#ffd166','#ff8c42','#b0bec5','#ff4d6d','#a78bfa','#34d399','#f472b6','#fb923c','#60a5fa'];
+const FORM_ITEM_DEFS = [
+  { key: 'wfolder', label: 'w:/ Folder', editable: false },
+  { key: 'GSD',     label: 'GSD',        editable: false },
+  { key: 'DSS',     label: 'DSS',        editable: false },
+  { key: 'SCD',     label: 'SCD',        editable: false },
+  { key: 'DTD',     label: 'DTD',        editable: false },
+  { key: 'SFPP',    label: 'SFPP',       editable: false },
+  { key: 'other1',  label: 'Other',      editable: true  },
+  { key: 'other2',  label: 'Other 2',    editable: true  },
+  { key: 'other3',  label: 'Other 3',    editable: true  },
+];
+const DEFAULT_FORM_ITEMS = {
+  wfolder: { show: true, required: false, title: 'W:/ Folder', description: '', link_label: '', link_url: '' },
+  GSD:  { show: true, required: false, title: 'Good Student Discount (GSD)',
+    req_submitted: false, req_notified: false, req_wfi: false, req_notif_date: false,
+    link_label: 'Driver Training Discount details', link_url: 'https://www.statefarm.com/insurance/auto/car-insurance-for-teens',
+    description: "We're happy to inform you that the Good Student Discount (GSD) has been applied to your policy for drivers under age 25. To maintain this discount, all assigned drivers under 25 must meet certain academic qualifications, such as ranking in the top 20% of their class, earning a 3.0 GPA or higher on a 4.0 scale, making the Dean's List or Honor Roll, or achieving comparable academic standards.\n\nFor current full-time students, a recent scholastic record or a certified statement from a school official showing these achievements is required. Please provide the appropriate certification or academic records to confirm eligibility and continue receiving this discount." },
+  DSS:  { show: true, required: false, title: 'Drive Safe & Save® (DSS)',
+    req_submitted: false, req_notified: false, req_wfi: false, req_notif_date: false,
+    link_label: 'Drive Safe & Save® enrollment', link_url: 'https://www.statefarm.com/insurance/auto/discounts/drive-safe-save',
+    description: "The Drive Safe & Save® discount rewards safe driving habits by using a mobile app to monitor your driving. Enroll through the State Farm app or website and continue practicing safe driving habits to maintain and potentially increase your savings." },
+  SCD:  { show: true, required: false, title: 'Steer Clear® Safe Driver Discount (SCD)',
+    req_submitted: false, req_notified: false, req_wfi: false, req_notif_date: false,
+    link_label: 'Steer Clear® program info', link_url: 'https://www.statefarm.com/insurance/auto/discounts/steer-clear',
+    description: "We're pleased to let you know that the Steer Clear® Safe Driver discount (SCD) has been applied to your policy. This discount rewards eligible drivers under age 25 who complete the State Farm® Steer Clear program, which includes finishing 5 learning modules and completing 5 hours of driving over at least 10 trips.\n\nTo help you complete the program, text STEER to 42407 to download the Steer Clear app. Materials are also available at statefarm.com." },
+  DTD:  { show: true, required: false, title: 'Driver Training Discount (DTD)',
+    req_submitted: false, req_notified: false, req_wfi: false, req_notif_date: false,
+    link_label: 'Driver Training Discount details', link_url: 'https://www.statefarm.com/insurance/auto/car-insurance-for-teens',
+    description: "The Driver Training Discount (DTD) has been applied to your policy. This discount rewards drivers under age 21 who have completed an approved driver education course. Please provide a certification or proof of completion to maintain this discount." },
+  SFPP: { show: true, required: false, title: 'State Farm Premier Package (SFPP)',
+    req_submitted: false, req_notified: false, req_wfi: false, req_notif_date: false,
+    description: '', link_label: '', link_url: '' },
+  other1: { show: false, required: false, title: '', req_submitted: false, req_notified: false, req_wfi: false, req_notif_date: false, description: '', link_label: '', link_url: '', label: '' },
+  other2: { show: false, required: false, title: '', req_submitted: false, req_notified: false, req_wfi: false, req_notif_date: false, description: '', link_label: '', link_url: '', label: '' },
+  other3: { show: false, required: false, title: '', req_submitted: false, req_notified: false, req_wfi: false, req_notif_date: false, description: '', link_label: '', link_url: '', label: '' },
+};
+const DEFAULT_REQUIRED_FIELDS = { appt_date: true, appt_time: true, meeting_type: true, location: true };
 const AGENT_COLORS = {};
 
 const DEFAULT_SCORING = {
@@ -1330,6 +1656,8 @@ let _agentRoster      = [];
 let _salesLocations   = [];         // [{id, name, active, sort_order}]
 let _salesTileEntries = [];         // sales_log entries for current race period
 let _salesTileLocation = 'all';     // selected location filter on race tile
+let _leadSources       = [];        // user-configured lead source list (falls back to LEAD_SOURCES constant)
+let _salesLogLocationFilter = 'all'; // location filter for sales log
 
 // ── Member Analysis add-on state ─────────────────────────────────────────────
 let _hasMemberAnalysis    = false;
@@ -1337,6 +1665,14 @@ let _memberAnalysisCount  = 0;
 let _memberAnalysisAgents = [];
 let _memberAnalysisAt     = null;
 let _memberAnalysisLoading = false;
+let _memberHoursData      = [];   // periods array from accounts.member_hours_data
+let _maHoursFileRows      = [];   // raw parsed rows from dropped file
+let _maHoursHeaders       = [];   // column headers from dropped file
+let _maCurKey             = '';   // "May 2026" from last analysis response
+let _maLastHoursPeriod    = null; // last uploaded period label for label display
+let _maAnalysisData       = null; // last loaded member analysis response
+let _agentChartInstances  = {};   // agId → [Chart, Chart, Chart]
+let _agentChartsRendered  = new Set();
 
 // ── INIT ─────────────────────────────────────────────────────────────────────
 // localStorage helpers — persistSession:false means Supabase never writes its own keys,
@@ -1493,6 +1829,7 @@ async function checkAccountAndShow(session) {
       _memberAnalysisAt     = acct.member_analysis_at    || null;
       _hasMemberAnalysis    = acct.has_member_analysis   || false;
       _memberAnalysisCount  = acct.member_analysis_count || 0;
+      _memberHoursData      = acct.member_hours_data?.periods || [];
       _salesEntryMode = acct.sales_entry_mode || 'upload';
       _checklistToken = acct.checklist_token  || null;
       if (_acctStatus === 'trial' && acct.trial_ends_at) {
@@ -1753,6 +2090,56 @@ function showAccountSubTab(name, btn) {
   if (activeBtn) activeBtn.classList.add('active');
 }
 
+function showSalesSubTab(name, btn) {
+  ['team','checklist','products','locations'].forEach(n => {
+    const p = document.getElementById('sales-sub-' + n);
+    if (p) p.style.display = n === name ? '' : 'none';
+  });
+  document.querySelectorAll('#sales-pane-content .acct-stab').forEach(b => b.classList.remove('active'));
+  const activeBtn = btn || document.getElementById('sales-stab-' + name);
+  if (activeBtn) activeBtn.classList.add('active');
+}
+
+function showManageSubTab(name, btn) {
+  // Only 'upload' remains in Manage tab; Sales Log + Sales Performance moved to Performance tab
+}
+
+function showPerfSubTab(name, btn) {
+  ['callperf','saleslog','salesperf'].forEach(n => {
+    const p = document.getElementById('perf-sub-' + n);
+    if (p) p.style.display = n === name ? '' : 'none';
+  });
+  document.querySelectorAll('#tab-perf .acct-stab').forEach(b => b.classList.remove('active'));
+  const activeBtn = btn || document.getElementById('perf-stab-' + name);
+  if (activeBtn) activeBtn.classList.add('active');
+
+  if (name === 'callperf') {
+    const perfFullAccess = _isAdmin || (['pro','premium'].includes(_currentPlan) && !_trialExpired && ['paid','deferred'].includes(_acctStatus));
+    if (!perfFullAccess) {
+      document.getElementById('perf-trial-teaser').style.display = '';
+      document.getElementById('perf-table-panel').style.display  = 'none';
+      document.getElementById('heatmap-panel').style.display     = 'none';
+      document.getElementById('heatmap-upsell').style.display    = 'none';
+      return;
+    }
+    document.getElementById('perf-trial-teaser').style.display = 'none';
+    document.getElementById('perf-table-panel').style.display  = '';
+    loadPerf();
+    return;
+  }
+
+  if (name === 'saleslog' || name === 'salesperf') {
+    const hasSales = _hasSalesAddon || _isAdmin;
+    const teaser  = document.getElementById('perf-' + name + '-teaser');
+    const content = document.getElementById('perf-' + name + '-content');
+    if (teaser)  teaser.style.display  = hasSales ? 'none' : '';
+    if (content) content.style.display = hasSales ? '' : 'none';
+    if (!hasSales) return;
+    if (name === 'saleslog')  loadChecklistSubmissions();
+    if (name === 'salesperf') initSalesPerf();
+  }
+}
+
 function goToAccountTab(pane) {
   const btn = document.querySelector('.tab[onclick*="account"]');
   showTab('account', btn);
@@ -1770,19 +2157,7 @@ function showTab(name, btn) {
   if (name === 'race') loadRaceData();
   if (name === 'account') loadAccountTab();
   if (name === 'adminpanel') loadAdminPanel();
-  if (name === 'perf') {
-    const perfFullAccess = _isAdmin || (['pro','premium'].includes(_currentPlan) && !_trialExpired && ['paid','deferred'].includes(_acctStatus));
-    if (!perfFullAccess) {
-      document.getElementById('perf-trial-teaser').style.display = '';
-      document.getElementById('perf-table-panel').style.display = 'none';
-      document.getElementById('heatmap-panel').style.display = 'none';
-      document.getElementById('heatmap-upsell').style.display = 'none';
-      return;
-    }
-    document.getElementById('perf-trial-teaser').style.display = 'none';
-    document.getElementById('perf-table-panel').style.display = '';
-    loadPerf();
-  }
+  if (name === 'perf') { showPerfSubTab('callperf'); }
   if (name === 'history') loadHistory();
   if (name === 'analysis') {
     const analysisFullAccess = _isAdmin || (_currentPlan === 'premium' && !_trialExpired && ['paid','deferred'].includes(_acctStatus));
@@ -4033,6 +4408,61 @@ const LEAD_SOURCES = [
   'Walk-In','Win-Back',
 ];
 
+// Returns user-configured lead sources, falling back to the hardcoded default list
+function getLeadSources() {
+  return _leadSources.length ? _leadSources : LEAD_SOURCES;
+}
+
+// Render the lead sources list in the Products sub-pane
+function renderLeadSourcesList() {
+  const container = document.getElementById('lead-sources-list');
+  if (!container) return;
+  const sources = _leadSources.length ? _leadSources : [...LEAD_SOURCES];
+  if (!sources.length) {
+    container.innerHTML = '<span style="font-size:13px;color:var(--muted);">No custom lead sources — using defaults.</span>';
+    return;
+  }
+  container.innerHTML = sources.map((s, i) => `
+    <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border2);" id="ls-row-${i}">
+      <span style="flex:1;font-size:13px;">${escHtml(s)}</span>
+      <button onclick="removeLeadSource(${i})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:16px;line-height:1;padding:0 4px;" title="Remove">✕</button>
+    </div>`).join('');
+}
+
+function addLeadSource() {
+  const inp = document.getElementById('new-lead-source');
+  const val = inp?.value.trim();
+  if (!val) return;
+  const sources = _leadSources.length ? _leadSources : [...LEAD_SOURCES];
+  if (!sources.includes(val)) sources.push(val);
+  _leadSources = sources;
+  inp.value = '';
+  renderLeadSourcesList();
+}
+
+function removeLeadSource(idx) {
+  const sources = _leadSources.length ? _leadSources : [...LEAD_SOURCES];
+  sources.splice(idx, 1);
+  _leadSources = sources;
+  renderLeadSourcesList();
+}
+
+async function saveLeadSources(btn) {
+  btn.disabled = true; btn.textContent = 'Saving…';
+  const msg = document.getElementById('lead-sources-msg');
+  try {
+    const r = await fetch('/api/checklist-config', {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leadSources: _leadSources }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Failed to save');
+    showInlineMsg('lead-sources-msg', 'Saved.', 'ok');
+  } catch(e) { showInlineMsg('lead-sources-msg', e.message, 'err'); }
+  finally { btn.disabled = false; btn.textContent = 'Save Lead Sources'; }
+}
+
 const DEFAULT_SCORING_CATS = [
   { key: 'auto',    label: 'Auto'             },
   { key: 'fire',    label: 'Fire'             },
@@ -4057,9 +4487,10 @@ function labelForCat(key) {
 
 // ── Account tab: sales add-on section rendering ───────────────────────────────
 function renderSalesAddonSection(acct) {
-  const hasSub = acct.has_sales_addon || _hasSalesAddon || _isAdmin;
-  const hasMa  = acct.has_member_analysis || _hasMemberAnalysis || _isAdmin;
-  const showContent = hasSub || hasMa;
+  const hasSub  = acct.has_sales_addon || _hasSalesAddon || _isAdmin;
+  const hasMa   = acct.has_member_analysis || _hasMemberAnalysis || _isAdmin;
+  const isPro   = ['pro','premium'].includes(_currentPlan) && !_trialExpired && ['paid','deferred'].includes(_acctStatus);
+  const showContent = hasSub || hasMa || isPro;
 
   // Billing pane: upsell vs active card
   document.getElementById('sales-addon-upsell').style.display  = hasSub ? 'none' : '';
@@ -4072,6 +4503,11 @@ function renderSalesAddonSection(acct) {
   // Member analysis agent section
   document.getElementById('ma-agents-section').style.display = hasMa ? '' : 'none';
   if (hasMa) renderMemberAnalysisAgentPicker();
+
+  // Hours section: pro plan, sales addon, or member analysis
+  const showHours = hasSub || hasMa || isPro;
+  document.getElementById('ma-hours-section').style.display = showHours ? '' : 'none';
+  if (showHours) renderMaHoursPeriods();
 
   if (!hasSub) return;
 
@@ -4093,21 +4529,25 @@ function renderSalesAddonSection(acct) {
 
   // Email template
   const cfg = acct.checklist_email_config || _checklistEmailCfg || {};
-  document.getElementById('et-subject').value     = cfg.subject     || '';
-  document.getElementById('et-agency').value      = cfg.agency_name || acct.company_name || '';
-  document.getElementById('et-color').value       = cfg.brand_color || '#00d4ff';
-  document.getElementById('et-agent-name').value  = cfg.agent_name  || '';
-  document.getElementById('et-agent-phone').value = cfg.agent_phone || '';
-  document.getElementById('et-agent-email').value = cfg.agent_email || '';
-  document.getElementById('et-greeting').value    = cfg.greeting    || '';
-  document.getElementById('et-footer').value      = cfg.footer      || '';
-
-  // Form types
-  renderFormTypesList();
+  document.getElementById('et-subject').value          = cfg.subject         || '';
+  document.getElementById('et-agency').value           = cfg.agency_name     || acct.company_name || '';
+  document.getElementById('et-color').value            = cfg.brand_color     || '#00d4ff';
+  document.getElementById('et-agent-name').value       = cfg.agent_name      || '';
+  document.getElementById('et-agent-phone').value      = cfg.agent_phone     || '';
+  document.getElementById('et-agent-email').value      = cfg.agent_email     || '';
+  document.getElementById('et-greeting').value         = cfg.greeting        || '';
+  document.getElementById('et-footer').value           = cfg.footer          || '';
+  document.getElementById('et-internal-email').value   = cfg.internal_email  || '';
+  document.getElementById('et-penalty-warning').value  = cfg.penalty_warning || '';
+  // Form items + required fields
+  renderFormItemsConfig();
 
   // Product types & Subcategories
   renderProductTypeList();
   renderSubcatList();
+
+  // Lead sources
+  renderLeadSourcesList();
 }
 
 function renderAgentRoster() {
@@ -4184,6 +4624,10 @@ function refreshManualRowLocations() {
   });
 }
 
+function _locInputSt() {
+  return 'width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;outline:none;';
+}
+
 function renderLocationsList() {
   const container = document.getElementById('locations-list');
   if (!container) return;
@@ -4191,13 +4635,63 @@ function renderLocationsList() {
     container.innerHTML = '<div style="font-size:13px;color:var(--muted);margin-bottom:.5rem;">No locations added yet.</div>';
     return;
   }
-  container.innerHTML = _salesLocations.map(l =>
-    `<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
-      <input type="checkbox" ${l.active !== false ? 'checked' : ''} onchange="toggleLocation('${escHtml(l.id)}',this.checked)" title="Active in dropdowns">
-      <span style="font-size:13px;flex:1;">${escHtml(l.name)}</span>
-      <button class="btn btn-secondary" style="padding:2px 8px;font-size:11px;" onclick="deleteLocation('${escHtml(l.id)}',this)">✕</button>
-    </div>`
-  ).join('');
+  container.innerHTML = _salesLocations.map(l => {
+    const safeId = escHtml(l.id);
+    const summary = [l.address, l.phone, l.hours].filter(Boolean).join(' · ');
+    return `<div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.65rem .75rem;margin-bottom:.5rem;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <input type="checkbox" ${l.active !== false ? 'checked' : ''} onchange="toggleLocation('${safeId}',this.checked)" title="Active in dropdowns">
+        <span style="font-size:13px;font-weight:600;flex:1;">${escHtml(l.name)}</span>
+        ${summary ? `<span style="font-size:11px;color:var(--muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(summary)}</span>` : ''}
+        <button class="btn btn-secondary" style="padding:2px 9px;font-size:11px;" onclick="toggleLocationEdit('${safeId}')">Edit</button>
+        <button class="btn btn-secondary" style="padding:2px 8px;font-size:11px;" onclick="deleteLocation('${safeId}',this)">✕</button>
+      </div>
+      <div id="loc-edit-${safeId}" style="display:none;margin-top:.65rem;padding-top:.65rem;border-top:1px solid var(--border2);">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem;">
+          <div><label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px;">Address</label>
+            <input id="loc-addr-${safeId}" type="text" value="${escHtml(l.address||'')}" placeholder="123 Main St, City, ST" style="${_locInputSt()}"></div>
+          <div><label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px;">Phone</label>
+            <input id="loc-phone-${safeId}" type="tel" value="${escHtml(l.phone||'')}" placeholder="(503) 657-6690" style="${_locInputSt()}"></div>
+        </div>
+        <div style="margin-bottom:.5rem;"><label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px;">Hours</label>
+          <input id="loc-hours-${safeId}" type="text" value="${escHtml(l.hours||'')}" placeholder="Mon–Fri, 9 AM – 5:30 PM" style="${_locInputSt()}"></div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button class="btn btn-primary" style="padding:4px 12px;font-size:12px;" onclick="saveLocationDetails('${safeId}',this)">Save</button>
+          <button class="btn btn-secondary" style="padding:4px 10px;font-size:12px;" onclick="toggleLocationEdit('${safeId}')">Cancel</button>
+          <span id="loc-save-msg-${safeId}" style="font-size:12px;display:none;"></span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleLocationEdit(id) {
+  const el = document.getElementById('loc-edit-' + id);
+  if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+
+async function saveLocationDetails(id, btn) {
+  const address = (document.getElementById('loc-addr-' + id)?.value  || '').trim();
+  const phone   = (document.getElementById('loc-phone-' + id)?.value || '').trim();
+  const hours   = (document.getElementById('loc-hours-' + id)?.value || '').trim();
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/checklist-config', {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ locationUpdates: [{ action: 'update_details', id, address, phone, hours }] }),
+    });
+    const loc = _salesLocations.find(l => l.id === id);
+    if (loc) { loc.address = address; loc.phone = phone; loc.hours = hours; }
+    const msgEl = document.getElementById('loc-save-msg-' + id);
+    if (msgEl) {
+      msgEl.textContent = r.ok ? 'Saved' : 'Error saving';
+      msgEl.style.color = r.ok ? 'var(--accent2)' : '#e74c3c';
+      msgEl.style.display = '';
+      setTimeout(() => { if (msgEl) msgEl.style.display = 'none'; }, 2000);
+    }
+    if (r.ok) renderLocationsList();
+  } finally { btn.disabled = false; }
 }
 
 async function addLocation(btn) {
@@ -4250,47 +4744,131 @@ async function deleteLocation(id, btn) {
   } finally { btn.disabled = false; }
 }
 
-function renderFormTypesList() {
-  const container = document.getElementById('form-types-list');
+function renderFormItemsConfig() {
+  const container = document.getElementById('form-items-config');
   if (!container) return;
-  if (!_checklistFormCfg.length) {
-    container.innerHTML = '<div style="font-size:13px;color:var(--muted);margin-bottom:.5rem;">No form types configured yet — defaults will be seeded on first load of the checklist link.</div>';
-    return;
-  }
-  container.innerHTML = _checklistFormCfg.map((f, i) =>
-    `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;" data-idx="${i}">
-      <input type="checkbox" ${f.active !== false ? 'checked' : ''} onchange="ftToggle(${i},this.checked)">
-      <span style="font-size:13px;min-width:80px;">${escHtml(f.label)}</span>
-      <span style="font-size:11px;color:var(--muted);">(${escHtml(f.form_key)})</span>
-      <button class="btn btn-secondary" style="padding:2px 8px;font-size:11px;" onclick="ftRemove(${i})">✕</button>
-    </div>`
-  ).join('');
+  const saved = (_checklistEmailCfg || {}).form_items || {};
+  const rf    = (_checklistEmailCfg || {}).required_fields || DEFAULT_REQUIRED_FIELDS;
+
+  const inputStyle = 'width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;';
+  const taStyle    = inputStyle + 'resize:vertical;padding:8px 10px;';
+  const chkStyle   = 'width:14px;height:14px;accent-color:var(--accent);cursor:pointer;';
+  const lblStyle   = 'display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;white-space:nowrap;';
+  const secLblStyle = 'font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px;';
+
+  container.innerHTML = FORM_ITEM_DEFS.map(({ key, label, editable }) => {
+    const cur = Object.assign({}, DEFAULT_FORM_ITEMS[key] || {}, saved[key] || {});
+    const isWfolder = key === 'wfolder';
+    const norm = v => v === true ? 'and' : (v || '');
+    const selStyle = 'font-size:11px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:2px 4px;outline:none;cursor:pointer;';
+    const opt = (val, cur) => `<option value="${val}" ${norm(cur)===val?'selected':''}>${val.toUpperCase()}</option>`;
+    const secToggles = isWfolder ? '' : `
+      <div style="margin-top:.6rem;padding:.5rem .6rem;background:var(--card2);border:1px solid var(--border2);border-radius:6px;">
+        <div style="${secLblStyle}">When Applied, also require: <span style="font-weight:400;font-size:10px;">(AND = required alongside others; OR = satisfies requirement on its own)</span></div>
+        <div style="display:grid;grid-template-columns:auto auto 1fr auto auto 1fr;gap:.3rem .5rem;align-items:center;margin-top:.35rem;">
+          <select id="fi-rsubmit-${key}" style="${selStyle}"><option value="">Off</option>${opt('and',cur.req_submitted)}${opt('or',cur.req_submitted)}</select>
+          <span style="font-size:12px;">Submitted</span><span></span>
+          <select id="fi-rnotify-${key}" style="${selStyle}"><option value="">Off</option>${opt('and',cur.req_notified)}${opt('or',cur.req_notified)}</select>
+          <span style="font-size:12px;">Customer Notified</span><span></span>
+          <select id="fi-rwfi-${key}"    style="${selStyle}"><option value="">Off</option>${opt('and',cur.req_wfi)}${opt('or',cur.req_wfi)}</select>
+          <span style="font-size:12px;">Task Created</span><span></span>
+          <select id="fi-rdate-${key}"   style="${selStyle}"><option value="">Off</option>${opt('and',cur.req_notif_date)}${opt('or',cur.req_notif_date)}</select>
+          <span style="font-size:12px;">Notification Date</span><span></span>
+        </div>
+      </div>`;
+
+    return `<div style="border:1px solid var(--border2);border-radius:8px;margin-bottom:.4rem;overflow:hidden;">
+      <div style="display:flex;align-items:center;gap:8px;padding:.55rem .75rem;background:var(--card2);cursor:pointer;" onclick="toggleFiPanel('${key}')">
+        <span style="font-family:monospace;font-size:12px;background:var(--deep);border:1px solid var(--border);border-radius:4px;padding:1px 6px;white-space:nowrap;">${escHtml(key)}</span>
+        ${editable
+          ? `<input id="fi-label-${key}" type="text" value="${escHtml(cur.label||'')}" placeholder="Custom label..." onclick="event.stopPropagation()" style="font-size:13px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:3px 8px;outline:none;flex:1;max-width:200px;">`
+          : `<span style="font-size:13px;color:var(--text);">${escHtml(label)}</span>`}
+        <label style="${lblStyle};margin-left:auto;" onclick="event.stopPropagation()">
+          <input type="checkbox" id="fi-show-${key}" ${cur.show !== false ? 'checked':''} style="${chkStyle}"> Show
+        </label>
+        <label style="${lblStyle}" onclick="event.stopPropagation()">
+          <input type="checkbox" id="fi-req-${key}" ${cur.required ? 'checked':''} style="${chkStyle}"> Required
+        </label>
+        <span id="fi-arrow-${key}" style="color:var(--muted);font-size:12px;margin-left:2px;">▾</span>
+      </div>
+      <div id="fi-panel-${key}" style="display:none;padding:.75rem;border-top:1px solid var(--border2);">
+        <div style="margin-bottom:.5rem;">
+          <label style="${secLblStyle}">EMAIL TITLE <span style="font-weight:400;">(heading shown in customer email when Applied)</span></label>
+          <input id="fi-title-${key}" type="text" value="${escHtml(cur.title||'')}" placeholder="${escHtml(label)}" style="${inputStyle}">
+        </div>
+        <div style="margin-bottom:.5rem;">
+          <label style="${secLblStyle}">DESCRIPTION <span style="font-weight:400;">(body text — leave blank to omit section from email)</span></label>
+          <textarea id="fi-desc-${key}" rows="3" style="${taStyle}">${escHtml(cur.description||'')}</textarea>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 2fr;gap:.5rem;margin-bottom:.25rem;">
+          <div><label style="${secLblStyle}">LINK LABEL</label>
+            <input id="fi-link-label-${key}" type="text" value="${escHtml(cur.link_label||'')}" style="${inputStyle}"></div>
+          <div><label style="${secLblStyle}">LINK URL</label>
+            <input id="fi-link-url-${key}" type="url" value="${escHtml(cur.link_url||'')}" placeholder="https://..." style="${inputStyle}"></div>
+        </div>
+        ${secToggles}
+      </div>
+    </div>`;
+  }).join('');
+
+  // Load required fields toggles
+  const rfMap = { 'req-appt-date': 'appt_date', 'req-appt-time': 'appt_time', 'req-meeting-type': 'meeting_type', 'req-location': 'location' };
+  Object.entries(rfMap).forEach(([elId, key]) => {
+    const el = document.getElementById(elId);
+    if (el) el.checked = rf[key] !== undefined ? rf[key] : DEFAULT_REQUIRED_FIELDS[key];
+  });
 }
 
-function ftToggle(idx, val) { if (_checklistFormCfg[idx]) _checklistFormCfg[idx].active = val; }
-function ftRemove(idx) { _checklistFormCfg.splice(idx, 1); renderFormTypesList(); }
-
-function addFormType() {
-  const key   = document.getElementById('new-form-key').value.trim();
-  const label = document.getElementById('new-form-label').value.trim();
-  if (!key || !label) return;
-  _checklistFormCfg.push({ form_key: key, label, active: true, sort_order: _checklistFormCfg.length });
-  document.getElementById('new-form-key').value   = '';
-  document.getElementById('new-form-label').value = '';
-  renderFormTypesList();
+function toggleFiPanel(key) {
+  const panel = document.getElementById('fi-panel-' + key);
+  const arrow = document.getElementById('fi-arrow-' + key);
+  if (!panel) return;
+  const open = panel.style.display === 'none';
+  panel.style.display = open ? '' : 'none';
+  if (arrow) arrow.textContent = open ? '▴' : '▾';
 }
 
-async function saveFormTypes(btn) {
+async function saveFormItems(btn) {
   btn.disabled = true;
-  const msg = document.getElementById('ft-msg');
   try {
+    const form_items = {};
+    FORM_ITEM_DEFS.forEach(({ key, editable }) => {
+      const isWfolder = key === 'wfolder';
+      const item = {
+        show:        document.getElementById('fi-show-' + key)?.checked       ?? true,
+        required:    document.getElementById('fi-req-' + key)?.checked        ?? false,
+        title:       document.getElementById('fi-title-' + key)?.value.trim() || '',
+        description: document.getElementById('fi-desc-' + key)?.value.trim()  || '',
+        link_label:  document.getElementById('fi-link-label-' + key)?.value.trim() || '',
+        link_url:    document.getElementById('fi-link-url-' + key)?.value.trim()   || '',
+      };
+      if (!isWfolder) {
+        item.req_submitted  = document.getElementById('fi-rsubmit-' + key)?.value || false;
+        item.req_notified   = document.getElementById('fi-rnotify-' + key)?.value || false;
+        item.req_wfi        = document.getElementById('fi-rwfi-' + key)?.value    || false;
+        item.req_notif_date = document.getElementById('fi-rdate-' + key)?.value   || false;
+      }
+      if (editable) item.label = document.getElementById('fi-label-' + key)?.value.trim() || '';
+      form_items[key] = item;
+    });
+    const required_fields = {
+      appt_date:    document.getElementById('req-appt-date')?.checked    ?? true,
+      appt_time:    document.getElementById('req-appt-time')?.checked    ?? true,
+      meeting_type: document.getElementById('req-meeting-type')?.checked ?? true,
+      location:     document.getElementById('req-location')?.checked     ?? true,
+    };
     const r = await fetch('/api/checklist-config', {
       method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ formTypes: _checklistFormCfg }),
+      body: JSON.stringify({ emailConfig: { form_items, required_fields } }),
     });
     const d = await r.json();
-    showInlineMsg('ft-msg', d.ok ? 'Saved.' : (d.error || 'Error'), d.ok ? 'ok' : 'err');
-  } catch(e) { showInlineMsg('ft-msg', e.message, 'err'); }
+    if (d.ok) {
+      if (!_checklistEmailCfg) _checklistEmailCfg = {};
+      _checklistEmailCfg.form_items      = form_items;
+      _checklistEmailCfg.required_fields = required_fields;
+      showInlineMsg('fi-msg', 'Saved.', 'ok');
+    } else showInlineMsg('fi-msg', d.error || 'Error', 'err');
+  } catch(e) { showInlineMsg('fi-msg', e.message, 'err'); }
   finally { btn.disabled = false; }
 }
 
@@ -4513,14 +5091,16 @@ async function saveEmailTemplate(btn) {
   btn.disabled = true;
   try {
     const cfg = {
-      subject:     document.getElementById('et-subject').value.trim(),
-      agency_name: document.getElementById('et-agency').value.trim(),
-      brand_color: document.getElementById('et-color').value,
-      agent_name:  document.getElementById('et-agent-name').value.trim(),
-      agent_phone: document.getElementById('et-agent-phone').value.trim(),
-      agent_email: document.getElementById('et-agent-email').value.trim(),
-      greeting:    document.getElementById('et-greeting').value.trim(),
-      footer:      document.getElementById('et-footer').value.trim(),
+      subject:         document.getElementById('et-subject').value.trim(),
+      agency_name:     document.getElementById('et-agency').value.trim(),
+      brand_color:     document.getElementById('et-color').value,
+      agent_name:      document.getElementById('et-agent-name').value.trim(),
+      agent_phone:     document.getElementById('et-agent-phone').value.trim(),
+      agent_email:     document.getElementById('et-agent-email').value.trim(),
+      greeting:        document.getElementById('et-greeting').value.trim(),
+      footer:          document.getElementById('et-footer').value.trim(),
+      internal_email:  document.getElementById('et-internal-email').value.trim(),
+      penalty_warning: document.getElementById('et-penalty-warning').value.trim(),
     };
     const r = await fetch('/api/checklist-config', {
       method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
@@ -4531,6 +5111,39 @@ async function saveEmailTemplate(btn) {
     else showInlineMsg('et-msg', d.error || 'Error', 'err');
   } catch(e) { showInlineMsg('et-msg', e.message, 'err'); }
   finally { btn.disabled = false; }
+}
+
+function previewEmailTemplate() {
+  const cfg = {
+    agencyName:  document.getElementById('et-agency').value.trim()     || 'Your Agency Name',
+    brandColor:  document.getElementById('et-color').value             || '#D62311',
+    agentName:   document.getElementById('et-agent-name').value.trim() || '',
+    agentPhone:  document.getElementById('et-agent-phone').value.trim()|| '',
+    agentEmail:  document.getElementById('et-agent-email').value.trim()|| '',
+    greeting:    document.getElementById('et-greeting').value.trim()   || '',
+    footer:      document.getElementById('et-footer').value.trim()     || '',
+    subject:     document.getElementById('et-subject').value.trim()    || 'New Customer — Checklist Completed',
+  };
+  const dummyPayload = {
+    ...cfg,
+    customerName: 'Jo Smith',
+    subDate: new Date().toISOString().slice(0,10),
+    apptDate: new Date(Date.now() + 86400000).toISOString().slice(0,10),
+    apptTime: '10:00',
+    meetingType: 'In Person',
+    location: null,
+    formCompletions: { wfolder: { applied: true }, GSD: { applied: true }, DSS: { applied: true }, SCD: { applied: false }, DTD: { applied: false }, SFPP: { applied: false } },
+    sales: [],
+  };
+  const { bodyHtml } = buildCustomerEmailHtml(dummyPayload);
+
+  document.getElementById('et-preview-subject').textContent = cfg.subject;
+  const preEl = document.getElementById('et-preview-body');
+  preEl.innerHTML = bodyHtml;
+  preEl.style.background = '#f4f8fc';
+  preEl.style.padding = '0';
+  preEl.style.whiteSpace = 'normal';
+  document.getElementById('et-preview-modal').style.display = 'flex';
 }
 
 // ── Checklist link management ─────────────────────────────────────────────────
@@ -4592,7 +5205,6 @@ function renderManageTabMode() {
   const banner      = document.getElementById('manage-mode-banner');
   const uploadPanelS= document.getElementById('upload-panel-sales');
   const manualPanel = document.getElementById('manual-entry-panel');
-  const subPanel    = document.getElementById('checklist-subs-panel');
   if (!banner) return;
   if (_hasSalesAddon || _isAdmin) {
     banner.style.display = 'flex';
@@ -4600,14 +5212,12 @@ function renderManageTabMode() {
     if (lbl) lbl.textContent = _salesEntryMode === 'manual' ? 'Manual / Checklist' : 'Upload (File)';
     if (uploadPanelS) uploadPanelS.style.display = _salesEntryMode === 'upload' ? '' : 'none';
     if (manualPanel)  manualPanel.style.display  = _salesEntryMode === 'manual' ? '' : 'none';
-    if (subPanel)     { subPanel.style.display = ''; loadChecklistSubmissions(); }
     if (_salesEntryMode === 'manual' && manualPanel && !manualPanel.querySelector('.manual-sale-row')) {
       manualAddRow();
     }
   } else {
     banner.style.display = 'none';
     if (manualPanel)  manualPanel.style.display  = 'none';
-    if (subPanel)     subPanel.style.display     = 'none';
     if (uploadPanelS) uploadPanelS.style.display = '';
   }
 }
@@ -4626,6 +5236,7 @@ async function loadAddonConfig() {
   _agentRoster      = d.agents        || [];
   _salesLocations   = d.locations     || [];
   _productTypes     = d.productTypes  || [];
+  _leadSources      = d.leadSources   || [];
 }
 
 // ── Purchase add-on ───────────────────────────────────────────────────────────
@@ -4720,7 +5331,7 @@ function manualAddRow(opts = {}) {
       <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">LEAD SOURCE</label>
         <select class="msr-source" style="${msrSelectStyle()}">
           <option value="">—</option>
-          ${LEAD_SOURCES.map(s => `<option value="${escHtml(s)}">${escHtml(s)}</option>`).join('')}
+          ${getLeadSources().map(s => `<option value="${escHtml(s)}">${escHtml(s)}</option>`).join('')}
         </select>
       </div>
       ${locColHtml}
@@ -4883,7 +5494,7 @@ function _buildSlEditForm(e) {
   const productOpts = '<option value="">— Select —</option>' +
     activeCats().map(c => `<option value="${c.key}"${c.key === e.product ? ' selected' : ''}>${c.label}</option>`).join('');
   const srcOpts = '<option value="">—</option>' +
-    LEAD_SOURCES.map(s => `<option value="${escHtml(s)}"${e.lead_source === s ? ' selected' : ''}>${escHtml(s)}</option>`).join('');
+    getLeadSources().map(s => `<option value="${escHtml(s)}"${e.lead_source === s ? ' selected' : ''}>${escHtml(s)}</option>`).join('');
   const autoChk = e.auto_issued ? ' checked' : '';
   const splitChk = e.split_sale ? ' checked' : '';
   const activeLocs = _salesLocations.filter(l => l.active !== false);
@@ -4995,6 +5606,18 @@ let _salesLogEntries = [];
 let _salesLogMonth   = new Date().getMonth() + 1;
 let _salesLogYear    = new Date().getFullYear();
 let _salesLogAllYear = false;
+let _spEntries   = [];
+let _spMetric    = 'count';
+let _spDateMode  = 'month';
+let _spDateMonth = '';
+let _spDateYear  = '';
+let _spDateStart = '';
+let _spDateEnd   = '';
+let _spDim1      = 'product';
+let _spDim2      = 'lead_source';
+let _spCrumbs    = [];
+let _spChart1    = null;
+let _spChart2    = null;
 
 function initSalesLogControls() {
   const monthSel = document.getElementById('sl-month-sel');
@@ -5023,6 +5646,11 @@ function onSalesLogAllYearChange() {
   loadSalesLog();
 }
 
+function onSalesLogLocationChange() {
+  _salesLogLocationFilter = document.getElementById('sl-location-filter')?.value || 'all';
+  filterSalesLog();
+}
+
 async function loadSalesLog() {
   initSalesLogControls();
   const list = document.getElementById('checklist-subs-list');
@@ -5039,15 +5667,332 @@ async function loadSalesLog() {
     const r = await fetch(`/api/sales?${params}`, { headers: authHeaders() });
     const d = await r.json();
     _salesLogEntries = d.entries || [];
+    _populateSlLocationFilter();
     renderSalesLog();
   } catch(err) { list.innerHTML = `<span style="color:var(--danger);font-size:13px;">Error: ${err.message}</span>`; }
 }
 function filterSalesLog() { renderSalesLog(); }
 
+function _populateSlLocationFilter() {
+  const sel = document.getElementById('sl-location-filter');
+  if (!sel) return;
+  const locs = [...new Set(_salesLogEntries.map(e => e.location).filter(Boolean))].sort();
+  if (!locs.length) { sel.style.display = 'none'; return; }
+  sel.style.display = '';
+  const cur = sel.value;
+  sel.innerHTML = '<option value="all">All Locations</option>'
+    + locs.map(l => `<option value="${escHtml(l)}">${escHtml(l)}</option>`).join('');
+  if (locs.includes(cur)) sel.value = cur;
+  else { sel.value = 'all'; _salesLogLocationFilter = 'all'; }
+}
+
+function _renderSlScorecard(entries) {
+  const sc = document.getElementById('sl-scorecard');
+  if (!sc) return;
+  const counts = {};
+  const prems  = {};
+  entries.forEach(e => {
+    if (!e.product) return;
+    counts[e.product] = (counts[e.product] || 0) + 1;
+    if (e.written_premium) prems[e.product] = (prems[e.product] || 0) + parseFloat(e.written_premium);
+  });
+  const order = ['auto','fire','health','wl','ul','term','deposit','other'];
+  sc.innerHTML = order.filter(k => counts[k]).map(k => {
+    const label = (_productTypes.find(p => p.key === k)?.label) || labelForCat(k);
+    const prem  = prems[k] ? `<div style="font-size:10px;color:var(--muted);margin-top:1px;">$${prems[k].toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})}</div>` : '';
+    return `<span style="font-size:11px;background:var(--deep);border:1px solid var(--border);border-radius:10px;padding:3px 8px;white-space:nowrap;display:inline-flex;flex-direction:column;align-items:center;line-height:1.3;">${escHtml(label)} <strong>${counts[k]}</strong>${prem}</span>`;
+  }).join('');
+}
+
+// ── Sales Performance Tab ─────────────────────────────────────────────────────
+
+const SP_DIMS = [
+  { key: 'product',     label: 'Product Type' },
+  { key: 'lead_source', label: 'Lead Source'  },
+  { key: 'agent',       label: 'Agent'        },
+  { key: 'subcategory', label: 'Subcategory'  },
+  { key: 'location',    label: 'Location'     },
+  { key: 'period',      label: 'Period'       },
+  { key: 'auto_issued', label: 'Auto Issued'  },
+  { key: 'split_sale',  label: 'Split Sale'   },
+];
+
+const SP_NEXT = { product: 'subcategory', subcategory: 'agent', agent: 'product', lead_source: 'agent' };
+
+const SP_COLORS = [
+  '#00d4ff','#7b61ff','#00e5b4','#ff6b6b','#ffa94d',
+  '#74c0fc','#d0bfff','#96f2d7','#ffc9c9','#ffec99',
+  '#b2f2bb','#a5d8ff','#f3d9fa','#ffdeeb',
+];
+
+function spFieldVal(key, e) {
+  switch (key) {
+    case 'product':     return e.product     || 'Unknown';
+    case 'lead_source': return e.lead_source || '(None)';
+    case 'agent':       { const a = _agentRoster.find(r => r.agent_id === e.agent_id); return a ? a.name : (e.agent_id || '(None)'); }
+    case 'subcategory': return e.subcategory || '(None)';
+    case 'location':    return e.location    || '(None)';
+    case 'period':      return e.period ? e.period + ' mo' : '(None)';
+    case 'auto_issued': return e.auto_issued ? 'Issued' : 'Not Issued';
+    case 'split_sale':  return e.split_sale  ? 'Split Sale' : 'Full Sale';
+    default:            return 'Unknown';
+  }
+}
+
+function spDisplayLabel(key, rawVal) {
+  if (key === 'product') { const pt = _productTypes.find(p => p.key === rawVal); return pt ? pt.label : rawVal; }
+  return rawVal;
+}
+
+function spActiveEntries() {
+  let entries = _spEntries;
+  _spCrumbs.forEach(c => { entries = entries.filter(e => spFieldVal(c.field, e) === c.value); });
+  return entries;
+}
+
+function spGroup(entries, dimKey) {
+  const g = {};
+  entries.forEach(e => {
+    const k = spFieldVal(dimKey, e);
+    if (!g[k]) g[k] = { count: 0, premium: 0 };
+    g[k].count++;
+    if (e.written_premium) g[k].premium += parseFloat(e.written_premium) || 0;
+  });
+  return g;
+}
+
+async function spLoad() {
+  const loading = document.getElementById('sp-loading');
+  const grid    = document.getElementById('sp-charts-grid');
+  if (loading) loading.style.display = '';
+  if (grid)    grid.style.display    = 'none';
+  try {
+    let params;
+    if (_spDateMode === 'month') {
+      const [y, m] = _spDateMonth.split('-');
+      params = new URLSearchParams({ month: m, year: y });
+    } else if (_spDateMode === 'year') {
+      params = new URLSearchParams({ year: _spDateYear, allYear: '1' });
+    } else {
+      params = new URLSearchParams({ fromDate: _spDateStart, toDate: _spDateEnd });
+    }
+    const r = await fetch(`/api/sales?${params}`, { headers: authHeaders() });
+    const d = await r.json();
+    _spEntries = d.entries || [];
+  } catch (err) {
+    console.error('spLoad:', err);
+    _spEntries = [];
+  } finally {
+    if (loading) loading.style.display = 'none';
+    if (grid)    grid.style.display    = '';
+  }
+  spRender();
+}
+
+function spRender() {
+  const entries = spActiveEntries();
+  spRenderSummary(entries);
+  spRenderCrumbs();
+  spBuildChart(1, _spDim1, entries);
+  spBuildChart(2, _spDim2, entries);
+}
+
+function spRenderSummary(entries) {
+  const el = document.getElementById('sp-summary');
+  if (!el) return;
+  const count = entries.length;
+  const prem  = entries.reduce((s, e) => s + (parseFloat(e.written_premium) || 0), 0);
+  el.textContent = count + (count === 1 ? ' policy' : ' policies') +
+    (prem ? '  ·  $' + prem.toLocaleString('en-US', { maximumFractionDigits: 0 }) + ' premium' : '');
+}
+
+function spRenderCrumbs() {
+  const el = document.getElementById('sp-crumbs');
+  if (!el) return;
+  if (!_spCrumbs.length) { el.innerHTML = ''; return; }
+  const sep = '<span style="color:var(--muted);font-size:12px;margin:0 3px;">›</span>';
+  const all = `<span style="font-size:12px;color:var(--muted);cursor:pointer;" onclick="spDrillBack(-1)">All</span>`;
+  const parts = _spCrumbs.map((c, i) =>
+    `${sep}<span style="font-size:12px;color:var(--accent);cursor:pointer;" onclick="spDrillBack(${i})">${escHtml(c.label)}</span>`
+  ).join('');
+  const reset = `<button onclick="spDrillBack(-1)" style="margin-left:8px;background:none;border:1px solid var(--border);color:var(--muted);cursor:pointer;border-radius:6px;padding:1px 8px;font-size:11px;">Reset</button>`;
+  el.innerHTML = `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:2px;padding:.35rem .7rem;background:var(--deep);border:1px solid var(--border2);border-radius:8px;">${all}${parts}${reset}</div>`;
+}
+
+function spDrillBack(idx) {
+  if (idx < 0) {
+    _spCrumbs = [];
+    _spDim1 = 'product'; _spDim2 = 'lead_source';
+  } else {
+    const c = _spCrumbs[idx];
+    if (c.fromChart === 1 && c.prevDim) _spDim1 = c.prevDim;
+    if (c.fromChart === 2 && c.prevDim) _spDim2 = c.prevDim;
+    _spCrumbs = _spCrumbs.slice(0, idx);
+  }
+  const s1 = document.getElementById('sp-dim1'); if (s1) s1.value = _spDim1;
+  const s2 = document.getElementById('sp-dim2'); if (s2) s2.value = _spDim2;
+  spRender();
+}
+
+function spBuildChart(num, dimKey, entries) {
+  const wrapId   = `sp-chart${num}-wrap`;
+  const canvasId = `sp-chart${num}`;
+  const wrap = document.getElementById(wrapId);
+  if (!wrap) return;
+
+  const existing = num === 1 ? _spChart1 : _spChart2;
+  if (existing) { existing.destroy(); if (num === 1) _spChart1 = null; else _spChart2 = null; }
+
+  const groups  = spGroup(entries, dimKey);
+  const rawKeys = Object.keys(groups).sort((a, b) => groups[b][_spMetric] - groups[a][_spMetric]);
+
+  wrap.innerHTML = `<canvas id="${canvasId}"></canvas>`;
+
+  if (!rawKeys.length) {
+    wrap.innerHTML += `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px;">No data for selection</div>`;
+    return;
+  }
+
+  const labels = rawKeys.map(k => spDisplayLabel(dimKey, k));
+  const data   = rawKeys.map(k => _spMetric === 'premium' ? (groups[k].premium || 0) : groups[k].count);
+
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  const chart = new Chart(ctx, {
+    type: 'pie',
+    data: {
+      labels,
+      datasets: [{
+        data,
+        backgroundColor: SP_COLORS.slice(0, rawKeys.length),
+        borderColor: '#0e0e24',
+        borderWidth: 2,
+        hoverBorderWidth: 3,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { color: '#aaaacc', font: { size: 11 }, padding: 10, boxWidth: 12 },
+        },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const v     = ctx.parsed;
+              const total = ctx.dataset.data.reduce((s, x) => s + x, 0);
+              const pct   = total ? ((v / total) * 100).toFixed(1) : '0.0';
+              return _spMetric === 'premium'
+                ? `${ctx.label}: $${v.toLocaleString('en-US', { maximumFractionDigits: 0 })} (${pct}%)`
+                : `${ctx.label}: ${v} (${pct}%)`;
+            },
+          },
+        },
+      },
+      onClick: (_ev, els) => {
+        if (!els.length) return;
+        const i = els[0].index;
+        spHandleClick(num, dimKey, rawKeys[i], labels[i]);
+      },
+    },
+  });
+
+  if (num === 1) _spChart1 = chart;
+  else           _spChart2 = chart;
+}
+
+function spHandleClick(chartNum, dimKey, rawValue, displayLabel) {
+  if (_spCrumbs.some(c => c.field === dimKey && c.value === rawValue)) return;
+  const prevDim = chartNum === 1 ? _spDim1 : _spDim2;
+  _spCrumbs.push({ field: dimKey, value: rawValue, label: displayLabel, fromChart: chartNum, prevDim });
+  const next = SP_NEXT[dimKey];
+  if (next) {
+    if (chartNum === 1) { _spDim1 = next; const s = document.getElementById('sp-dim1'); if (s) s.value = next; }
+    else               { _spDim2 = next; const s = document.getElementById('sp-dim2'); if (s) s.value = next; }
+  }
+  spRender();
+}
+
+function spSetMode(mode, btn) {
+  _spDateMode = mode;
+  document.querySelectorAll('#sp-date-modes .acct-stab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('sp-range-month').style.display  = mode === 'month'  ? 'flex' : 'none';
+  document.getElementById('sp-range-year').style.display   = mode === 'year'   ? 'flex' : 'none';
+  document.getElementById('sp-range-custom').style.display = mode === 'custom' ? 'flex' : 'none';
+  spLoad();
+}
+
+function spRangeChanged() {
+  if (_spDateMode === 'month') {
+    _spDateMonth = document.getElementById('sp-month-input')?.value || _spDateMonth;
+  } else if (_spDateMode === 'year') {
+    _spDateYear = document.getElementById('sp-year-input')?.value || _spDateYear;
+  } else {
+    _spDateStart = document.getElementById('sp-date-start')?.value || _spDateStart;
+    _spDateEnd   = document.getElementById('sp-date-end')?.value   || _spDateEnd;
+    if (!_spDateStart || !_spDateEnd) return;
+  }
+  spLoad();
+}
+
+function spSetMetric(metric, btn) {
+  _spMetric = metric;
+  document.querySelectorAll('#sp-metric-toggle .acct-stab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  spRender();
+}
+
+function spDimChanged(num, sel) {
+  if (num === 1) _spDim1 = sel.value;
+  else           _spDim2 = sel.value;
+  spRender();
+}
+
+function spInitDimSelects() {
+  const opts = SP_DIMS.map(d => `<option value="${d.key}">${escHtml(d.label)}</option>`).join('');
+  const s1 = document.getElementById('sp-dim1'); if (s1) { s1.innerHTML = opts; s1.value = _spDim1; }
+  const s2 = document.getElementById('sp-dim2'); if (s2) { s2.innerHTML = opts; s2.value = _spDim2; }
+}
+
+function spInitYearSelect() {
+  const ySel = document.getElementById('sp-year-input');
+  if (!ySel || ySel.options.length) return;
+  const cur = parseInt(_spDateYear);
+  let html = '';
+  for (let y = cur + 1; y >= cur - 4; y--) {
+    html += `<option value="${y}"${y === cur ? ' selected' : ''}>${y}</option>`;
+  }
+  ySel.innerHTML = html;
+}
+
+async function initSalesPerf() {
+  if (!_spDateMonth) {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    _spDateMonth = `${y}-${m}`;
+    _spDateYear  = String(y);
+    const lastDay = new Date(y, now.getMonth() + 1, 0).getDate();
+    _spDateStart  = `${y}-${m}-01`;
+    _spDateEnd    = `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
+  }
+  spInitDimSelects();
+  spInitYearSelect();
+  const mInp = document.getElementById('sp-month-input');
+  if (mInp) mInp.value = _spDateMonth;
+  await spLoad();
+}
+
 function _filteredSalesEntries() {
   const q = (document.getElementById('sales-log-search')?.value || '').toLowerCase().trim();
-  if (!q) return _salesLogEntries;
-  return _salesLogEntries.filter(e => {
+  let entries = _salesLogEntries;
+  if (_salesLogLocationFilter && _salesLogLocationFilter !== 'all') {
+    entries = entries.filter(e => (e.location || '') === _salesLogLocationFilter);
+  }
+  if (!q) return entries;
+  return entries.filter(e => {
     const agName = _agentRoster.find(a => a.agent_id === e.agent_id)?.name || e.agent_id || '';
     return (e.customer_name || '').toLowerCase().includes(q)
         || agName.toLowerCase().includes(q)
@@ -5081,6 +6026,8 @@ function renderSalesLog() {
   };
   scopeEntries.sort(sortFn);
   crossEntries.sort((a, b) => (b.sale_date || '').localeCompare(a.sale_date || ''));
+
+  _renderSlScorecard(scopeEntries);
 
   if (!scopeEntries.length && !crossEntries.length) {
     list.innerHTML = `<span style="color:var(--muted);font-size:13px;">${q ? 'No matches.' : _salesLogAllYear ? 'No entries for this year.' : 'No entries for this month.'}</span>`;
@@ -5190,10 +6137,31 @@ function loadChecklistSubmissions() { return loadSalesLog(); }
 // ── Public checklist screen ───────────────────────────────────────────────────
 let _clToken    = null;
 let _clAgents   = [];
-let _clFormCfg  = [];
-let _clSubcats  = [];
-let _clEmailCfg = {};
+let _clFormCfg     = [];
+let _clSubcats     = [];
+let _clEmailCfg    = {};
+let _clLeadSources = [];
 let _clEmailPayload = null;
+let _clLocations = [];
+let _clFormItems      = {};
+let _clRequiredFields = {};
+let _clPenaltyWarning = '';
+let _clInternalEmail  = '';
+let _clLocationName   = '';
+let _clPenaltyAcknowledged = false;
+let _clPendingFormData = null;
+
+function clOnMeetingType(val) {
+  const wrap = document.getElementById('cl-appt-location-wrap');
+  if (!wrap) return;
+  if (val === 'In Person') {
+    wrap.style.display = '';
+  } else {
+    wrap.style.display = 'none';
+    const sel = document.getElementById('cl-appt-location');
+    if (sel) sel.value = '';
+  }
+}
 
 async function loadChecklistScreen(token) {
   _clToken = token;
@@ -5217,6 +6185,12 @@ async function loadChecklistScreen(token) {
     _clSubcats     = d.subcategories || [];
     _clEmailCfg    = d.emailConfig   || {};
     _productTypes  = d.productTypes  || [];
+    _clLocations   = d.locations     || [];
+    _clLeadSources = d.leadSources   || [];
+    _clFormItems      = Object.assign({}, DEFAULT_FORM_ITEMS, d.emailConfig?.form_items || {});
+    _clRequiredFields = Object.assign({}, DEFAULT_REQUIRED_FIELDS, d.emailConfig?.required_fields || {});
+    _clPenaltyWarning = d.emailConfig?.penalty_warning || '';
+    _clInternalEmail  = d.emailConfig?.internal_email  || '';
 
     // Branding
     const headerEl = document.getElementById('cl-agency-name');
@@ -5229,21 +6203,78 @@ async function loadChecklistScreen(token) {
         _clAgents.map(a => `<option value="${escHtml(a.agent_id)}">${escHtml(a.name)}</option>`).join('');
     }
 
+    // Location dropdowns — populated from account's configured locations
+    if (_clLocations.length > 0) {
+      const opts = '<option value="">— Select Location —</option>' +
+        _clLocations.map(l => `<option value="${escHtml(l.name)}">${escHtml(l.name)}</option>`).join('');
+      const locSel = document.getElementById('cl-location');
+      const locWrap = document.getElementById('cl-location-wrap');
+      if (locSel) { locSel.innerHTML = opts; if (locWrap) locWrap.style.display = ''; }
+      const apptLocSel = document.getElementById('cl-appt-location');
+      if (apptLocSel) apptLocSel.innerHTML = opts;
+    }
+
     // Form checklist table
     const formsDiv = document.getElementById('cl-forms-table');
-    if (formsDiv && _clFormCfg.length) {
-      formsDiv.innerHTML = `
-        <div style="display:grid;grid-template-columns:1fr repeat(4,auto);gap:4px;font-size:11px;color:var(--muted);text-transform:uppercase;padding:0 4px;margin-bottom:6px;">
-          <div>Form</div><div style="text-align:center">Applied</div><div style="text-align:center">Submitted</div><div style="text-align:center">Notified</div><div style="text-align:center">N/A</div>
-        </div>` +
-        _clFormCfg.map(f => `
-          <div style="display:grid;grid-template-columns:1fr repeat(4,auto);gap:4px;align-items:center;padding:8px 4px;border-bottom:1px solid var(--border2);">
-            <div style="font-size:13px;">${escHtml(f.label)}</div>
-            <div style="text-align:center"><input type="checkbox" data-form="${escHtml(f.form_key)}" data-field="applied"></div>
-            <div style="text-align:center"><input type="checkbox" data-form="${escHtml(f.form_key)}" data-field="submitted"></div>
-            <div style="text-align:center"><input type="checkbox" data-form="${escHtml(f.form_key)}" data-field="notified"></div>
-            <div style="text-align:center"><input type="checkbox" data-form="${escHtml(f.form_key)}" data-field="na"></div>
-          </div>`).join('');
+    if (formsDiv) {
+      const cbStyle = 'style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent);"';
+      const tdBorder = 'style="border-bottom:1px solid var(--border2);"';
+      let rows = '';
+
+      FORM_ITEM_DEFS.forEach(({ key, label, editable }) => {
+        const item = _clFormItems[key] || {};
+        const displayLabel = editable ? (item.label || '') : label;
+        if (item.show === false) return; // hidden by config
+        if (editable && !displayLabel) return; // hide unconfigured Other slots
+        const reqStar = item.required
+          ? ' <span style="color:#e53e3e;font-size:11px;font-weight:700;" title="Required">*</span>' : '';
+        const link = (item.link_url && item.link_label)
+          ? ` <a href="${escHtml(item.link_url)}" target="_blank" rel="noopener" style="font-size:11px;color:var(--accent);margin-left:6px;">${escHtml(item.link_label)}</a>` : '';
+        const keyTag = key !== displayLabel
+          ? `<span style="display:inline-block;background:var(--card2);border:1px solid var(--border);border-radius:4px;font-family:monospace;font-size:12px;padding:2px 7px;">${escHtml(key)}</span>`
+          : '';
+        const nameTag = editable
+          ? `<span style="font-size:13px;">${escHtml(displayLabel)}</span>`
+          : (keyTag || `<span style="display:inline-block;background:var(--card2);border:1px solid var(--border);border-radius:4px;font-family:monospace;font-size:12px;padding:2px 7px;">${escHtml(key)}</span>`);
+
+        const isWfolder = key === 'wfolder';
+        rows += `<tr id="cl-row-${key}">
+          <td style="padding:10px 8px;border-bottom:1px solid var(--border2);">${nameTag}${reqStar}${link}</td>
+          <td style="text-align:center;padding:10px 8px;border-bottom:1px solid var(--border2);">
+            <input type="checkbox" data-form="${escHtml(key)}" data-field="applied" ${cbStyle}></td>
+          ${isWfolder ? `
+          <td ${tdBorder}></td><td ${tdBorder}></td><td ${tdBorder}></td><td ${tdBorder}></td><td ${tdBorder}></td>
+          ` : `
+          <td style="text-align:center;padding:10px 8px;border-bottom:1px solid var(--border2);">
+            <input type="checkbox" data-form="${escHtml(key)}" data-field="submitted" ${cbStyle}></td>
+          <td style="text-align:center;padding:10px 8px;border-bottom:1px solid var(--border2);">
+            <input type="checkbox" data-form="${escHtml(key)}" data-field="notified" ${cbStyle}></td>
+          <td style="text-align:center;padding:10px 8px;border-bottom:1px solid var(--border2);">
+            <input type="checkbox" data-form="${escHtml(key)}" data-field="wfi" ${cbStyle}></td>
+          <td style="text-align:center;padding:10px 8px;border-bottom:1px solid var(--border2);">
+            <input type="date" data-form="${escHtml(key)}" data-field="notif_date" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px;font-size:12px;outline:none;width:140px;"></td>
+          <td style="text-align:center;padding:10px 8px;border-bottom:1px solid var(--border2);">
+            <input type="checkbox" data-form="${escHtml(key)}" data-field="na" ${cbStyle}></td>
+          `}
+        </tr>`;
+      });
+
+      formsDiv.innerHTML = `<div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;min-width:600px;">
+          <thead>
+            <tr style="background:var(--card2);">
+              <th style="text-align:left;padding:8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);">Form</th>
+              <th style="text-align:center;padding:8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);">Applied</th>
+              <th style="text-align:center;padding:8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);">Submitted</th>
+              <th style="text-align:center;padding:8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);">Customer Notified</th>
+              <th style="text-align:center;padding:8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);">Task Created</th>
+              <th style="text-align:left;padding:8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);">Notification Date</th>
+              <th style="text-align:center;padding:8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);">N/A</th>
+            </tr>
+          </thead>
+          <tbody>${rows || '<tr><td colspan="7" style="padding:12px;font-size:13px;color:var(--muted);">No form items configured.</td></tr>'}</tbody>
+        </table>
+      </div>`;
     }
 
     // Add one empty sale row
@@ -5288,7 +6319,7 @@ function clAddSaleRow() {
       <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">LEAD SOURCE</label>
         <select class="clrow-source" style="${msrSelectStyle()}">
           <option value="">—</option>
-          ${LEAD_SOURCES.map(s => `<option value="${escHtml(s)}">${escHtml(s)}</option>`).join('')}
+          ${(_clLeadSources.length ? _clLeadSources : LEAD_SOURCES).map(s => `<option value="${escHtml(s)}">${escHtml(s)}</option>`).join('')}
         </select>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px;padding-top:14px;">
@@ -5326,14 +6357,169 @@ async function clSubmit() {
   if (!custName) { errEl.textContent = 'Customer name is required.'; errEl.style.display='block'; return; }
   if (!subDate)  { errEl.textContent = 'Submission date is required.'; errEl.style.display='block'; return; }
 
-  // Collect form completions
+  // Collect form completions (checkboxes)
   const formCompletions = {};
   document.querySelectorAll('#cl-forms-table input[type=checkbox]').forEach(cb => {
     const form  = cb.dataset.form;
     const field = cb.dataset.field;
+    if (!form || !field) return;
     if (!formCompletions[form]) formCompletions[form] = {};
     formCompletions[form][field] = cb.checked;
   });
+  // Collect notification dates
+  document.querySelectorAll('#cl-forms-table input[type=date]').forEach(inp => {
+    const form  = inp.dataset.form;
+    const field = inp.dataset.field;
+    if (!form || !field) return;
+    if (!formCompletions[form]) formCompletions[form] = {};
+    formCompletions[form][field] = inp.value || null;
+  });
+
+  const apptTime  = document.getElementById('cl-appt-time')?.value || null;
+  const meetingTypeCb = document.querySelector('input[name="cl-meeting-type"]:checked');
+  const meetingType   = meetingTypeCb?.value || null;
+  const wfolderApplied = document.querySelector('[data-form="wfolder"][data-field="applied"]')?.checked ?? false;
+  const salespersonId = document.getElementById('cl-salesperson').value || null;
+
+  // ── Inline validation ──────────────────────────────────────────────────────
+  clClearErrors();
+  let firstErrEl = null;
+  function clErr(el, msg) {
+    if (!el) return;
+    el.style.border      = '1.5px solid #c0392b';
+    el.style.background  = '#fff5f5';
+    el.style.boxShadow   = '0 0 0 3px rgba(192,57,43,0.15)';
+    el.style.color       = 'inherit';
+    el.dataset.clErr     = '1';
+    if (msg) {
+      const tip = document.createElement('div');
+      tip.className = 'cl-err-tip';
+      tip.style.cssText = 'color:#c0392b;font-size:11px;margin-top:3px;';
+      tip.textContent = msg;
+      el.insertAdjacentElement('afterend', tip);
+    }
+    if (!firstErrEl) firstErrEl = el;
+  }
+  function clErrLabel(labelId) {
+    const lbl = document.getElementById(labelId);
+    if (lbl) { lbl.style.color = '#c0392b'; lbl.dataset.clErrLbl = '1'; }
+  }
+
+  // Salesperson
+  const spEl = document.getElementById('cl-salesperson');
+  if (!salespersonId) { clErr(spEl, 'Salesperson is required.'); clErrLabel('cl-label-salesperson'); }
+
+  // Appointment date
+  if (_clRequiredFields.appt_date) {
+    const el = document.getElementById('cl-appt-date');
+    if (!el?.value) clErr(el, 'Appointment date is required.');
+  }
+  // Appointment time
+  if (_clRequiredFields.appt_time) {
+    const el = document.getElementById('cl-appt-time');
+    if (!el?.value) clErr(el, 'Appointment time is required.');
+  }
+  // Meeting type
+  if (_clRequiredFields.meeting_type) {
+    const grp = document.getElementById('cl-meeting-type-group');
+    if (!meetingType) {
+      if (grp) {
+        grp.style.border     = '1.5px solid #c0392b';
+        grp.style.borderRadius = '8px';
+        grp.style.padding    = '6px 8px';
+        grp.style.boxShadow  = '0 0 0 3px rgba(192,57,43,0.15)';
+        grp.dataset.clErr    = '1';
+        const tip = document.createElement('div');
+        tip.className = 'cl-err-tip';
+        tip.style.cssText = 'color:#c0392b;font-size:11px;margin-top:3px;';
+        tip.textContent = 'Please select a meeting type.';
+        grp.insertAdjacentElement('afterend', tip);
+        if (!firstErrEl) firstErrEl = grp;
+      }
+    }
+  }
+  // Sales location (when locations are configured for this account)
+  if (_clRequiredFields.location && _clLocations.length > 0) {
+    const el = document.getElementById('cl-location');
+    if (!el?.value) clErr(el, 'Please select a location.');
+  }
+  // Appointment location (when In Person)
+  if (meetingType === 'In Person' && _clLocations.length > 0) {
+    const el = document.getElementById('cl-appt-location');
+    if (!el?.value) clErr(el, 'Please select the appointment location.');
+  }
+  // Required form items: Applied OR N/A must be checked; secondary fields validated when Applied
+  FORM_ITEM_DEFS.forEach(({ key, editable }) => {
+    const item = _clFormItems[key] || {};
+    if (item.show === false) return;
+    if (editable && !item.label) return;
+    const fc  = formCompletions[key] || {};
+    const row = document.getElementById('cl-row-' + key);
+
+    // Applied OR N/A required check
+    if (item.required && !fc.applied && !fc.na) {
+      if (row) {
+        row.style.background = '#fff5f5';
+        row.dataset.clErr    = '1';
+        const nameCell = row.querySelector('td');
+        if (nameCell && !firstErrEl) firstErrEl = nameCell;
+        const tip = document.createElement('div');
+        tip.className = 'cl-err-tip';
+        tip.style.cssText = 'color:#c0392b;font-size:11px;margin-top:3px;';
+        tip.textContent = 'Required — check Applied or N/A.';
+        nameCell?.appendChild(tip);
+      }
+    }
+
+    // Secondary requirements (only when Applied is checked, not N/A)
+    if (fc.applied && !fc.na && key !== 'wfolder' && row) {
+      const normMode = v => v === true ? 'and' : (v || false);
+      const secFields = [
+        { reqKey: 'req_submitted',  fcKey: 'submitted'  },
+        { reqKey: 'req_notified',   fcKey: 'notified'   },
+        { reqKey: 'req_wfi',        fcKey: 'wfi'        },
+        { reqKey: 'req_notif_date', fcKey: 'notif_date' },
+      ];
+      // If any OR field is satisfied (checked on form), secondary requirements pass
+      const orSatisfied = secFields.some(({ reqKey, fcKey }) =>
+        normMode(item[reqKey]) === 'or' && !!fc[fcKey]
+      );
+      if (!orSatisfied) {
+        secFields.forEach(({ reqKey, fcKey }) => {
+          if (normMode(item[reqKey]) !== 'and') return;
+          if (fc[fcKey]) return;
+          const cb = row.querySelector(`[data-field="${fcKey}"]`);
+          if (!cb) return;
+          const cell = cb.closest('td');
+          if (!cell) return;
+          cell.style.background = '#fff5f5';
+          cell.dataset.clErr = '1';
+          if (!firstErrEl) firstErrEl = cell;
+          const tip = document.createElement('div');
+          tip.className = 'cl-err-tip';
+          tip.style.cssText = 'color:#c0392b;font-size:10px;margin-top:2px;';
+          tip.textContent = 'Required';
+          cell.appendChild(tip);
+        });
+      }
+    }
+  });
+
+  if (firstErrEl) {
+    firstErrEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // Warning modal always fires after validation passes — mandatory confirmation step
+  if (!_clPenaltyAcknowledged) {
+    _clPendingFormData = { apptTime, meetingType, wfolderApplied, formCompletions };
+    document.getElementById('cl-penalty-text').textContent =
+      _clPenaltyWarning || 'Please review all items carefully before submitting.';
+    document.getElementById('cl-penalty-modal').style.display = 'flex';
+    return;
+  }
+  _clPenaltyAcknowledged = false;
 
   // Collect sale rows
   const salesRows = document.querySelectorAll('#cl-sales-rows .cl-sale-row');
@@ -5354,6 +6540,21 @@ async function clSubmit() {
     });
   }
 
+  // Validate sale rows — all visible rows must have product, premium, and lead source
+  document.querySelectorAll('#cl-sales-rows .cl-sale-row').forEach(rowEl => {
+    const prodEl = rowEl.querySelector('.clrow-product');
+    const premEl = rowEl.querySelector('.clrow-prem');
+    const srcEl  = rowEl.querySelector('.clrow-source');
+    const splitEl = rowEl.querySelector('.clrow-split');
+    const tmEl    = rowEl.querySelector('.clrow-teammate');
+    if (prodEl && !prodEl.value) clErr(prodEl, 'Product is required.');
+    if (premEl && !premEl.value) clErr(premEl, 'Premium is required.');
+    if (srcEl  && !srcEl.value)  clErr(srcEl,  'Lead source is required.');
+    if (splitEl?.checked && tmEl && !tmEl.value) clErr(tmEl, 'Teammate name is required.');
+  });
+
+  const agentDisplayName = _clAgents.find(a => a.agent_id === salespersonId)?.name || salespersonId || '';
+
   btn.disabled = true; btn.textContent = 'Submitting…';
   try {
     const r = await fetch('/api/checklist-form', {
@@ -5363,8 +6564,13 @@ async function clSubmit() {
         token:           _clToken,
         subDate,
         apptDate:        document.getElementById('cl-appt-date').value || null,
+        apptTime,
+        meetingType,
         customerName:    custName,
-        salespersonId:   document.getElementById('cl-salesperson').value || null,
+        salespersonId,
+        location:        document.getElementById('cl-location')?.value || null,
+        apptLocation:    document.getElementById('cl-appt-location')?.value || null,
+        wfolderApplied,
         formCompletions,
         sales,
       }),
@@ -5372,7 +6578,7 @@ async function clSubmit() {
     const d = await r.json();
     if (!r.ok) { errEl.textContent = d.error || 'Submission failed.'; errEl.style.display='block'; return; }
     _clEmailPayload = d.emailPayload;
-    showChecklistEmailModal(d.emailPayload);
+    showChecklistEmailModal({ ...d.emailPayload, agentDisplayName });
   } catch(e) {
     errEl.textContent = e.message; errEl.style.display='block';
   } finally {
@@ -5380,66 +6586,331 @@ async function clSubmit() {
   }
 }
 
-function buildEmailBody(payload) {
-  const p = payload;
-  const formLines = Object.entries(p.formCompletions || {}).map(([key, fields]) => {
-    const checks = Object.entries(fields).filter(([,v]) => v).map(([k]) => k.charAt(0).toUpperCase() + k.slice(1)).join(', ');
-    return `  ${key}: ${checks || 'none'}`;
-  }).join('\n');
-  const salesLines = (p.sales || []).map((s, i) => {
-    const cat = labelForCat(s.product);
-    return `  ${i+1}. ${cat}${s.subcategory ? ' — ' + s.subcategory : ''}${s.writtenPremium ? ' ($' + parseFloat(s.writtenPremium).toFixed(2) + ')' : ''}${s.autoIssued ? ' ✓ Auto Issued' : ''}${s.splitSale ? ' — Split w/ ' + (s.teammate || 'TBD') : ''}`;
-  }).join('\n');
-  return [
-    p.agencyName ? p.agencyName : '',
+let _clSummarySubject = '';
+let _clSummaryBody    = '';
+let _clCustHtml       = '';
+let _clCustPlain      = '';
+
+function clShowTab(tab, btn) {
+  document.getElementById('cl-tab-summary').style.display  = tab === 'summary'  ? '' : 'none';
+  document.getElementById('cl-tab-customer').style.display = tab === 'customer' ? '' : 'none';
+  document.querySelectorAll('#cl-email-modal .acct-stab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function clFormatDate(iso) {
+  if (!iso) return '';
+  const p = iso.split('-');
+  const d = new Date(parseInt(p[0]), parseInt(p[1]) - 1, parseInt(p[2]));
+  return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+}
+
+function clFormatTime(t) {
+  if (!t) return '';
+  const p = t.split(':');
+  let h = parseInt(p[0], 10); const m = p[1] || '00';
+  const ampm = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
+  return h + ':' + m + ' ' + ampm;
+}
+
+function clApptLine(payload) {
+  const date = clFormatDate(payload.apptDate);
+  const time = clFormatTime(payload.apptTime);
+  const type = payload.meetingType || '';
+  let loc = '';
+  if (type === 'In Person' && payload.apptLocation) {
+    const match = _clLocations.find(l => l.name === payload.apptLocation);
+    loc = ' @ ' + (match ? match.name : payload.apptLocation);
+  }
+  return [date, time ? 'at ' + time : '', type + loc].filter(Boolean).join(' — ');
+}
+
+function buildSummaryEmail(payload) {
+  const fc = payload.formCompletions || {};
+  const apptLine = clApptLine(payload);
+  const agentName = payload.agentDisplayName || payload.salespersonId || '';
+
+  const formLines = [];
+  if (payload.wfolderApplied) formLines.push('  w:/ folder: Applied ✓');
+  (_clFormCfg.length ? _clFormCfg : [{form_key:'GSD'},{form_key:'DSS'},{form_key:'SCD'},{form_key:'DTD'},{form_key:'SFPP'}]).forEach(f => {
+    const k = f.form_key;
+    const d = fc[k] || {};
+    if (d.na) { formLines.push(`  ${k}: N/A`); return; }
+    const parts = [];
+    if (d.applied)   parts.push('Applied ✓');
+    if (d.submitted) parts.push('Submitted ✓');
+    if (d.notified)  parts.push('Notified ✓');
+    if (d.wfi)       parts.push('Task ✓');
+    if (d.notif_date) parts.push('Date: ' + d.notif_date);
+    formLines.push(`  ${k}: ${parts.length ? parts.join(' | ') : 'Not completed'}`);
+  });
+
+  const salesLines = (payload.sales || []).map((s, i) => {
+    const cat = labelForCat ? labelForCat(s.product) : s.product;
+    let line = `  ${i+1}. ${cat}`;
+    if (s.subcategory)    line += ` — ${s.subcategory}`;
+    if (s.writtenPremium) line += ` ($${parseFloat(s.writtenPremium).toFixed(2)})`;
+    if (s.autoIssued)     line += ' ✓ Auto Issued';
+    if (s.splitSale)      line += ` — Split w/ ${s.teammate || 'TBD'}`;
+    return line;
+  });
+
+  const subject = `New Business — ${payload.customerName || 'Customer'} — ${payload.subDate || ''}`;
+  const body = [
+    `Customer: ${payload.customerName || ''}`,
+    `Agent: ${agentName}`,
+    `Submission Date: ${payload.subDate || ''}`,
+    apptLine ? `Appointment: ${apptLine}` : '',
     '',
-    p.greeting || '',
+    'FORMS:',
+    ...formLines,
     '',
-    `Date: ${p.subDate || '—'}`,
-    p.apptDate ? `Appointment: ${p.apptDate}` : '',
-    p.salespersonId ? `Agent: ${p.salespersonId}` : '',
-    '',
-    formLines ? 'Forms Completed:\n' + formLines : '',
-    '',
-    salesLines ? 'Products Sold:\n' + salesLines : '',
-    '',
-    p.footer || '',
-    '',
-    p.agentName  ? `Agent: ${p.agentName}` : '',
-    p.agentPhone ? `Phone: ${p.agentPhone}` : '',
-    p.agentEmail ? `Email: ${p.agentEmail}` : '',
-  ].filter(l => l !== null && l !== undefined).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    `SALES (${(payload.sales||[]).length} items):`,
+    ...salesLines,
+  ].filter(l => l !== null).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+
+  return { subject, body };
+}
+
+function buildCustomerEmailHtml(payload) {
+  const fc = payload.formCompletions || {};
+  const agencyName = payload.agencyName || 'Russel Williams State Farm';
+  const brandColor = payload.brandColor || '#D62311';
+  const apptLine   = clApptLine(payload);
+  const greeting   = payload.greeting || 'Hello and welcome to ' + agencyName + '!';
+  const footer     = payload.footer   || "Don't hesitate to contact us if you have any questions — we're here to help!";
+  const agentName  = payload.agentName  || '';
+  const agentPhone = payload.agentPhone || '';
+  const agentEmail = payload.agentEmail || '';
+
+  // Build config-driven form item sections
+  let discountHtml = '', discountPlain = '';
+  const P2 = 'style="margin:0 0 14px;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:14px;color:#403C3C;line-height:1.7;"';
+  FORM_ITEM_DEFS.forEach(({ key, label, editable }) => {
+    const item = _clFormItems[key] || DEFAULT_FORM_ITEMS[key] || {};
+    if (!fc[key]?.applied) return;
+    const desc = item.description || '';
+    if (!desc) return;
+    const displayLabel = editable ? (item.label || label) : label;
+    const sectionTitle = item.title || displayLabel;
+    const linkHtml = (item.link_url && item.link_label)
+      ? `<ul style="margin:8px 0 16px 20px;padding:0;"><li style="margin:0 0 6px;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:13px;color:#403C3C;line-height:1.7;"><a href="${escHtml(item.link_url)}" style="color:#D62311;text-decoration:none;">${escHtml(item.link_label)}</a></li></ul>` : '';
+    discountHtml += `<p style="margin:18px 0 8px;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:13px;font-weight:bold;color:#403C3C;text-transform:uppercase;letter-spacing:0.05em;">${escHtml(sectionTitle)}</p>`;
+    desc.split(/\n\n+/).forEach(para => {
+      discountHtml += `<p ${P2}>${escHtml(para)}</p>`;
+    });
+    discountHtml += linkHtml;
+    discountPlain += `\n${displayLabel}\n${desc.split('\n')[0]}\n`;
+  });
+  const discounts = { html: discountHtml, plain: discountPlain };
+
+  // Build footer office rows from _clLocations
+  let footerRows = '';
+  if (_clLocations.length > 0) {
+    _clLocations.forEach((loc, i) => {
+      const divider = i > 0 ? '<tr><td style="border-top:1px solid rgba(255,255,255,0.15);height:1px;font-size:1px;line-height:1px;">&nbsp;</td></tr>' : '';
+      const detailParts = [];
+      if (loc.address) detailParts.push(escHtml(loc.address));
+      const contactParts = [];
+      if (loc.phone) contactParts.push(`<a href="tel:${escHtml(loc.phone.replace(/\D/g,''))}" style="color:rgba(255,255,255,0.9);text-decoration:none;">${escHtml(loc.phone)}</a>`);
+      if (loc.hours) contactParts.push(escHtml(loc.hours));
+      if (contactParts.length) detailParts.push(contactParts.join(' &nbsp;&bull;&nbsp; '));
+      footerRows += `${divider}<tr><td style="padding:${i>0?'16px':0} 0 0;">
+        <p style="margin:0 0 4px;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:11px;font-weight:bold;color:#ffffff;text-transform:uppercase;letter-spacing:0.08em;">${escHtml(loc.name)}</p>
+        ${detailParts.length ? `<p style="margin:0;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:12px;color:rgba(255,255,255,0.72);line-height:1.7;">${detailParts.join('<br>')}</p>` : ''}
+      </td></tr>`;
+    });
+  } else {
+    // Fallback to hardcoded offices
+    footerRows = `<tr><td style="padding-bottom:16px;">
+      <p style="margin:0 0 4px;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:11px;font-weight:bold;color:#ffffff;text-transform:uppercase;letter-spacing:0.08em;">West Linn Office</p>
+      <p style="margin:0;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:12px;color:rgba(255,255,255,0.72);line-height:1.7;">6105 West A St, Ste C, West Linn, OR 97068<br><a href="tel:5036576690" style="color:rgba(255,255,255,0.9);text-decoration:none;">(503) 657-6690</a> &nbsp;&bull;&nbsp; Mon&ndash;Fri, 9 AM &ndash; 5:30 PM</p>
+      </td></tr>
+      <tr><td style="border-top:1px solid rgba(255,255,255,0.15);padding-top:16px;">
+      <p style="margin:0 0 4px;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:11px;font-weight:bold;color:#ffffff;text-transform:uppercase;letter-spacing:0.08em;">Happy Valley Office</p>
+      <p style="margin:0;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:12px;color:rgba(255,255,255,0.72);line-height:1.7;">13255 SE 130th Ave Ste 300, Happy Valley, OR 97015<br><a href="tel:9712526298" style="color:rgba(255,255,255,0.9);text-decoration:none;">(971) 252-6298</a></p>
+      </td></tr>`;
+  }
+
+  const P = 'style="margin:0 0 14px;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:14px;color:#403C3C;line-height:1.7;"';
+
+  const bodyHtml = `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F5F5F5;">
+<tr><td align="center" style="padding:20px 12px;">
+<table width="600" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;border:1px solid #DCDCDC;">
+
+<tr><td bgcolor="${brandColor}" style="background-color:${brandColor};padding:20px 32px;">
+<p style="margin:0;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:18px;font-weight:bold;color:#ffffff;line-height:1.2;">${escHtml(agencyName)}</p>
+</td></tr>
+
+<tr><td style="padding:32px 32px 24px;">
+
+<p style="margin:0 0 14px;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:15px;color:#403C3C;line-height:1.6;">${greeting}</p>
+<p ${P}>We're excited to have you as part of our State Farm family. Our team is here to support you every step of the way with your insurance needs and provide you with helpful resources.</p>
+<p ${P}>You should have a copy of your ID cards in your inbox and in your online portal.</p>
+
+${apptLine ? `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
+<tr><td bgcolor="#f5f5f5" style="background-color:#f5f5f5;border-left:4px solid ${brandColor};padding:16px 20px;">
+<p style="margin:0 0 5px;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:11px;font-weight:bold;color:${brandColor};text-transform:uppercase;letter-spacing:0.08em;">YOUR NEXT APPOINTMENT</p>
+<p style="margin:0;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:16px;font-weight:bold;color:#403C3C;line-height:1.4;">${apptLine}</p>
+</td></tr></table>` : ''}
+
+${discounts.html}
+
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 20px;"><tr><td style="border-top:1px solid #DCDCDC;height:1px;font-size:1px;line-height:1px;">&nbsp;</td></tr></table>
+
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
+<tr><td bgcolor="#fff8e6" style="background-color:#fff8e6;border-left:4px solid #e8a020;padding:14px 18px;">
+<p style="margin:0 0 4px;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:11px;font-weight:bold;color:#856404;text-transform:uppercase;letter-spacing:0.08em;">Important</p>
+<p style="margin:0;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:13px;color:#403C3C;line-height:1.6;">If you have monthly payments, please be sure to sign and return your email payment authorization form as soon as possible. This will ensure your payments are processed smoothly and on time.</p>
+</td></tr></table>
+
+<p style="margin:0 0 8px;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:14px;font-weight:bold;color:#403C3C;">Helpful Online Resources:</p>
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:20px;">
+<tr><td style="padding:3px 0;"><a href="https://www.statefarm.com" style="font-family:Arial,Calibri,Helvetica,sans-serif;font-size:13px;color:#D62311;text-decoration:none;">&#8250; Manage your policy: statefarm.com</a></td></tr>
+<tr><td style="padding:3px 0;"><a href="https://www.statefarm.com/claims" style="font-family:Arial,Calibri,Helvetica,sans-serif;font-size:13px;color:#D62311;text-decoration:none;">&#8250; File a claim: statefarm.com/claims</a></td></tr>
+<tr><td style="padding:3px 0;"><a href="https://www.statefarm.com/billing" style="font-family:Arial,Calibri,Helvetica,sans-serif;font-size:13px;color:#D62311;text-decoration:none;">&#8250; Pay your bill: statefarm.com/billing</a></td></tr>
+</table>
+
+<p ${P}>${footer}</p>
+<p style="margin:0 0 24px;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:14px;color:#403C3C;line-height:1.7;">Thank you again for trusting ${escHtml(agencyName)}. We look forward to serving you!</p>
+
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:12px;"><tr><td style="border-top:1px solid #DCDCDC;height:1px;font-size:1px;line-height:1px;">&nbsp;</td></tr></table>
+<p style="margin:14px 0 2px;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:13px;color:#403C3C;">Best regards,</p>
+<p style="margin:0 0 4px;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:14px;font-weight:bold;color:#403C3C;">${escHtml(agentName || agencyName + ' Team')}</p>
+${agentPhone ? `<p style="margin:0 0 2px;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:13px;color:#403C3C;">${escHtml(agentPhone)}</p>` : ''}
+${agentEmail ? `<p style="margin:0;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:13px;color:#403C3C;">${escHtml(agentEmail)}</p>` : ''}
+
+</td></tr>
+
+<tr><td bgcolor="#403C3C" style="background-color:#403C3C;padding:24px 32px;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+${footerRows}
+</table>
+</td></tr>
+
+</table>
+</td></tr></table>`;
+
+  const fullHtml = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<style type="text/css">a{color:#D62311;text-decoration:none;}a:hover{text-decoration:underline;}</style>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f8fc;">${bodyHtml}</body></html>`;
+
+  return { bodyHtml, fullHtml };
 }
 
 function showChecklistEmailModal(payload) {
-  const modal = document.getElementById('cl-email-modal');
-  if (!modal) return;
-  document.getElementById('cl-email-subject').textContent = payload.subject || 'New Customer Checklist';
-  document.getElementById('cl-email-body').textContent    = buildEmailBody(payload);
-  modal.style.display = 'flex';
+  // Build internal summary
+  const sum = buildSummaryEmail(payload);
+  _clSummarySubject = sum.subject;
+  _clSummaryBody    = sum.body;
+  document.getElementById('cl-sum-subject').textContent = _clSummarySubject;
+  document.getElementById('cl-sum-body').textContent    = _clSummaryBody;
+
+  // Build customer email
+  const cust = buildCustomerEmailHtml(payload);
+  _clCustHtml  = cust.fullHtml;
+  let custPlainDiscounts = '';
+  FORM_ITEM_DEFS.forEach(({ key, label, editable }) => {
+    const item = _clFormItems[key] || DEFAULT_FORM_ITEMS[key] || {};
+    if (!cust.bodyHtml || !payload.formCompletions?.[key]?.applied) return;
+    const desc = item.description || '';
+    if (!desc) return;
+    const displayLabel = editable ? (item.label || label) : label;
+    const sectionTitle = item.title || displayLabel;
+    custPlainDiscounts += `\n${sectionTitle}\n${desc.split('\n')[0]}\n`;
+  });
+  _clCustPlain = 'Hello and welcome to ' + (payload.agencyName || 'our agency') + '!\n\n'
+    + (payload.greeting || '') + '\n\n'
+    + 'YOUR NEXT APPOINTMENT: ' + clApptLine(payload) + '\n'
+    + custPlainDiscounts
+    + '\nIMPORTANT: If you have monthly payments, please sign and return your email payment authorization form.\n\n'
+    + 'Helpful Resources:\n'
+    + '* Manage policy: https://www.statefarm.com\n'
+    + '* File a claim: https://www.statefarm.com/claims\n'
+    + '* Pay your bill: https://www.statefarm.com/billing\n\n'
+    + (payload.footer || '') + '\n\n'
+    + 'Best regards,\n' + (payload.agentName || (payload.agencyName || '') + ' Team');
+  document.getElementById('cl-email-preview-body').innerHTML = cust.bodyHtml;
+
+  document.getElementById('cl-email-modal').style.display = 'flex';
+  clShowTab('summary', document.getElementById('cl-tab-btn-summary'));
 }
 
-function clCopyEmail() {
-  const body = document.getElementById('cl-email-body').textContent;
-  navigator.clipboard.writeText(body).then(() => {
-    const msg = document.getElementById('cl-copy-msg');
+function clCopySummary() {
+  navigator.clipboard.writeText(_clSummarySubject + '\n\n' + _clSummaryBody).then(() => {
+    const msg = document.getElementById('cl-sum-copy-msg');
     if (msg) { msg.style.display='block'; setTimeout(() => msg.style.display='none', 2000); }
   });
 }
 
-function clOpenMailto() {
-  const subj = encodeURIComponent(document.getElementById('cl-email-subject').textContent);
-  const body = encodeURIComponent(document.getElementById('cl-email-body').textContent);
-  window.open(`mailto:?subject=${subj}&body=${body}`, '_blank');
+function clOpenSummaryMailto() {
+  const to = encodeURIComponent(_clInternalEmail || '');
+  const subj = encodeURIComponent(_clSummarySubject);
+  const body = encodeURIComponent(_clSummaryBody);
+  window.open(`mailto:${to}?subject=${subj}&body=${body}`, '_blank');
+}
+
+function clCopyCustomerEmail() {
+  if (navigator.clipboard && window.ClipboardItem) {
+    const bHtml  = new Blob([_clCustHtml],  { type: 'text/html' });
+    const bPlain = new Blob([_clCustPlain], { type: 'text/plain' });
+    navigator.clipboard.write([new ClipboardItem({ 'text/html': bHtml, 'text/plain': bPlain })])
+      .then(() => {
+        const msg = document.getElementById('cl-cust-copy-msg');
+        if (msg) { msg.style.display='block'; setTimeout(() => msg.style.display='none', 3000); }
+      })
+      .catch(() => clOpenCustomerMailto());
+  } else {
+    clOpenCustomerMailto();
+  }
+}
+
+function clOpenCustomerMailto() {
+  const subj = encodeURIComponent((_clEmailPayload?.subject) || 'Welcome!');
+  window.open('mailto:?subject=' + subj, '_blank');
+}
+
+function clClearErrors() {
+  document.querySelectorAll('[data-cl-err]').forEach(el => {
+    el.style.border     = '';
+    el.style.background = '';
+    el.style.boxShadow  = '';
+    delete el.dataset.clErr;
+  });
+  document.querySelectorAll('[data-cl-err-lbl]').forEach(el => {
+    el.style.color = '';
+    delete el.dataset.clErrLbl;
+  });
+  document.querySelectorAll('.cl-err-tip').forEach(el => el.remove());
+}
+
+function clPenaltyContinue() {
+  _clPenaltyAcknowledged = true;
+  document.getElementById('cl-penalty-modal').style.display = 'none';
+  clSubmit();
 }
 
 function clNewSubmission() {
+  clClearErrors();
   document.getElementById('cl-email-modal').style.display = 'none';
   document.getElementById('cl-cust-name').value  = '';
   document.getElementById('cl-appt-date').value  = '';
   document.getElementById('cl-sales-rows').innerHTML = '';
   document.getElementById('cl-forms-table').querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
+  document.getElementById('cl-forms-table').querySelectorAll('input[type=date]').forEach(inp => inp.value = '');
   document.getElementById('cl-error').style.display = 'none';
+  const locSel = document.getElementById('cl-location');
+  if (locSel) locSel.value = '';
+  const apptLocSel = document.getElementById('cl-appt-location');
+  if (apptLocSel) apptLocSel.value = '';
+  const apptLocWrap = document.getElementById('cl-appt-location-wrap');
+  if (apptLocWrap) apptLocWrap.style.display = 'none';
+  document.querySelectorAll('input[name="cl-meeting-type"]').forEach(r => r.checked = false);
+  const t = document.getElementById('cl-appt-time');
+  if (t) t.value = '';
   const today = new Date().toISOString().slice(0, 10);
   document.getElementById('cl-sub-date').value = today;
   clAddSaleRow();
@@ -5565,12 +7036,27 @@ function renderMemberAnalysisAgentPicker() {
   if (!agents.length) {
     container.innerHTML = '<div style="font-size:13px;color:var(--muted);">No agents found. Add agents to the roster first.</div>';
   }
+  updateMaCounter();
+}
+
+function updateMaCounter() {
+  const el = document.getElementById('ma-seat-counter');
+  if (!el) return;
+  if (_isAdmin) { el.textContent = ''; return; }
+  const limit = _memberAnalysisCount || 0;
+  const checked = document.querySelectorAll('#ma-agent-picker input[type=checkbox]:checked').length;
+  const remaining = limit - checked;
+  el.style.color = remaining <= 0 ? 'var(--danger)' : 'var(--muted)';
+  el.textContent = remaining > 0
+    ? `${remaining} seat${remaining !== 1 ? 's' : ''} remaining`
+    : `0 seats remaining — uncheck an agent to select a different one`;
 }
 
 function enforceMaLimit(cb, limit) {
   const all = document.querySelectorAll('#ma-agent-picker input[type=checkbox]');
   const checkedCount = Array.from(all).filter(c => c.checked).length;
   if (checkedCount > limit) { cb.checked = false; }
+  updateMaCounter();
 }
 
 async function saveMemberAnalysisAgents(btn) {
@@ -5632,6 +7118,7 @@ function updateMemberAnalysisBtn() {
 }
 
 function displayCachedMemberAnalysis() {
+  updateHoursLabel();
   if (!(_hasMemberAnalysis || _isAdmin)) {
     renderMemberAnalysisTeaser();
     return;
@@ -5641,7 +7128,9 @@ function displayCachedMemberAnalysis() {
     try {
       const data = JSON.parse(cached);
       if (data.userId === _userId && data.agentSections) {
-        renderMemberAnalysisCards(data.agentSections, data.agentData, data.generatedAt);
+        if (data.curKey) _maCurKey = data.curKey;
+        renderMemberAnalysisCards(data.agentSections, data.agentData, data.generatedAt, data.hoursLastPeriod);
+        updateHoursLabel(data.hoursLastPeriod);
         return;
       }
     } catch(e) {}
@@ -5651,7 +7140,9 @@ function displayCachedMemberAnalysis() {
     .then(r => r.json())
     .then(data => {
       if (data.agentSections) {
-        renderMemberAnalysisCards(data.agentSections, data.agentData, data.generatedAt || data.cachedAt);
+        if (data.curKey) _maCurKey = data.curKey;
+        renderMemberAnalysisCards(data.agentSections, data.agentData, data.generatedAt || data.cachedAt, data.hoursLastPeriod);
+        updateHoursLabel(data.hoursLastPeriod);
         _lsSet('br-member-analysis-' + _userId, JSON.stringify({ userId: _userId, ...data }));
       }
     })
@@ -5683,8 +7174,10 @@ async function runMemberAnalysis() {
     }
     const nowIso = new Date().toISOString();
     _memberAnalysisAt = data.generatedAt || nowIso;
+    if (data.curKey) _maCurKey = data.curKey;
     _lsSet('br-member-analysis-' + _userId, JSON.stringify({ userId: _userId, ...data }));
-    renderMemberAnalysisCards(data.agentSections, data.agentData, data.generatedAt);
+    renderMemberAnalysisCards(data.agentSections, data.agentData, data.generatedAt, data.hoursLastPeriod);
+    updateHoursLabel(data.hoursLastPeriod);
     if (msg) {
       msg.style.display = 'block';
       msg.style.color = 'var(--muted)';
@@ -5716,7 +7209,13 @@ function renderMemberAnalysisTeaser() {
     </div>`;
 }
 
-function renderMemberAnalysisCards(agentSections, agentData, generatedAt) {
+function renderMemberAnalysisCards(agentSections, agentData, generatedAt, hoursLastPeriod) {
+  // Clear old chart instances before re-rendering
+  Object.values(_agentChartInstances).forEach(charts => charts.forEach(c => { try { c.destroy(); } catch(_) {} }));
+  _agentChartInstances = {};
+  _agentChartsRendered.clear();
+  _maAnalysisData = { agentSections, agentData, generatedAt };
+
   const body = document.getElementById('ma-analysis-body');
   if (!body) return;
   if (!agentSections || !Object.keys(agentSections).length) {
@@ -5733,10 +7232,11 @@ function renderMemberAnalysisCards(agentSections, agentData, generatedAt) {
 
   const cards = Object.entries(agentSections).map(([name, text]) => {
     const agId = agentData ? Object.keys(agentData).find(id => agentData[id]?.name === name) : null;
-    const ag = agId ? agentData[agId] : null;
-    const cur = ag?.current;
+    const ag   = agId ? agentData[agId] : null;
+    const cur  = ag?.current;
     const teamColor = ag?.team === 'service' ? 'var(--accent2)' : 'var(--accent)';
     const teamLabel = ag?.team || 'sales';
+    const safeId    = agId ? agId.replace(/[^a-z0-9]/gi, '-') : '';
 
     const statsLine = cur ? [
       `${cur.placed} placed`,
@@ -5755,8 +7255,24 @@ function renderMemberAnalysisCards(agentSections, agentData, generatedAt) {
     const cardId = 'ma-card-' + escHtml(name).replace(/\s+/g, '-').toLowerCase();
     const paragraphs = (text || '').split(/\n\n+/).filter(Boolean).map(p => `<p style="margin:0 0 .75em;font-size:13px;line-height:1.7;">${p.trim()}</p>`).join('');
 
+    const chartTiles = agId && ag?.months?.length ? `
+      <div class="analysis-charts" id="ma-charts-${safeId}" style="margin-bottom:1rem;">
+        <div class="analysis-chart-box">
+          <div class="analysis-chart-title">Calls Placed, Answered &amp; Policies</div>
+          <canvas id="ma-c-calls-${safeId}"></canvas>
+        </div>
+        <div class="analysis-chart-box">
+          <div class="analysis-chart-title">Talk Time (min)</div>
+          <canvas id="ma-c-talk-${safeId}"></canvas>
+        </div>
+        <div class="analysis-chart-box">
+          <div class="analysis-chart-title">Premium</div>
+          <canvas id="ma-c-prem-${safeId}"></canvas>
+        </div>
+      </div>` : '';
+
     return `<div style="border:1px solid var(--border2);border-radius:10px;margin-bottom:.75rem;overflow:hidden;">
-      <div style="padding:.85rem 1rem;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;background:var(--card2);" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'':'none';this.querySelector('.ma-chevron').textContent=this.nextElementSibling.style.display===''?'▲':'▼'">
+      <div style="padding:.85rem 1rem;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;background:var(--card2);" onclick="toggleMaCard('${cardId}','${agId || ''}')">
         <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;">
           <span style="font-size:14px;font-weight:700;color:var(--text);">${escHtml(name)}</span>
           <span style="font-size:10px;font-weight:700;text-transform:uppercase;color:${teamColor};background:${teamColor}18;padding:2px 7px;border-radius:4px;">${teamLabel}</span>
@@ -5768,6 +7284,7 @@ function renderMemberAnalysisCards(agentSections, agentData, generatedAt) {
         </div>
       </div>
       <div id="${cardId}" style="display:none;padding:1rem;background:var(--deep);">
+        ${chartTiles}
         ${paragraphs || '<p style="color:var(--muted);font-size:13px;">No analysis available.</p>'}
       </div>
     </div>`;
@@ -5777,6 +7294,310 @@ function renderMemberAnalysisCards(agentSections, agentData, generatedAt) {
   body.innerHTML = `
     ${genLabel ? `<div style="font-size:11px;color:var(--muted);margin-bottom:1rem;">${genLabel}</div>` : ''}
     ${cards}`;
+}
+
+// ── Hours label (both analysis sub-panes) ────────────────────────────────────
+function updateHoursLabel(lastPeriod) {
+  if (lastPeriod !== undefined) _maLastHoursPeriod = lastPeriod;
+  const period = _maLastHoursPeriod
+    || (_memberHoursData?.length
+        ? [..._memberHoursData].sort((a,b) => new Date(b.uploaded_at||0) - new Date(a.uploaded_at||0))[0]?.period
+        : null);
+  const link = `<a href="#" onclick="goToAccountTab('sales');return false;" style="color:var(--accent);">Upload →</a>`;
+  const html = period
+    ? `Hours on file: <strong>${escHtml(period)}</strong> · ${link}`
+    : `No hours on file · ${link}`;
+  ['ma-hours-label-trends','ma-hours-label-members'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.innerHTML = html; el.style.display = ''; }
+  });
+}
+
+// ── Agent card toggle with lazy chart render ──────────────────────────────────
+function toggleMaCard(cardId, agId) {
+  const body = document.getElementById(cardId);
+  if (!body) return;
+  const header  = body.previousElementSibling;
+  const isHidden = body.style.display === 'none';
+  body.style.display = isHidden ? '' : 'none';
+  const chevron = header?.querySelector('.ma-chevron');
+  if (chevron) chevron.textContent = isHidden ? '▲' : '▼';
+  if (isHidden && agId) renderAgentChartsIfNeeded(agId);
+}
+
+function renderAgentChartsIfNeeded(agId) {
+  if (!agId || _agentChartsRendered.has(agId)) return;
+  _agentChartsRendered.add(agId);
+  const ag = _maAnalysisData?.agentData?.[agId];
+  if (!ag) return;
+  renderAgentChartTiles(agId, ag);
+}
+
+function renderAgentChartTiles(agId, ag) {
+  const safeId   = agId.replace(/[^a-z0-9]/gi, '-');
+  const MA        = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const curKey    = _maCurKey || ((() => { const d = new Date(); return MA[d.getMonth()] + ' ' + d.getFullYear(); })());
+  const months    = ag.months || [];
+  const cur       = ag.current;
+
+  const labels    = [...months.map(m => m.month), ...(cur ? [curKey] : [])];
+  const placed    = [...months.map(m => m.placed),   ...(cur ? [cur.placed]   : [])];
+  const answered  = [...months.map(m => m.answered), ...(cur ? [cur.answered] : [])];
+  const policies  = [...months.map(m => m.policies), ...(cur ? [cur.policies] : [])];
+  const talkArr   = [...months.map(m => m.talkMin),  ...(cur ? [cur.talkMin]  : [])];
+  const premArr   = [...months.map(m => m.premium),  ...(cur ? [cur.premium]  : [])];
+
+  const gc = 'rgba(255,255,255,0.05)';
+  const tc = '#6b8db5';
+  const base = {
+    responsive: true, maintainAspectRatio: true,
+    plugins: { legend: { labels: { color: tc, font: { size: 11 } } } },
+    scales: {
+      x: { ticks: { color: tc, font: { size: 10 } }, grid: { color: gc } },
+      y: { ticks: { color: tc, font: { size: 10 } }, grid: { color: gc } },
+    },
+  };
+
+  const callsCanvas = document.getElementById(`ma-c-calls-${safeId}`);
+  const talkCanvas  = document.getElementById(`ma-c-talk-${safeId}`);
+  const premCanvas  = document.getElementById(`ma-c-prem-${safeId}`);
+  if (!callsCanvas || !talkCanvas || !premCanvas) return;
+
+  const c1 = new Chart(callsCanvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label:'Placed',   data: placed,   borderColor:'#00d4ff', backgroundColor:'rgba(0,212,255,.07)', tension:.3, pointRadius:3, fill:true, yAxisID:'y' },
+        { label:'Answered', data: answered, borderColor:'#00ff94', backgroundColor:'rgba(0,255,148,.07)', tension:.3, pointRadius:3, fill:true, yAxisID:'y' },
+        { label:'Policies', data: policies, borderColor:'#ff8c42', backgroundColor:'transparent',         tension:.3, pointRadius:3, fill:false, borderDash:[4,3], yAxisID:'y2' },
+      ],
+    },
+    options: { ...base, scales: { ...base.scales, y2: { position:'right', ticks: { color: tc, font: { size: 10 } }, grid: { drawOnChartArea: false } } } },
+  });
+
+  const c2 = new Chart(talkCanvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{ label:'Talk Min', data: talkArr, borderColor:'#ffd166', backgroundColor:'rgba(255,209,102,.1)', tension:.3, pointRadius:3, fill:true }],
+    },
+    options: { ...base, plugins: { legend: { display: false } } },
+  });
+
+  const c3 = new Chart(premCanvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{ label:'Premium', data: premArr, borderColor:'#a78bfa', backgroundColor:'rgba(167,139,250,.1)', tension:.3, pointRadius:3, fill:true, spanGaps: false }],
+    },
+    options: {
+      ...base,
+      plugins: { legend: { display: false } },
+      scales: {
+        ...base.scales,
+        y: { ...base.scales.y, ticks: { ...base.scales.y.ticks, callback: v => v != null ? '$'+Math.round(v).toLocaleString() : '' } },
+      },
+    },
+  });
+
+  _agentChartInstances[agId] = [c1, c2, c3];
+}
+
+// ── Hours upload UI ───────────────────────────────────────────────────────────
+function maHoursDrop(e) {
+  e.preventDefault();
+  document.getElementById('ma-hours-drop').style.borderColor = 'var(--border2)';
+  const file = e.dataTransfer?.files?.[0];
+  if (file) maHoursParseFile(file);
+}
+
+function maHoursFileChange(input) {
+  const file = input.files?.[0];
+  if (file) maHoursParseFile(file);
+  input.value = '';
+}
+
+function maHoursParseFile(file) {
+  if (!window.XLSX) { alert('File parser not loaded — please refresh.'); return; }
+  const nameEl = document.getElementById('ma-hours-drop-name');
+  if (nameEl) nameEl.textContent = file.name;
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb    = XLSX.read(e.target.result, { type: 'array' });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows  = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      if (!rows.length) { alert('File appears empty.'); return; }
+
+      _maHoursHeaders = (rows[0] || []).map(String);
+      _maHoursFileRows = rows.slice(1).filter(r => r.some(c => String(c).trim()));
+
+      const sel1 = document.getElementById('ma-hours-col-name');
+      const sel2 = document.getElementById('ma-hours-col-hours');
+      if (!sel1 || !sel2) return;
+      const opts = _maHoursHeaders.map((h, i) => `<option value="${i}">${escHtml(h) || `Column ${i+1}`}</option>`).join('');
+      sel1.innerHTML = opts;
+      sel2.innerHTML = opts;
+
+      // Auto-guess columns: look for "name" and "hours" keywords
+      const guessName  = _maHoursHeaders.findIndex(h => /name|agent/i.test(h));
+      const guessHours = _maHoursHeaders.findIndex(h => /hour/i.test(h));
+      if (guessName  >= 0) sel1.value = guessName;
+      if (guessHours >= 0) sel2.value = guessHours;
+
+      document.getElementById('ma-hours-mapper').style.display = '';
+      document.getElementById('ma-hours-match').style.display   = 'none';
+      document.getElementById('ma-hours-save-area').style.display = 'none';
+    } catch(err) {
+      alert('Could not parse file: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function maHoursApplyMapping() {
+  const nameColIdx  = parseInt(document.getElementById('ma-hours-col-name')?.value  ?? '0');
+  const hoursColIdx = parseInt(document.getElementById('ma-hours-col-hours')?.value ?? '1');
+
+  // Collect unique agent names from file
+  const nameMap = {}; // rawName → first occurrence row
+  for (const row of _maHoursFileRows) {
+    const rawName = String(row[nameColIdx] || '').trim();
+    if (!rawName) continue;
+    if (!nameMap[rawName]) nameMap[rawName] = parseFloat(row[hoursColIdx]) || 0;
+    else nameMap[rawName] += parseFloat(row[hoursColIdx]) || 0;
+  }
+
+  const uniqueNames = Object.keys(nameMap);
+  if (!uniqueNames.length) { alert('No valid agent names found in selected column.'); return; }
+
+  // Build agent roster options
+  const rosterAgents = (_agentRoster || []).filter(a => a.agent_id && a.name);
+  const rosterOpts = [`<option value="">— Not matched —</option>`, ...rosterAgents.map(a => `<option value="${escHtml(a.agent_id)}">${escHtml(a.name)}</option>`)].join('');
+
+  const tableHtml = uniqueNames.map(name => {
+    const hrs = nameMap[name];
+    // Try to auto-match by name similarity (exact match first, then starts-with)
+    const exactMatch = rosterAgents.find(a => a.name.toLowerCase() === name.toLowerCase());
+    const partialMatch = !exactMatch && rosterAgents.find(a =>
+      a.name.toLowerCase().includes(name.toLowerCase()) || name.toLowerCase().includes(a.name.toLowerCase()));
+    const autoVal = exactMatch?.agent_id || partialMatch?.agent_id || '';
+    const sel = `<select data-raw="${escHtml(name)}" style="width:100%;padding:4px 6px;background:var(--card2);border:1px solid var(--border2);color:var(--text);border-radius:5px;font-size:12px;">${rosterOpts}</select>`;
+    const selHtml = sel.replace(`value="${escHtml(autoVal)}"`, `value="${escHtml(autoVal)}" selected`);
+    return `<div style="display:grid;grid-template-columns:1fr 1fr auto;gap:.5rem;align-items:center;padding:5px 0;border-bottom:1px solid var(--border2);">
+      <span style="font-size:13px;">${escHtml(name)}</span>
+      ${selHtml}
+      <span style="font-size:12px;color:var(--muted);white-space:nowrap;">${hrs} hrs</span>
+    </div>`;
+  }).join('');
+
+  const matchTable = document.getElementById('ma-hours-match-table');
+  if (matchTable) matchTable.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:.5rem;padding:4px 0;border-bottom:1px solid var(--border2);margin-bottom:4px;">
+      <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;">File Name</span>
+      <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;">Roster Agent</span>
+      <span style="font-size:11px;color:var(--muted);">Hours</span>
+    </div>${tableHtml}`;
+
+  document.getElementById('ma-hours-match').style.display    = '';
+  document.getElementById('ma-hours-save-area').style.display = '';
+}
+
+async function maHoursSave(btn) {
+  const periodInput = document.getElementById('ma-hours-period');
+  const period = periodInput?.value?.trim();
+  if (!period) {
+    showInlineMsg('ma-hours-msg', 'Enter a period label (e.g. April 2026)', 'err');
+    return;
+  }
+
+  // Collect matched rows
+  const selects = document.querySelectorAll('#ma-hours-match-table select[data-raw]');
+  const rows = [];
+  selects.forEach(sel => {
+    const agentId  = sel.value;
+    const agentName = sel.dataset.raw || '';
+    const hrsEl    = sel.parentElement?.querySelector('span:last-child');
+    const hours    = parseFloat(hrsEl?.textContent) || 0;
+    if (agentId && hours > 0) rows.push({ agent_name: agentName, agent_id: agentId, hours });
+  });
+
+  if (!rows.length) {
+    showInlineMsg('ma-hours-msg', 'No matched agents with hours > 0.', 'err');
+    return;
+  }
+
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const r = await fetch('/api/member-hours', {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ period, rows }),
+    });
+    const d = await r.json();
+    if (!r.ok) { showInlineMsg('ma-hours-msg', d.error || 'Save failed', 'err'); return; }
+
+    _memberHoursData = d.periods || [];
+    updateHoursLabel();
+    renderMaHoursPeriods();
+
+    // Clear cached analysis (hours changed)
+    _lsRemove('br-member-analysis-' + _userId);
+
+    // Reset UI
+    document.getElementById('ma-hours-mapper').style.display    = 'none';
+    document.getElementById('ma-hours-match').style.display     = 'none';
+    document.getElementById('ma-hours-save-area').style.display = 'none';
+    document.getElementById('ma-hours-drop-name').textContent   = '';
+    if (periodInput) periodInput.value = '';
+    _maHoursFileRows = []; _maHoursHeaders = [];
+    showInlineMsg('ma-hours-msg', `Hours saved for "${period}". Re-run analysis to include efficiency data.`, 'ok');
+  } catch(e) {
+    showInlineMsg('ma-hours-msg', e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save Hours';
+  }
+}
+
+function renderMaHoursPeriods() {
+  const container = document.getElementById('ma-hours-periods');
+  if (!container) return;
+  if (!_memberHoursData?.length) {
+    container.innerHTML = '<div style="font-size:12px;color:var(--muted);">No hours uploaded yet.</div>';
+    return;
+  }
+  const sorted = [..._memberHoursData].sort((a,b) => new Date(b.uploaded_at||0) - new Date(a.uploaded_at||0));
+  container.innerHTML = `
+    <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:.4rem;">Uploaded Periods</div>
+    ${sorted.map(p => {
+      const agentCount = p.rows?.length || 0;
+      const uploaded   = p.uploaded_at ? new Date(p.uploaded_at).toLocaleDateString() : '';
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:var(--card2);border:1px solid var(--border2);border-radius:7px;margin-bottom:5px;">
+        <div>
+          <span style="font-size:13px;font-weight:600;">${escHtml(p.period)}</span>
+          <span style="font-size:11px;color:var(--muted);margin-left:.5rem;">${agentCount} agent${agentCount!==1?'s':''} · uploaded ${uploaded}</span>
+        </div>
+        <button class="btn btn-secondary" style="font-size:11px;padding:3px 10px;color:var(--danger);border-color:var(--danger);" onclick="maHoursDeletePeriod('${escHtml(p.period)}',this)">Remove</button>
+      </div>`;
+    }).join('')}`;
+}
+
+async function maHoursDeletePeriod(period, btn) {
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    const r = await fetch('/api/member-hours?' + new URLSearchParams({ period }), {
+      method: 'DELETE', headers: authHeaders(),
+    });
+    const d = await r.json();
+    if (!r.ok) { alert(d.error || 'Delete failed'); return; }
+    _memberHoursData = d.periods || [];
+    updateHoursLabel();
+    renderMaHoursPeriods();
+    _lsRemove('br-member-analysis-' + _userId);
+  } catch(e) { alert(e.message); }
+  finally { btn.disabled = false; btn.textContent = 'Remove'; }
 }
 </script>
 </body>

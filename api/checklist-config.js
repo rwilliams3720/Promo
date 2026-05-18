@@ -97,7 +97,8 @@ export default async function handler(req, res) {
       supabase.from('sales_subcategories').select('*').eq('user_id', user.id).order('scoring_category').order('sort_order'),
     ]);
     const { data: agentData }    = await supabase.from('agent_roster').select('id, agent_id, name, active').eq('user_id', user.id).order('name');
-    const { data: locationData } = await supabase.from('sales_locations').select('id, name, active, sort_order').eq('user_id', user.id).order('sort_order').order('created_at');
+    const { data: locationData } = await supabase.from('sales_locations').select('id, name, active, sort_order, address, phone, hours').eq('user_id', user.id).order('sort_order').order('created_at');
+    const { data: lsRow }        = await supabase.from('accounts').select('lead_sources').eq('user_id', user.id).single();
 
     let formConfig = formRes.data || [];
     let subcategories = subcatRes.data || [];
@@ -136,12 +137,13 @@ export default async function handler(req, res) {
       agents: agentData || [],
       locations: locationData || [],
       productTypes: acct.sales_product_types || DEFAULT_PRODUCT_TYPES,
+      leadSources: lsRow?.lead_sources ?? null,
     });
   }
 
   // ── PATCH: update config ──────────────────────────────────────────────────
   if (req.method === 'PATCH') {
-    const { action, formTypes, subcategoryUpdates, emailConfig, salesEntryMode, clearCurrentSales, productTypes, locationUpdates } = req.body || {};
+    const { action, formTypes, subcategoryUpdates, emailConfig, salesEntryMode, clearCurrentSales, productTypes, locationUpdates, leadSources } = req.body || {};
 
     // Regenerate public link token
     if (action === 'regenerate_token') {
@@ -199,8 +201,9 @@ export default async function handler(req, res) {
 
     // Email template update
     if (emailConfig) {
-      const allowed = ['subject','agency_name','agent_name','agent_phone','agent_email','brand_color','greeting','footer'];
-      const cfg = {};
+      const allowed = ['subject','agency_name','agent_name','agent_phone','agent_email','brand_color','greeting','footer','internal_email','penalty_warning','form_items','required_fields'];
+      const { data: acctRow } = await supabase.from('accounts').select('checklist_email_config').eq('user_id', user.id).single();
+      const cfg = { ...(acctRow?.checklist_email_config || {}) };
       for (const k of allowed) if (emailConfig[k] !== undefined) cfg[k] = emailConfig[k];
       await supabase.from('accounts').update({ checklist_email_config: cfg }).eq('user_id', user.id);
     }
@@ -232,6 +235,11 @@ export default async function handler(req, res) {
       await supabase.from('accounts').update({ sales_product_types: productTypes }).eq('user_id', user.id);
     }
 
+    // Lead sources update (full replace; null resets to defaults)
+    if (leadSources !== undefined) {
+      await supabase.from('accounts').update({ lead_sources: leadSources }).eq('user_id', user.id);
+    }
+
     // Location CRUD
     if (locationUpdates) {
       for (const upd of locationUpdates) {
@@ -242,6 +250,12 @@ export default async function handler(req, res) {
           ({ error: locErr } = await supabase.from('sales_locations').update({ active: upd.active }).eq('id', upd.id).eq('user_id', user.id));
         } else if (upd.action === 'update') {
           ({ error: locErr } = await supabase.from('sales_locations').update({ name: upd.name }).eq('id', upd.id).eq('user_id', user.id));
+        } else if (upd.action === 'update_details') {
+          ({ error: locErr } = await supabase.from('sales_locations').update({
+            address: upd.address || null,
+            phone:   upd.phone   || null,
+            hours:   upd.hours   || null,
+          }).eq('id', upd.id).eq('user_id', user.id));
         } else if (upd.action === 'delete') {
           ({ error: locErr } = await supabase.from('sales_locations').delete().eq('id', upd.id).eq('user_id', user.id));
         }
