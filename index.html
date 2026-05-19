@@ -937,6 +937,8 @@
         <div id="sp-crumbs" style="margin-bottom:.85rem;"></div>
         <!-- Loading -->
         <div id="sp-loading" style="display:none;text-align:center;padding:2rem 0;color:var(--muted);font-size:13px;">Loading…</div>
+        <!-- Empty state (no manual entries — shows upload-based summary) -->
+        <div id="sp-empty-state" style="display:none"></div>
         <!-- Charts grid -->
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.5rem;" id="sp-charts-grid">
           <div>
@@ -8664,9 +8666,11 @@ function _renderSlScorecard(entries) {
 
 // ── Basic Sales Breakdown (no add-on, upload-only users) ─────────────────────
 
-async function loadBasicSalesBreakdown() {
-  const container = document.getElementById('basic-sales-breakdown');
+async function loadBasicSalesBreakdown(targetId) {
+  const id        = targetId || 'basic-sales-breakdown';
+  const container = document.getElementById(id);
   if (!container) return;
+  const isChartPane = id === 'sp-empty-state';
 
   const SKIP = new Set(['other','other2','other3','other4','other5','deposit','skip']);
   const cats = activeCats().filter(c => !SKIP.has(c.key));
@@ -8769,8 +8773,13 @@ async function loadBasicSalesBreakdown() {
   }
 
   const periodCount = sortedMonths.length + (hasCurData ? 1 : 0);
+  const chartNote = isChartPane
+    ? `<div class="panel" style="margin-bottom:1rem;padding:.875rem 1rem;text-align:center;">
+        <span style="font-size:13px;color:var(--muted);">Sales Performance charts use manually entered and checklist sales. Your uploaded data is summarised below — switch to manual entry in Account → Sales to unlock drilldown by lead source, location, and subcategory.</span>
+      </div>`
+    : '';
   container.style.display = '';
-  container.innerHTML = `<div class="panel" style="margin-bottom:1rem;">
+  container.innerHTML = chartNote + `<div class="panel" style="margin-bottom:1rem;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
       <div style="font-size:13px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.04em;">Sales Overview</div>
       <span style="font-size:11px;color:var(--muted);">Uploaded data · ${periodCount} period${periodCount !== 1 ? 's' : ''}</span>
@@ -8874,6 +8883,15 @@ function spRender() {
   const entries = spActiveEntries();
   spRenderSummary(entries);
   spRenderCrumbs();
+  const grid    = document.getElementById('sp-charts-grid');
+  const emptyEl = document.getElementById('sp-empty-state');
+  if (!entries.length && !_spCrumbs.length) {
+    if (grid)    grid.style.display    = 'none';
+    if (emptyEl) { emptyEl.style.display = ''; loadBasicSalesBreakdown('sp-empty-state').catch(() => {}); }
+    return;
+  }
+  if (grid)    grid.style.display    = '';
+  if (emptyEl) emptyEl.style.display = 'none';
   spBuildChart(1, _spDim1, entries);
   spBuildChart(2, _spDim2, entries);
 }
