@@ -114,7 +114,7 @@ export default async function handler(req, res) {
 
   const { data: acct } = await supabase
     .from('accounts')
-    .select('is_admin, has_member_analysis, member_analysis_count, member_analysis_agents, member_analysis_cache, member_analysis_at, has_sales_addon, company_name, member_hours_data')
+    .select('is_admin, has_member_analysis, member_analysis_count, member_analysis_agents, member_analysis_cache, member_analysis_at, member_analysis_agents_set_at, has_sales_addon, company_name, member_hours_data')
     .eq('user_id', dataUserId)
     .single();
 
@@ -128,17 +128,30 @@ export default async function handler(req, res) {
     const { agents } = req.body || {};
     if (!Array.isArray(agents)) return res.status(400).json({ error: 'agents array required' });
 
+    // 30-day lock: prevent agent switching within the lock window
+    const MA_LOCK_MS = 30 * 24 * 60 * 60 * 1000;
+    if (!acct.is_admin && acct.member_analysis_agents_set_at) {
+      const lockedUntil = new Date(acct.member_analysis_agents_set_at).getTime() + MA_LOCK_MS;
+      if (Date.now() < lockedUntil) {
+        return res.status(423).json({
+          error: 'Agent selection is locked for 30 days after each change.',
+          lockedUntil: new Date(lockedUntil).toISOString(),
+        });
+      }
+    }
+
     const limit = acct.member_analysis_count || 0;
     if (!acct.is_admin && agents.length > limit) {
       return res.status(400).json({ error: `Seat limit is ${limit}. Remove ${agents.length - limit} agent(s).` });
     }
 
+    const now = new Date().toISOString();
     const { error } = await supabase
       .from('accounts')
-      .update({ member_analysis_agents: agents })
+      .update({ member_analysis_agents: agents, member_analysis_agents_set_at: now })
       .eq('user_id', dataUserId);
     if (error) return res.status(500).json({ error: error.message });
-    return res.status(200).json({ ok: true });
+    return res.status(200).json({ ok: true, lockedUntil: new Date(Date.now() + MA_LOCK_MS).toISOString() });
   }
 
   // ── GET: return cached or generate fresh analysis ─────────────────────────

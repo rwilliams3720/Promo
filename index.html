@@ -2313,6 +2313,7 @@ let _hasMemberAnalysis    = false;
 let _memberAnalysisCount  = 0;
 let _memberAnalysisAgents = [];
 let _memberAnalysisAt     = null;
+let _memberAnalysisAgentsSetAt = null;
 let _leadAnalysisAt         = null;
 let _leadAnalysisLoading    = false;
 let _hasLeadAnalysisAddon   = false;
@@ -2483,11 +2484,12 @@ async function checkAccountAndShow(session) {
       _hasSalesAddon  = acct.has_sales_addon  || false;
       _leadAnalysisAt         = acct.lead_analysis_at       || null;
       _hasLeadAnalysisAddon   = acct.has_lead_analysis_addon || false;
-      _memberAnalysisAgents = acct.member_analysis_agents || [];
-      _memberAnalysisAt     = acct.member_analysis_at    || null;
-      _hasMemberAnalysis    = acct.has_member_analysis   || false;
-      _memberAnalysisCount  = acct.member_analysis_count || 0;
-      _memberHoursData      = acct.member_hours_data?.periods || [];
+      _memberAnalysisAgents      = acct.member_analysis_agents       || [];
+      _memberAnalysisAt          = acct.member_analysis_at           || null;
+      _memberAnalysisAgentsSetAt = acct.member_analysis_agents_set_at || null;
+      _hasMemberAnalysis         = acct.has_member_analysis          || false;
+      _memberAnalysisCount       = acct.member_analysis_count        || 0;
+      _memberHoursData           = acct.member_hours_data?.periods   || [];
       _salesEntryMode = acct.sales_entry_mode || 'upload';
       _checklistToken = acct.checklist_token  || null;
       if (_acctStatus === 'trial' && acct.trial_ends_at) {
@@ -2512,7 +2514,7 @@ async function checkAccountAndShow(session) {
         _dataUserId       = _ownerUserId;
         const { data: ownerAcct } = await _supabase
           .from('accounts')
-          .select('company_name, plan, status, trial_ends_at, has_sales_addon, has_commissions_addon, has_lead_analysis_addon, sales_entry_mode, is_admin, self_report_config, ai_analysis_at, lead_analysis_at, has_member_analysis, member_analysis_agents, member_analysis_at, member_analysis_count, member_hours_data')
+          .select('company_name, plan, status, trial_ends_at, has_sales_addon, has_commissions_addon, has_lead_analysis_addon, sales_entry_mode, is_admin, self_report_config, ai_analysis_at, lead_analysis_at, has_member_analysis, member_analysis_agents, member_analysis_at, member_analysis_agents_set_at, member_analysis_count, member_hours_data')
           .eq('user_id', _ownerUserId)
           .single();
         if (ownerAcct) {
@@ -2526,11 +2528,12 @@ async function checkAccountAndShow(session) {
           _analysisAt             = ownerAcct.ai_analysis_at         || null;
           _leadAnalysisAt         = ownerAcct.lead_analysis_at        || null;
           _hasLeadAnalysisAddon   = ownerAcct.has_lead_analysis_addon || false;
-          _hasMemberAnalysis      = ownerAcct.has_member_analysis    || false;
-          _memberAnalysisAgents   = ownerAcct.member_analysis_agents || [];
-          _memberAnalysisAt       = ownerAcct.member_analysis_at     || null;
-          _memberAnalysisCount    = ownerAcct.member_analysis_count  || 0;
-          _memberHoursData        = ownerAcct.member_hours_data?.periods || [];
+          _hasMemberAnalysis           = ownerAcct.has_member_analysis           || false;
+          _memberAnalysisAgents        = ownerAcct.member_analysis_agents        || [];
+          _memberAnalysisAt            = ownerAcct.member_analysis_at            || null;
+          _memberAnalysisAgentsSetAt   = ownerAcct.member_analysis_agents_set_at || null;
+          _memberAnalysisCount         = ownerAcct.member_analysis_count         || 0;
+          _memberHoursData             = ownerAcct.member_hours_data?.periods    || [];
           if (_acctStatus === 'trial' && ownerAcct.trial_ends_at && new Date(ownerAcct.trial_ends_at) < new Date()) {
             _acctStatus = 'past_due'; _trialExpired = true;
           }
@@ -3841,6 +3844,7 @@ let _chartCalls = null, _chartTalk = null, _chartVm = null;
 let _analysisLoading = false;
 const ANALYSIS_COOLDOWN_MS      = 5 * 24 * 60 * 60 * 1000; // 5 days
 const LEAD_ANALYSIS_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+const MA_AGENT_LOCK_MS          = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 function analysisRemainingMs() {
   if (!_analysisAt) return 0;
@@ -10781,12 +10785,20 @@ function renderMemberAnalysisSection(acct) {
 }
 
 // ── Member Analysis — agent picker ───────────────────────────────────────────
+function maAgentLockRemainingMs() {
+  if (_isAdmin || !_memberAnalysisAgentsSetAt) return 0;
+  return Math.max(0, new Date(_memberAnalysisAgentsSetAt).getTime() + MA_AGENT_LOCK_MS - Date.now());
+}
+
 function renderMemberAnalysisAgentPicker() {
   const desc = document.getElementById('ma-agents-desc');
   const container = document.getElementById('ma-agent-picker');
   if (!container) return;
-  const count = _memberAnalysisCount || 0;
+  const count   = _memberAnalysisCount || 0;
   const isAdmin = _isAdmin;
+  const lockMs  = maAgentLockRemainingMs();
+  const locked  = lockMs > 0;
+
   if (desc) desc.textContent = `Select up to ${isAdmin ? 'unlimited' : count} agent${count !== 1 ? 's' : ''} for individual coaching analysis${count > 0 ? ` (${count} seat${count !== 1 ? 's' : ''} purchased)` : ''}.`;
 
   // Source: agent_roster if has_sales_addon, else race_data
@@ -10801,9 +10813,9 @@ function renderMemberAnalysisAgentPicker() {
 
   container.innerHTML = agents.map(ag => {
     const checked = selectedIds.has(ag.id) ? 'checked' : '';
-    return `<label style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--card2);border:1px solid var(--border2);border-radius:8px;cursor:pointer;font-size:13px;">
+    return `<label style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--card2);border:1px solid var(--border2);border-radius:8px;font-size:13px;${locked ? 'opacity:.55;cursor:not-allowed;' : 'cursor:pointer;'}">
       <input type="checkbox" value="${escHtml(ag.id)}" data-name="${escHtml(ag.name)}" ${checked}
-             onchange="enforceMaLimit(this,${isAdmin ? 9999 : count})">
+             ${locked ? 'disabled' : `onchange="enforceMaLimit(this,${isAdmin ? 9999 : count})"`}>
       ${escHtml(ag.name)}
     </label>`;
   }).join('');
@@ -10811,7 +10823,30 @@ function renderMemberAnalysisAgentPicker() {
   if (!agents.length) {
     container.innerHTML = '<div style="font-size:13px;color:var(--muted);">No agents found. Add agents to the roster first.</div>';
   }
-  updateMaCounter();
+
+  // Lock status row
+  let lockEl = document.getElementById('ma-agent-lock-status');
+  if (!lockEl) {
+    lockEl = document.createElement('div');
+    lockEl.id = 'ma-agent-lock-status';
+    lockEl.style.cssText = 'font-size:12px;margin-bottom:.5rem;';
+    container.parentNode.insertBefore(lockEl, container.nextSibling);
+  }
+  if (locked) {
+    const days  = Math.ceil(lockMs / 86400000);
+    const unlockDate = new Date(Date.now() + lockMs).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    lockEl.innerHTML = `<span style="color:var(--warning,#f5a623);">&#128274; Agent selection is locked until ${unlockDate} (${days} day${days !== 1 ? 's' : ''} remaining). Subscriptions lock agent selection for 30 days to ensure consistent analysis.</span>`;
+    // Auto-refresh when lock expires
+    setTimeout(() => { renderMemberAnalysisAgentPicker(); }, Math.min(lockMs + 500, 3600000));
+  } else {
+    lockEl.textContent = '';
+  }
+
+  // Save button state
+  const saveBtn = container.closest('.acct-section')?.querySelector('button[onclick*="saveMemberAnalysisAgents"]');
+  if (saveBtn) saveBtn.disabled = locked;
+
+  if (!locked) updateMaCounter();
 }
 
 function updateMaCounter() {
@@ -10852,7 +10887,9 @@ async function saveMemberAnalysisAgents(btn) {
     const d = await r.json();
     if (r.ok) {
       _memberAnalysisAgents = agents;
-      showInlineMsg('ma-agents-msg', 'Agent selection saved.', 'ok');
+      _memberAnalysisAgentsSetAt = new Date().toISOString();
+      showInlineMsg('ma-agents-msg', 'Agent selection saved. Selection is locked for 30 days.', 'ok');
+      renderMemberAnalysisAgentPicker();
     } else {
       showInlineMsg('ma-agents-msg', d.error || 'Save failed', 'err');
     }
