@@ -359,43 +359,63 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
     agentData[agentId] = { agentId, name, team, months, current };
   }
 
-  // Group rankings (current period only)
+  // Group rankings (current period only) — computed within each team
   const activeIds  = selectedIds.filter(id => agentData[id].current);
-  const scoreRanks = rankBy(activeIds, id => agentData[id].current?.score    || 0);
-  const polRanks   = rankBy(activeIds, id => agentData[id].current?.policies || 0);
-  const premRanks  = acct.has_sales_addon
-    ? rankBy(activeIds, id => agentData[id].current?.premium || 0)
-    : null;
+  const salesIds   = activeIds.filter(id => agentData[id].team === 'sales');
+  const serviceIds = activeIds.filter(id => agentData[id].team === 'service');
+  const teamPool   = { sales: salesIds.length, service: serviceIds.length };
 
-  // Cost-per-policy ranking — lower is better, so negate for rankBy (higher score = better rank)
-  const cppEligible = hasCompData
-    ? activeIds.filter(id => {
-        const ag = agentData[id].current;
-        return ag?.compensation != null && ag.policies > 0;
-      })
-    : [];
-  const cppRanks = cppEligible.length > 1
-    ? rankBy(cppEligible, id => {
-        const ag = agentData[id].current;
-        return -(ag.compensation / ag.policies); // lower cost/policy = better (negate = higher rank score)
-      })
-    : null;
+  const scoreRanks = {
+    ...rankBy(salesIds,   id => agentData[id].current?.score    || 0),
+    ...rankBy(serviceIds, id => agentData[id].current?.score    || 0),
+  };
+  const polRanks = {
+    ...rankBy(salesIds,   id => agentData[id].current?.policies || 0),
+    ...rankBy(serviceIds, id => agentData[id].current?.policies || 0),
+  };
+  const answeredRanks = {
+    ...rankBy(salesIds,   id => agentData[id].current?.answered || 0),
+    ...rankBy(serviceIds, id => agentData[id].current?.answered || 0),
+  };
+  const premRanks = acct.has_sales_addon ? {
+    ...rankBy(salesIds,   id => agentData[id].current?.premium || 0),
+    ...rankBy(serviceIds, id => agentData[id].current?.premium || 0),
+  } : null;
+
+  // Cost-per-policy ranking within same team — lower cost = better (negate for rankBy)
+  const cppEligibleSales   = hasCompData ? salesIds.filter(id => {
+    const ag = agentData[id].current;
+    return ag?.compensation != null && ag.policies > 0;
+  }) : [];
+  const cppEligibleService = hasCompData ? serviceIds.filter(id => {
+    const ag = agentData[id].current;
+    return ag?.compensation != null && ag.policies > 0;
+  }) : [];
+  const cppPool  = { sales: cppEligibleSales.length, service: cppEligibleService.length };
+  const cppRanks = (cppEligibleSales.length > 1 || cppEligibleService.length > 1) ? {
+    ...rankBy(cppEligibleSales,   id => { const ag = agentData[id].current; return -(ag.compensation / ag.policies); }),
+    ...rankBy(cppEligibleService, id => { const ag = agentData[id].current; return -(ag.compensation / ag.policies); }),
+  } : null;
 
   // Build per-agent prompt blocks
   const agentBlocks = selectedIds.map(agentId => {
     const ag        = agentData[agentId];
+    const isService = ag.team === 'service';
     const scoreRank = scoreRanks[agentId];
     const polRank   = polRanks[agentId];
+    const ansRank   = answeredRanks[agentId];
     const premRank  = premRanks?.[agentId];
     const cppRank   = cppRanks?.[agentId];
-    const n         = activeIds.length;
-    const nCpp      = cppEligible.length;
+    const n         = teamPool[ag.team] || activeIds.length;
+    const nCpp      = cppPool[ag.team]  || 0;
+    const teamLabel = ag.team;
 
     const standingLine = [
-      scoreRank ? `Score #${scoreRank}/${n}` : null,
-      polRank   ? `Policies #${polRank}/${n}` : null,
-      premRank  ? `Premium #${premRank}/${n}` : null,
-      cppRank   ? `Cost/Policy #${cppRank}/${nCpp}` : null,
+      scoreRank                                                          ? `Score #${scoreRank}/${n} ${teamLabel}`    : null,
+      isService ? (ansRank ? `Answered #${ansRank}/${n} ${teamLabel}` : null)
+               : (polRank  ? `Policies #${polRank}/${n} ${teamLabel}` : null),
+      premRank  ? `Premium #${premRank}/${n} ${teamLabel}` : null,
+      cppRank   ? `Cost/Policy #${cppRank}/${nCpp} ${teamLabel}` : null,
     ].filter(Boolean).join(', ');
 
     const histLines = ag.months.slice(-6).map(m => {
@@ -445,7 +465,7 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
       ...curEffParts,
     ].filter(Boolean).join(' ') : 'No current period data';
 
-    return `AGENT: ${ag.name} (${ag.team})${standingLine ? ` | Group standing: ${standingLine}` : ''}
+    return `AGENT: ${ag.name} (${ag.team})${standingLine ? ` | Team standing: ${standingLine}` : ''}
 Archived history (oldest→newest, p=placed a=answered min=talk prem=written premium hrs=hours pol/hr=efficiency comp=compensation /pol-cost=cost per policy /hr-cost=labor cost per hour):
 ${histLines || '  No archived months'}
 Current: ${curLine}`;
@@ -460,10 +480,13 @@ Current: ${curLine}`;
   const compNote   = hasCompData
     ? 'Compensation data: available. comp=total paid that period, /pol-cost=cost per policy written (lower is more efficient), /hr-cost=labor cost per hour. Salary employees may have 0 hours but still have compensation — for them, cost per policy is the primary efficiency metric.'
     : 'Compensation data: not uploaded.';
+  const teamNote = salesIds.length && serviceIds.length
+    ? `Teams: ${salesIds.length} sales, ${serviceIds.length} service — all rankings are within-team only, do NOT cross-compare sales vs service agents`
+    : salesIds.length ? `Team: ${salesIds.length} sales agents` : `Team: ${serviceIds.length} service agents`;
 
   const prompt = `You are a sales performance coach analyzing ${groupSize} individual team member${groupSize !== 1 ? 's' : ''} for ${acct.company_name || 'a team'}.
 
-Context: ${curKey} (day ${daysElapsed} of ${daysInMonth}, ${pctElapsed}% elapsed) | Group size: ${groupSize} | Premium data: ${hasPremium ? 'yes' : 'no'} | ${hoursNote} | ${compNote}
+Context: ${curKey} (day ${daysElapsed} of ${daysInMonth}, ${pctElapsed}% elapsed) | Group size: ${groupSize} | ${teamNote} | Premium data: ${hasPremium ? 'yes' : 'no'} | ${hoursNote} | ${compNote}
 
 ${agentBlocks}
 
@@ -473,10 +496,10 @@ For EACH agent above, write an analysis starting with the exact header "AGENT: [
 
 Cover these points in 3–5 sentences per agent:
 1. Month-over-month trend — improving, declining, or plateauing? Name specific months and numbers.
-2. Strengths — where they lead in this group (calls, policies, talk time, premium, or efficiency if hours available).
-3. Gaps/concerns — the single biggest metric holding them back, with evidence from the data.
-4. Group standing — their rank vs peers in score, policies, premium (if available), and efficiency (if hours available). Be direct.
-5. Cost efficiency — if compensation data is available for this agent, comment on cost per policy trend and rank. If the agent is salaried (0 hours but has compensation), focus on cost per policy as the key efficiency metric. Skip this point if no compensation data for this agent.
+2. Strengths — where they lead within their own team. For sales agents: placed calls, policies, talk time, premium. For service agents: answered calls, handle rate, talk time. Do not evaluate service agents on placed calls or new policies — those are sales-team metrics.
+3. Gaps/concerns — the single biggest metric holding them back compared to their same-team peers, with evidence from the data.
+4. Team standing — their rank within their own team (sales or service) in score and key team metrics. For service agents, lead with answered and handle rate. For sales agents, lead with placed and policies. Be direct. Never compare a service agent's metrics against a sales agent's metrics.
+5. Cost efficiency — if compensation data is available for this agent, comment on cost per policy trend and rank within their team. If the agent is salaried (0 hours but has compensation), focus on cost per policy as the key efficiency metric. Skip this point if no compensation data for this agent.
 
 Rules: plain text only, no markdown, no bullets. Use agent names and real numbers. Separate agents with one blank line.`;
 
@@ -492,10 +515,12 @@ Rules: plain text only, no markdown, no bullets. Use agent names and real number
 
   // Attach rankings to agentData for the frontend
   for (const id of selectedIds) {
-    agentData[id].scoreRank = scoreRanks[id]   ?? null;
-    agentData[id].polRank   = polRanks[id]     ?? null;
-    agentData[id].premRank  = premRanks?.[id]  ?? null;
-    agentData[id].cppRank   = cppRanks?.[id]   ?? null;
+    agentData[id].scoreRank   = scoreRanks[id]     ?? null;
+    agentData[id].polRank     = polRanks[id]       ?? null;
+    agentData[id].answeredRank= answeredRanks[id]  ?? null;
+    agentData[id].premRank    = premRanks?.[id]    ?? null;
+    agentData[id].cppRank     = cppRanks?.[id]     ?? null;
+    agentData[id].teamPoolSize= teamPool[agentData[id].team] || activeIds.length;
   }
 
   return {

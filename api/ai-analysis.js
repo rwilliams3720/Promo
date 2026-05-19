@@ -261,12 +261,18 @@ export default async function handler(req, res) {
       return `${wk}: ${w.p} placed, ${w.a} answered, ${Math.round(w.tk)}min talk, ${w.vm} VM, ${w.ms} missed`;
     }).join('\n');
 
-    const agentText = Object.entries(agents)
-      .sort((a, b) => b[1].placed - a[1].placed)
-      .map(([id, s]) => {
-        const info = agentMeta[id] || { name: id, team: 'sales' };
-        return `${info.name} (${info.team}): ${s.placed} placed, ${s.answered} answered, ${Math.round(s.talkMin)}min talk, ${s.policies} policies`;
-      }).join('\n');
+    const salesAgentEntries   = Object.entries(agents).filter(([id]) => (agentMeta[id]?.team || 'sales') === 'sales').sort((a, b) => b[1].placed   - a[1].placed);
+    const serviceAgentEntries = Object.entries(agents).filter(([id]) => (agentMeta[id]?.team || 'sales') === 'service').sort((a, b) => b[1].answered - a[1].answered);
+    const agentText = [
+      salesAgentEntries.length ? `-- SALES TEAM (ranked by placed) --\n${salesAgentEntries.map(([id, s]) => {
+        const info = agentMeta[id] || { name: id };
+        return `${info.name} (sales): ${s.placed} placed, ${s.answered} answered, ${Math.round(s.talkMin)}min talk, ${s.policies} policies`;
+      }).join('\n')}` : null,
+      serviceAgentEntries.length ? `-- SERVICE TEAM (ranked by answered) --\n${serviceAgentEntries.map(([id, s]) => {
+        const info = agentMeta[id] || { name: id };
+        return `${info.name} (service): ${s.answered} answered, ${s.placed} placed, ${Math.round(s.talkMin)}min talk, ${s.policies} policies`;
+      }).join('\n')}` : null,
+    ].filter(Boolean).join('\n');
 
     // Build per-agent historical breakdown from historical_wins (one row per agent per archived month)
     const agentHistory = {};
@@ -342,7 +348,7 @@ ${curPeriodText}
 WEEKLY TREND (last 8 weeks):
 ${weeklyText || 'No data'}
 
-AGENT DETAIL — current active period (placed, answered, talk min, policies):
+AGENT DETAIL — current active period. IMPORTANT: Sales and service agents do fundamentally different jobs. Compare sales agents only to other sales agents (key metrics: placed, policies) and service agents only to other service agents (key metrics: answered, handle rate). Never compare across teams:
 ${agentText || 'No data'}
 
 AGENT HISTORICAL BREAKDOWN — archived months (placed p, answered a, talk min, policies pol, team rank #):
@@ -353,9 +359,9 @@ Write exactly 5 paragraphs:
 
 1. TEAM TRENDS — Scan all completed months and call out: (a) what is IMPROVING (rising placed/answered/policies, improving handle rate, falling VM/missed), (b) what is a CONCERN (declining volume, rising missed or voicemail, shrinking talk time), and (c) what to MONITOR (mixed or inconsistent signals). Name specific months and numbers. When referencing the current period (${curKey}), use the projected full-month figures, not raw-to-date numbers — clearly note it is a projection.
 
-2. INDIVIDUAL STANDOUTS — Using both current and archived months, name the top 2-3 performers. Call out specific month-over-month improvements by name and number (e.g. "Tracy grew from 31 placed in Mar to 44 in Apr"). How do they compare to the rest of the team?
+2. INDIVIDUAL STANDOUTS — Name the top performer(s) within EACH team separately (sales and service). For sales agents, rank by placed calls and policies. For service agents, rank by answered calls and handle rate — NOT by placed calls or policies. Call out month-over-month improvements by name and number. Compare each agent only to teammates in the same role.
 
-3. COACHING PRIORITIES — Using both current and archived months, name the bottom 2-3 agents. For each, show their trend across months — are they declining, flat, or recovering? Name the single metric most holding them back.
+3. COACHING PRIORITIES — Name the agent(s) needing the most attention within EACH team separately. For sales agents, key concern metrics are placed calls and policies. For service agents, key concern metrics are answered calls and handle rate. Compare each agent only to their same-team peers. Show their trend and the single metric holding them back.
 
 4. WEEKLY SIGNALS — What does the week-over-week data reveal that the monthly view masks? Call out any sharp drops, recovery trends, or outlier weeks by name.
 
