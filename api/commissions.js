@@ -148,6 +148,31 @@ export default async function handler(req, res) {
     const structures = structuresRes.data || [];
     const subcats    = subcatsRes.data    || [];
 
+    // Fetch bonus activity counts for the period (graceful — tables may not exist)
+    const actCounts = {}; // { agentId: { typeId: count } }
+    try {
+      const [actTypesRes, actEntriesRes] = await Promise.all([
+        supabase.from('bonus_activity_types').select('id, source, call_disposition').eq('user_id', dataUserId).eq('active', true),
+        supabase.from('bonus_activities').select('activity_type_id, agent_id, count').eq('user_id', dataUserId).gte('activity_date', fromDate).lte('activity_date', toDate),
+      ]);
+      for (const e of (actEntriesRes.data || [])) {
+        if (!actCounts[e.agent_id]) actCounts[e.agent_id] = {};
+        actCounts[e.agent_id][e.activity_type_id] = (actCounts[e.agent_id][e.activity_type_id] || 0) + e.count;
+      }
+      const callTypes = (actTypesRes.data || []).filter(t => t.source === 'call_log');
+      if (callTypes.length) {
+        const { data: calls } = await supabase.from('call_log').select('agent_id, disposition').eq('user_id', dataUserId).gte('call_dt', fromDate).lte('call_dt', toDate);
+        for (const ct of callTypes) {
+          for (const c of (calls || [])) {
+            if (!c.agent_id) continue;
+            if (ct.call_disposition && c.disposition !== ct.call_disposition) continue;
+            if (!actCounts[c.agent_id]) actCounts[c.agent_id] = {};
+            actCounts[c.agent_id][ct.id] = (actCounts[c.agent_id][ct.id] || 0) + 1;
+          }
+        }
+      }
+    } catch(_) { /* bonus tables may not be migrated yet */ }
+
     // Build lookup maps
     const structureById = {};
     for (const s of structures) structureById[s.id] = s;
@@ -288,8 +313,12 @@ export default async function handler(req, res) {
 
           const countOk    = !grp.min_count || (groupCounts[grp.id] || 0) >= grp.min_count;
           const requiresOk = (grp.requires || []).every(r => groupStatus[r]?.passes);
+          const agActs     = actCounts[acc.agent_id] || {};
+          const reqActsOk  = (grp.required_activities || []).every(ra =>
+            (agActs[ra.activity_type_id] || 0) >= (ra.min_count || 1)
+          );
 
-          if (!countOk || !requiresOk) {
+          if (!countOk || !requiresOk || !reqActsOk) {
             groupStatus[grp.id] = { passes: false, payout: 0 };
           } else {
             const earned = groupEarned[grp.id] || 0;
@@ -315,8 +344,12 @@ export default async function handler(req, res) {
       for (const grp of thresholds) {
         if (!groupStatus[grp.id]?.passes) continue;
         for (const esc of (grp.escalators || [])) {
-          if (!esc.trigger_group_id) continue;
-          const triggerCount = groupCounts[esc.trigger_group_id] || 0;
+          const triggerCount = esc.trigger_group_id
+            ? (groupCounts[esc.trigger_group_id] || 0)
+            : esc.activity_type_id
+              ? ((actCounts[acc.agent_id] || {})[esc.activity_type_id] || 0)
+              : -1;
+          if (triggerCount < 0) continue;
           const tier = (esc.tiers || []).find(tr =>
             triggerCount >= (tr.min ?? 0) &&
             (tr.max == null || triggerCount <= tr.max)

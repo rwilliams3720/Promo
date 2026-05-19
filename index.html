@@ -1237,6 +1237,7 @@
             <button class="acct-stab"        id="sales-stab-products"    onclick="showSalesSubTab('products',this)"    style="font-size:13px;">Products</button>
             <button class="acct-stab"        id="sales-stab-locations"   onclick="showSalesSubTab('locations',this)"   style="font-size:13px;">Locations</button>
             <button class="acct-stab"        id="sales-stab-commissions" onclick="showSalesSubTab('commissions',this)" style="font-size:13px;">Commissions</button>
+            <button class="acct-stab"        id="sales-stab-bonus"       onclick="showSalesSubTab('bonus',this)"       style="font-size:13px;">Bonus</button>
           </div>
 
           <!-- ── Team sub-pane ── -->
@@ -1628,6 +1629,85 @@
 
           </div><!-- /sales-sub-commissions -->
 
+          <!-- ── Bonus sub-pane ── -->
+          <div id="sales-sub-bonus" style="display:none">
+
+            <!-- Activity Types -->
+            <div class="acct-section">
+              <h3>Activity Types</h3>
+              <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Define trackable activities for bonus escalators and commission requirements. Call activities auto-count from call log data; manual activities are entered in the Activity Log.</p>
+              <div id="bonus-types-list" style="margin-bottom:.75rem;"></div>
+              <div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.75rem;">
+                <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem;">Add Activity Type</div>
+                <div style="display:grid;grid-template-columns:1fr 150px 160px;gap:.5rem;margin-bottom:.5rem;align-items:end;">
+                  <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Name</label>
+                    <input id="bonus-new-name" type="text" placeholder="e.g. Held Appointment" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;outline:none;"></div>
+                  <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Category</label>
+                    <select id="bonus-new-category" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;outline:none;">
+                      <option value="appointment">Appointment</option>
+                      <option value="review">Review</option>
+                      <option value="call">Call Activity</option>
+                      <option value="custom">Custom</option>
+                    </select></div>
+                  <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Source</label>
+                    <select id="bonus-new-source" onchange="onBonusNewSourceChange()" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;outline:none;">
+                      <option value="manual">Manual Entry</option>
+                      <option value="call_log">From Call Log</option>
+                    </select></div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem;">
+                  <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Subcategory / Type (optional)</label>
+                    <input id="bonus-new-subcat" type="text" placeholder="e.g. In-Person, Virtual" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;outline:none;"></div>
+                  <div id="bonus-new-call-disp-row" style="display:none;"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Call Disposition Filter</label>
+                    <select id="bonus-new-call-disp" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;outline:none;">
+                      <option value="">All call types</option>
+                      <option value="placed">Placed (Outbound)</option>
+                      <option value="answered">Answered (Inbound)</option>
+                      <option value="voicemail">Voicemail</option>
+                      <option value="missed">Missed / Abandon</option>
+                    </select></div>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <button class="btn btn-primary" style="font-size:12px;padding:5px 14px;" onclick="addBonusActivityType(this)">+ Add</button>
+                  <span id="bonus-type-add-msg" style="font-size:12px;display:none;"></span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Activity Log -->
+            <div class="acct-section">
+              <h3>Activity Log</h3>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:.75rem;">
+                <select id="bonus-log-month" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;"></select>
+                <select id="bonus-log-year" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;"></select>
+                <button class="btn btn-secondary" style="font-size:12px;padding:4px 12px;" onclick="loadBonusLog()">Load</button>
+                <button class="btn btn-primary" style="font-size:12px;padding:4px 12px;" onclick="showBonusEntryForm()">+ Log Activity</button>
+              </div>
+              <div id="bonus-entry-form" style="display:none;background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.65rem .75rem;margin-bottom:.75rem;">
+                <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem;">Log Activity</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 130px 70px;gap:.5rem;margin-bottom:.5rem;align-items:end;">
+                  <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Agent</label>
+                    <select id="bonus-entry-agent" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;outline:none;"></select></div>
+                  <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Activity Type</label>
+                    <select id="bonus-entry-type" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;outline:none;"></select></div>
+                  <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Date</label>
+                    <input id="bonus-entry-date" type="text" placeholder="YYYY-MM-DD" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;outline:none;"></div>
+                  <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Count</label>
+                    <input id="bonus-entry-count" type="number" min="1" value="1" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;outline:none;"></div>
+                </div>
+                <div style="margin-bottom:.5rem;"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Notes (optional)</label>
+                  <input id="bonus-entry-notes" type="text" placeholder="Optional notes" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;outline:none;"></div>
+                <div style="display:flex;gap:8px;align-items:center;">
+                  <button class="btn btn-primary" style="font-size:12px;padding:5px 14px;" onclick="saveBonusEntry(this)">Save</button>
+                  <button class="btn btn-secondary" style="font-size:12px;padding:4px 10px;" onclick="document.getElementById('bonus-entry-form').style.display='none'">Cancel</button>
+                  <span id="bonus-entry-msg" style="font-size:12px;display:none;"></span>
+                </div>
+              </div>
+              <div id="bonus-log-content" style="font-size:13px;color:var(--muted);">Select a month and click Load.</div>
+            </div>
+
+          </div><!-- /sales-sub-bonus -->
+
         </div>
       </div>
 
@@ -1939,6 +2019,11 @@ let _salesEntryMode   = 'upload';   // 'upload' | 'manual'
 // ── Commissions Add-On state ─────────────────────────────────────────────────
 let _hasCommissionsAddon = false;
 let _commissionStructures = [];     // [{id, name, default_split_ratio, rates}]
+let _activityTypes        = [];     // [{id, name, category, subcategory, source, call_disposition, active}]
+let _bonusLogEntries      = [];
+let _bonusLogCallTotals   = [];
+let _bonusLogMonth        = new Date().getMonth() + 1;
+let _bonusLogYear         = new Date().getFullYear();
 let _commMonth    = '';             // 'YYYY-MM'
 let _commData     = null;           // last loaded commissions response
 let _commPayments = {};             // agentId → paid object (populated by renderCommissions)
@@ -2394,7 +2479,7 @@ function showAccountSubTab(name, btn) {
 }
 
 function showSalesSubTab(name, btn) {
-  ['team','checklist','products','locations','commissions'].forEach(n => {
+  ['team','checklist','products','locations','commissions','bonus'].forEach(n => {
     const p = document.getElementById('sales-sub-' + n);
     if (p) p.style.display = n === name ? '' : 'none';
   });
@@ -2402,6 +2487,7 @@ function showSalesSubTab(name, btn) {
   const activeBtn = btn || document.getElementById('sales-stab-' + name);
   if (activeBtn) activeBtn.classList.add('active');
   if (name === 'commissions') renderCommissionStructuresList();
+  if (name === 'bonus') initBonusSubTab();
 }
 
 function showManageSubTab(name, btn) {
@@ -5126,10 +5212,12 @@ function openStructureBuilder(structure) {
       products:       t.products || [],
       min_count:      t.min_count || 0,
       min_commission: t.min_commission || 0,
-      requires:       [],  // filled in below after all IDs are mapped
-      escalators:     (t.escalators || []).map(e => ({
+      requires:            [],  // filled in below after all IDs are mapped
+      required_activities: (t.required_activities || []),
+      escalators:          (t.escalators || []).map(e => ({
         id:               e.id || ('esc' + (++_csEscSeq)),
         trigger_group_id: e.trigger_group_id || '',  // remapped in second pass
+        activity_type_id: e.activity_type_id || null,
         tiers:            (e.tiers || []).map(tier => ({
           min:       tier.min ?? 0,
           max:       tier.max ?? null,
@@ -5224,9 +5312,16 @@ function renderThresholdGroups() {
           <button onclick="removeEscTier('${t.id}','${esc.id}',${ti})" style="background:none;border:none;color:var(--danger);font-size:13px;cursor:pointer;padding:0;line-height:1;opacity:.7;">✕</button>
         </div>`).join('');
 
-      const triggerOpts = others.map(og =>
-        `<option value="${og.id}"${esc.trigger_group_id === og.id ? ' selected' : ''}>${escHtml(thrGroupName(og, og._idx))}</option>`
-      ).join('');
+      const activeActTypes = _activityTypes.filter(at => at.active !== false);
+      const selectedActId  = esc.activity_type_id || null;
+      const triggerOpts = [
+        others.length ? '<optgroup label="Production Groups">' : '',
+        ...others.map(og => `<option value="${og.id}"${esc.trigger_group_id === og.id ? ' selected' : ''}>${escHtml(thrGroupName(og, og._idx))}</option>`),
+        others.length ? '</optgroup>' : '',
+        activeActTypes.length ? '<optgroup label="Activity Types">' : '',
+        ...activeActTypes.map(at => `<option value="act:${at.id}"${selectedActId === at.id ? ' selected' : ''}>${escHtml(at.name)}${at.subcategory?' · '+escHtml(at.subcategory):''}</option>`),
+        activeActTypes.length ? '</optgroup>' : '',
+      ].join('');
 
       return `<div style="background:rgba(0,212,255,.04);border:1px solid rgba(0,212,255,.15);border-radius:6px;padding:.4rem .55rem;margin-bottom:.35rem;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.3rem;">
@@ -5295,16 +5390,32 @@ function renderThresholdGroups() {
         </div>
       </div>` : ''}
 
+      ${_activityTypes.filter(at => at.active !== false).length ? `<div style="margin-bottom:.5rem;">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Required Activities (min count)</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${_activityTypes.filter(at => at.active !== false).map(at => {
+            const existing = (t.required_activities||[]).find(ra => ra.activity_type_id === at.id);
+            return `<label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;background:rgba(123,97,255,.06);border:1px solid var(--border2);border-radius:5px;padding:2px 8px;white-space:nowrap;">
+              <input type="checkbox"${existing?' checked':''} style="accent-color:#7b61ff;cursor:pointer;"
+                onchange="updateRequiredActivity('${t.id}','${at.id}',this.checked)">
+              ${escHtml(at.name)}${at.subcategory?' <span style="color:var(--muted);">· '+escHtml(at.subcategory)+'</span>':''}
+              <input type="number" min="1" value="${existing?.min_count||1}" style="width:36px;${inp}font-size:11px;padding:2px 5px;"
+                oninput="updateRequiredActivityMin('${t.id}','${at.id}',this.value)" title="Minimum count required">
+            </label>`;
+          }).join('')}
+        </div>
+      </div>` : ''}
+
       <div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.3rem;">
           <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">Bonus Escalators</div>
-          ${others.length
+          ${(others.length || _activityTypes.filter(at=>at.active!==false).length)
             ? `<button class="btn btn-secondary" onclick="addEscalator('${t.id}')" style="${btnSm}">+ Add Escalator</button>`
-            : `<span style="font-size:10px;color:var(--border2);font-style:italic;">Add more groups to enable</span>`}
+            : `<span style="font-size:10px;color:var(--border2);font-style:italic;">Add more groups or activity types to enable</span>`}
         </div>
         ${escs.length
           ? escHtml2
-          : `<div style="font-size:10px;color:var(--border2);font-style:italic;">${others.length ? 'No escalators — commission pays at face value.' : ''}</div>`}
+          : `<div style="font-size:10px;color:var(--border2);font-style:italic;">${(others.length || _activityTypes.length) ? 'No escalators — commission pays at face value.' : ''}</div>`}
       </div>
     </div>`;
   }).join('');
@@ -5385,7 +5496,14 @@ function updateEscTrigger(groupId, escId, val) {
   const grp = _csThresholds.find(t => t.id === groupId);
   if (!grp) return;
   const esc = (grp.escalators || []).find(e => e.id === escId);
-  if (esc) esc.trigger_group_id = val;
+  if (!esc) return;
+  if (val.startsWith('act:')) {
+    esc.activity_type_id = val.slice(4);
+    esc.trigger_group_id = null;
+  } else {
+    esc.trigger_group_id = val || null;
+    esc.activity_type_id = null;
+  }
 }
 
 function updateEscTier(groupId, escId, tierIdx, field, val) {
@@ -5558,6 +5676,329 @@ async function duplicateCommissionStructure(id) {
 async function csFileChange(input) {
   if (input.files?.[0]) await parseAndUploadCommissionXlsx(input.files[0]);
   input.value = '';
+}
+
+// ── Bonus Activity Tab ────────────────────────────────────────────────────────
+
+const BONUS_CAT_LABELS = { appointment:'Appt', review:'Review', call:'Call', custom:'Custom' };
+const BONUS_CAT_COLORS = { appointment:'rgba(0,212,255,.15)', review:'rgba(0,229,180,.15)', call:'rgba(255,165,0,.15)', custom:'rgba(123,97,255,.15)' };
+
+function initBonusSubTab() {
+  // Populate month/year pickers
+  const mSel = document.getElementById('bonus-log-month');
+  const ySel = document.getElementById('bonus-log-year');
+  if (mSel && !mSel.options.length) {
+    ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].forEach((m,i) => {
+      const o = document.createElement('option'); o.value = i+1; o.textContent = m; mSel.appendChild(o);
+    });
+  }
+  if (ySel && !ySel.options.length) {
+    const y = new Date().getFullYear();
+    for (let i = y-1; i <= y+1; i++) { const o = document.createElement('option'); o.value = i; o.textContent = i; ySel.appendChild(o); }
+  }
+  if (mSel) mSel.value = _bonusLogMonth;
+  if (ySel) ySel.value = _bonusLogYear;
+  loadBonusActivityTypes();
+}
+
+async function loadBonusActivityTypes() {
+  const r = await fetch('/api/bonus-activities?resource=types', { headers: authHeaders() });
+  if (!r.ok) return;
+  _activityTypes = await r.json();
+  renderBonusActivityTypes();
+}
+
+function _bonusInputSt() {
+  return 'width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 7px;font-size:12px;outline:none;';
+}
+
+function renderBonusActivityTypes() {
+  const el = document.getElementById('bonus-types-list');
+  if (!el) return;
+  if (!_activityTypes.length) {
+    el.innerHTML = '<div style="font-size:13px;color:var(--muted);margin-bottom:.5rem;">No activity types defined yet. Add one below.</div>';
+    return;
+  }
+  el.innerHTML = _activityTypes.map(t => {
+    const sid   = escHtml(t.id);
+    const catBg = BONUS_CAT_COLORS[t.category] || BONUS_CAT_COLORS.custom;
+    const catLb = BONUS_CAT_LABELS[t.category] || t.category;
+    const srcBadge = t.source === 'call_log'
+      ? '<span style="font-size:10px;background:rgba(255,165,0,.15);border:1px solid rgba(255,165,0,.3);border-radius:4px;padding:1px 6px;margin-left:4px;">Call Log</span>'
+      : '<span style="font-size:10px;background:rgba(255,255,255,.07);border:1px solid var(--border2);border-radius:4px;padding:1px 6px;margin-left:4px;">Manual</span>';
+    return `<div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.6rem .75rem;margin-bottom:.4rem;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <input type="checkbox" ${t.active !== false ? 'checked' : ''} onchange="toggleBonusTypeActive('${sid}',this.checked)" title="Active">
+        <span style="font-size:11px;background:${catBg};border-radius:4px;padding:1px 7px;white-space:nowrap;">${escHtml(catLb)}</span>
+        <span style="font-size:13px;font-weight:600;flex:1;">${escHtml(t.name)}${t.subcategory ? ` <span style="font-size:11px;color:var(--muted);font-weight:400;">· ${escHtml(t.subcategory)}</span>` : ''}${srcBadge}</span>
+        <button class="btn btn-secondary" style="padding:2px 9px;font-size:11px;" onclick="toggleBonusTypeEdit('${sid}')">Edit</button>
+        <button class="btn btn-secondary" style="padding:2px 8px;font-size:11px;" onclick="deleteBonusActivityType('${sid}',this)">✕</button>
+      </div>
+      <div id="bonus-type-edit-${sid}" style="display:none;margin-top:.6rem;padding-top:.6rem;border-top:1px solid var(--border2);">
+        <div style="display:grid;grid-template-columns:1fr 140px 150px;gap:.5rem;margin-bottom:.5rem;">
+          <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px;">Name</label>
+            <input id="bonus-edit-name-${sid}" type="text" value="${escHtml(t.name)}" style="${_bonusInputSt()}"></div>
+          <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px;">Category</label>
+            <select id="bonus-edit-cat-${sid}" style="${_bonusInputSt()}">
+              <option value="appointment"${t.category==='appointment'?' selected':''}>Appointment</option>
+              <option value="review"${t.category==='review'?' selected':''}>Review</option>
+              <option value="call"${t.category==='call'?' selected':''}>Call Activity</option>
+              <option value="custom"${t.category==='custom'?' selected':''}>Custom</option>
+            </select></div>
+          <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px;">Source</label>
+            <select id="bonus-edit-src-${sid}" onchange="onBonusEditSourceChange('${sid}')" style="${_bonusInputSt()}">
+              <option value="manual"${t.source==='manual'?' selected':''}>Manual Entry</option>
+              <option value="call_log"${t.source==='call_log'?' selected':''}>From Call Log</option>
+            </select></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem;">
+          <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px;">Subcategory / Type</label>
+            <input id="bonus-edit-subcat-${sid}" type="text" value="${escHtml(t.subcategory||'')}" placeholder="e.g. In-Person" style="${_bonusInputSt()}"></div>
+          <div id="bonus-edit-disp-row-${sid}" style="display:${t.source==='call_log'?'':'none'};">
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px;">Call Disposition Filter</label>
+            <select id="bonus-edit-disp-${sid}" style="${_bonusInputSt()}">
+              <option value=""${!t.call_disposition?' selected':''}>All call types</option>
+              <option value="placed"${t.call_disposition==='placed'?' selected':''}>Placed (Outbound)</option>
+              <option value="answered"${t.call_disposition==='answered'?' selected':''}>Answered (Inbound)</option>
+              <option value="voicemail"${t.call_disposition==='voicemail'?' selected':''}>Voicemail</option>
+              <option value="missed"${t.call_disposition==='missed'?' selected':''}>Missed / Abandon</option>
+            </select></div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn btn-primary" style="padding:4px 12px;font-size:12px;" onclick="saveBonusActivityType('${sid}',this)">Save</button>
+          <button class="btn btn-secondary" style="padding:4px 10px;font-size:12px;" onclick="toggleBonusTypeEdit('${sid}')">Cancel</button>
+          <span id="bonus-type-save-msg-${sid}" style="font-size:12px;display:none;"></span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleBonusTypeEdit(id) {
+  const el = document.getElementById('bonus-type-edit-' + id);
+  if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+
+function onBonusEditSourceChange(id) {
+  const src  = document.getElementById('bonus-edit-src-' + id)?.value;
+  const disp = document.getElementById('bonus-edit-disp-row-' + id);
+  if (disp) disp.style.display = src === 'call_log' ? '' : 'none';
+}
+
+function onBonusNewSourceChange() {
+  const src  = document.getElementById('bonus-new-source')?.value;
+  const disp = document.getElementById('bonus-new-call-disp-row');
+  if (disp) disp.style.display = src === 'call_log' ? '' : 'none';
+}
+
+async function addBonusActivityType(btn) {
+  const name     = (document.getElementById('bonus-new-name')?.value || '').trim();
+  const category = document.getElementById('bonus-new-category')?.value || 'custom';
+  const source   = document.getElementById('bonus-new-source')?.value   || 'manual';
+  const subcategory    = (document.getElementById('bonus-new-subcat')?.value || '').trim() || null;
+  const call_disposition = source === 'call_log' ? (document.getElementById('bonus-new-call-disp')?.value || null) : null;
+  if (!name) return showInlineMsg('bonus-type-add-msg', 'Name is required', 'err');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/bonus-activities', {
+      method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'add_type', name, category, subcategory, source, call_disposition }),
+    });
+    const d = await r.json();
+    if (!r.ok) { showInlineMsg('bonus-type-add-msg', d.error || 'Failed', 'err'); return; }
+    _activityTypes.push(d);
+    renderBonusActivityTypes();
+    document.getElementById('bonus-new-name').value = '';
+    document.getElementById('bonus-new-subcat').value = '';
+    showInlineMsg('bonus-type-add-msg', 'Added', 'ok');
+  } finally { btn.disabled = false; }
+}
+
+async function saveBonusActivityType(id, btn) {
+  const name             = (document.getElementById('bonus-edit-name-' + id)?.value || '').trim();
+  const category         = document.getElementById('bonus-edit-cat-' + id)?.value  || 'custom';
+  const source           = document.getElementById('bonus-edit-src-' + id)?.value  || 'manual';
+  const subcategory      = (document.getElementById('bonus-edit-subcat-' + id)?.value || '').trim() || null;
+  const call_disposition = source === 'call_log' ? (document.getElementById('bonus-edit-disp-' + id)?.value || null) : null;
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/bonus-activities', {
+      method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'update_type', id, name, category, subcategory, source, call_disposition }),
+    });
+    const msgEl = document.getElementById('bonus-type-save-msg-' + id);
+    if (r.ok) {
+      const t = _activityTypes.find(x => x.id === id);
+      if (t) Object.assign(t, { name, category, subcategory, source, call_disposition });
+      renderBonusActivityTypes();
+    } else {
+      if (msgEl) { msgEl.textContent = 'Error saving'; msgEl.style.color='var(--danger)'; msgEl.style.display=''; setTimeout(()=>{ if(msgEl) msgEl.style.display='none'; },2500); }
+    }
+  } finally { btn.disabled = false; }
+}
+
+async function toggleBonusTypeActive(id, active) {
+  const t = _activityTypes.find(x => x.id === id);
+  if (t) t.active = active;
+  await fetch('/api/bonus-activities', {
+    method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'update_type', id, active }),
+  });
+}
+
+async function deleteBonusActivityType(id, btn) {
+  if (!confirm('Delete this activity type? Existing log entries for it will also be deleted.')) return;
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/api/bonus-activities?resource=types&id=${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders() });
+    if (r.ok) { _activityTypes = _activityTypes.filter(t => t.id !== id); renderBonusActivityTypes(); }
+  } finally { btn.disabled = false; }
+}
+
+function showBonusEntryForm() {
+  const manualTypes = _activityTypes.filter(t => t.source === 'manual' && t.active !== false);
+  if (!manualTypes.length) { alert('No manual activity types defined. Add a Manual Entry type first.'); return; }
+  const agentSel = document.getElementById('bonus-entry-agent');
+  const typeSel  = document.getElementById('bonus-entry-type');
+  if (agentSel) {
+    agentSel.innerHTML = '<option value="">— Select agent —</option>' +
+      _agentRoster.filter(a => a.active !== false).map(a => `<option value="${escHtml(a.agent_id)}">${escHtml(a.name)}</option>`).join('');
+  }
+  if (typeSel) {
+    typeSel.innerHTML = manualTypes.map(t => `<option value="${escHtml(t.id)}">${escHtml(t.name)}${t.subcategory?' · '+escHtml(t.subcategory):''}</option>`).join('');
+  }
+  const dateEl = document.getElementById('bonus-entry-date');
+  if (dateEl && !dateEl.value) {
+    const now = new Date();
+    dateEl.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  }
+  const form = document.getElementById('bonus-entry-form');
+  if (form) form.style.display = '';
+}
+
+async function saveBonusEntry(btn) {
+  const activity_type_id = document.getElementById('bonus-entry-type')?.value;
+  const agent_id         = document.getElementById('bonus-entry-agent')?.value;
+  const activity_date    = (document.getElementById('bonus-entry-date')?.value || '').trim();
+  const count            = parseInt(document.getElementById('bonus-entry-count')?.value) || 1;
+  const notes            = (document.getElementById('bonus-entry-notes')?.value || '').trim() || null;
+  if (!activity_type_id || !agent_id || !activity_date) return showInlineMsg('bonus-entry-msg', 'Agent, type, and date required', 'err');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/bonus-activities', {
+      method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'add_entry', activity_type_id, agent_id, activity_date, count, notes }),
+    });
+    if (!r.ok) { const d = await r.json(); showInlineMsg('bonus-entry-msg', d.error || 'Failed', 'err'); return; }
+    document.getElementById('bonus-entry-form').style.display = 'none';
+    document.getElementById('bonus-entry-notes').value = '';
+    loadBonusLog();
+  } finally { btn.disabled = false; }
+}
+
+async function loadBonusLog() {
+  _bonusLogMonth = parseInt(document.getElementById('bonus-log-month')?.value) || _bonusLogMonth;
+  _bonusLogYear  = parseInt(document.getElementById('bonus-log-year')?.value)  || _bonusLogYear;
+  const el = document.getElementById('bonus-log-content');
+  if (el) el.innerHTML = '<span style="color:var(--muted);">Loading…</span>';
+  try {
+    const r = await fetch(`/api/bonus-activities?month=${_bonusLogMonth}&year=${_bonusLogYear}`, { headers: authHeaders() });
+    if (!r.ok) { if (el) el.innerHTML = '<span style="color:var(--danger);">Error loading log.</span>'; return; }
+    const d = await r.json();
+    _bonusLogEntries    = d.entries    || [];
+    _bonusLogCallTotals = d.callTotals || [];
+    renderBonusLog();
+  } catch(e) { if (el) el.innerHTML = '<span style="color:var(--danger);">Error loading log.</span>'; }
+}
+
+function renderBonusLog() {
+  const el = document.getElementById('bonus-log-content');
+  if (!el) return;
+  const activeTypes = _activityTypes.filter(t => t.active !== false);
+  if (!activeTypes.length) { el.innerHTML = '<span style="color:var(--muted);">No activity types defined.</span>'; return; }
+  const hasData = _bonusLogEntries.length || _bonusLogCallTotals.length;
+  if (!hasData) { el.innerHTML = '<span style="color:var(--muted);">No activities logged for this month.</span>'; return; }
+
+  const getAgentName = id => _agentRoster.find(a => a.agent_id === id)?.name || id;
+
+  el.innerHTML = activeTypes.map(t => {
+    const catBg = BONUS_CAT_COLORS[t.category] || BONUS_CAT_COLORS.custom;
+    const catLb = BONUS_CAT_LABELS[t.category] || t.category;
+
+    if (t.source === 'call_log') {
+      const rows = _bonusLogCallTotals.filter(x => x.activity_type_id === t.id);
+      if (!rows.length) return '';
+      const total = rows.reduce((s,r)=>s+r.count,0);
+      return `<div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.65rem .75rem;margin-bottom:.5rem;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:.4rem;">
+          <span style="font-size:11px;background:${catBg};border-radius:4px;padding:1px 7px;">${escHtml(catLb)}</span>
+          <strong style="font-size:13px;">${escHtml(t.name)}${t.subcategory?` <span style="font-weight:400;color:var(--muted);">· ${escHtml(t.subcategory)}</span>`:''}</strong>
+          <span style="font-size:10px;background:rgba(255,165,0,.15);border:1px solid rgba(255,165,0,.3);border-radius:4px;padding:1px 6px;">Auto · Call Log</span>
+          <span style="margin-left:auto;font-size:12px;color:var(--muted);">Total: <strong style="color:var(--text);">${total}</strong></span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${rows.map(r=>`<span style="font-size:12px;background:rgba(255,255,255,.04);border:1px solid var(--border2);border-radius:6px;padding:3px 10px;">${escHtml(getAgentName(r.agent_id))} <strong>${r.count}</strong></span>`).join('')}
+        </div>
+      </div>`;
+    }
+
+    // Manual type
+    const entries = _bonusLogEntries.filter(x => x.activity_type_id === t.id);
+    if (!entries.length) return '';
+    const total = entries.reduce((s,e)=>s+e.count,0);
+    return `<div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.65rem .75rem;margin-bottom:.5rem;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:.4rem;">
+        <span style="font-size:11px;background:${catBg};border-radius:4px;padding:1px 7px;">${escHtml(catLb)}</span>
+        <strong style="font-size:13px;">${escHtml(t.name)}${t.subcategory?` <span style="font-weight:400;color:var(--muted);">· ${escHtml(t.subcategory)}</span>`:''}</strong>
+        <span style="margin-left:auto;font-size:12px;color:var(--muted);">Total: <strong style="color:var(--text);">${total}</strong></span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead><tr style="color:var(--muted);text-align:left;">
+          <th style="padding:3px 8px 3px 0;font-weight:600;">Agent</th>
+          <th style="padding:3px 8px 3px 0;">Date</th>
+          <th style="padding:3px 8px 3px 0;">Count</th>
+          <th style="padding:3px 8px 3px 0;">Notes</th>
+          <th></th>
+        </tr></thead>
+        <tbody>${entries.map(e=>`<tr style="border-top:1px solid var(--border2);">
+          <td style="padding:4px 8px 4px 0;">${escHtml(getAgentName(e.agent_id))}</td>
+          <td style="padding:4px 8px 4px 0;">${escHtml(e.activity_date||'')}</td>
+          <td style="padding:4px 8px 4px 0;"><strong>${e.count}</strong></td>
+          <td style="padding:4px 8px 4px 0;color:var(--muted);">${escHtml(e.notes||'')}</td>
+          <td style="padding:4px 0;text-align:right;"><button onclick="deleteBonusEntry('${escHtml(e.id)}',this)" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;opacity:.6;" title="Delete">✕</button></td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>`;
+  }).filter(Boolean).join('') || '<span style="color:var(--muted);">No activities logged for this month.</span>';
+}
+
+async function deleteBonusEntry(id, btn) {
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/api/bonus-activities?resource=entries&id=${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders() });
+    if (r.ok) { _bonusLogEntries = _bonusLogEntries.filter(e => e.id !== id); renderBonusLog(); }
+  } finally { btn.disabled = false; }
+}
+
+// ── Bonus: required activities helpers (commission builder) ───────────────────
+
+function updateRequiredActivity(tId, actTypeId, checked) {
+  const grp = _csThresholds.find(t => t.id === tId);
+  if (!grp) return;
+  grp.required_activities = grp.required_activities || [];
+  if (checked) {
+    if (!grp.required_activities.some(ra => ra.activity_type_id === actTypeId)) {
+      grp.required_activities.push({ activity_type_id: actTypeId, min_count: 1 });
+    }
+  } else {
+    grp.required_activities = grp.required_activities.filter(ra => ra.activity_type_id !== actTypeId);
+  }
+}
+
+function updateRequiredActivityMin(tId, actTypeId, val) {
+  const grp = _csThresholds.find(t => t.id === tId);
+  const ra  = (grp?.required_activities || []).find(r => r.activity_type_id === actTypeId);
+  if (ra) ra.min_count = parseInt(val) || 1;
 }
 
 function csFileDrop(event) {
@@ -6670,6 +7111,13 @@ async function loadAddonConfig() {
   _salesLocations   = d.locations     || [];
   _productTypes     = d.productTypes  || [];
   _leadSources      = d.leadSources   || [];
+  // Load activity types if commissions add-on is active
+  if (_hasCommissionsAddon || _isAdmin) {
+    fetch('/api/bonus-activities?resource=types', { headers: authHeaders() })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => { _activityTypes = Array.isArray(data) ? data : []; })
+      .catch(() => {});
+  }
 }
 
 // ── Purchase add-on ───────────────────────────────────────────────────────────
