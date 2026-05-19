@@ -2413,17 +2413,23 @@ async function checkAccountAndShow(session) {
         _dataUserId       = _ownerUserId;
         const { data: ownerAcct } = await _supabase
           .from('accounts')
-          .select('company_name, plan, status, trial_ends_at, has_sales_addon, has_commissions_addon, sales_entry_mode, is_admin, self_report_config')
+          .select('company_name, plan, status, trial_ends_at, has_sales_addon, has_commissions_addon, sales_entry_mode, is_admin, self_report_config, ai_analysis_at, has_member_analysis, member_analysis_agents, member_analysis_at, member_analysis_count, member_hours_data')
           .eq('user_id', _ownerUserId)
           .single();
         if (ownerAcct) {
-          _ownerCompany        = ownerAcct.company_name        || '';
-          _currentPlan         = ownerAcct.plan                || 'basic';
-          _acctStatus          = ownerAcct.status              || 'trial';
-          _hasSalesAddon       = ownerAcct.has_sales_addon || ownerAcct.is_admin || false;
-          _hasCommissionsAddon = ownerAcct.has_commissions_addon || false;
-          _salesEntryMode      = ownerAcct.sales_entry_mode    || 'upload';
-          _selfReportConfig    = ownerAcct.self_report_config  || {};
+          _ownerCompany           = ownerAcct.company_name           || '';
+          _currentPlan            = ownerAcct.plan                   || 'basic';
+          _acctStatus             = ownerAcct.status                 || 'trial';
+          _hasSalesAddon          = ownerAcct.has_sales_addon || ownerAcct.is_admin || false;
+          _hasCommissionsAddon    = ownerAcct.has_commissions_addon  || false;
+          _salesEntryMode         = ownerAcct.sales_entry_mode       || 'upload';
+          _selfReportConfig       = ownerAcct.self_report_config     || {};
+          _analysisAt             = ownerAcct.ai_analysis_at         || null;
+          _hasMemberAnalysis      = ownerAcct.has_member_analysis    || false;
+          _memberAnalysisAgents   = ownerAcct.member_analysis_agents || [];
+          _memberAnalysisAt       = ownerAcct.member_analysis_at     || null;
+          _memberAnalysisCount    = ownerAcct.member_analysis_count  || 0;
+          _memberHoursData        = ownerAcct.member_hours_data?.periods || [];
           if (_acctStatus === 'trial' && ownerAcct.trial_ends_at && new Date(ownerAcct.trial_ends_at) < new Date()) {
             _acctStatus = 'past_due'; _trialExpired = true;
           }
@@ -10177,6 +10183,16 @@ function renderMemberAnalysisTeaser() {
   const btn  = document.getElementById('ma-refresh-btn');
   if (btn) btn.style.display = 'none';
   if (!body) return;
+  if (_isMember) {
+    body.innerHTML = `
+      <div style="text-align:center;padding:2rem 1rem;">
+        <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:.75rem;">Team Member Analysis</div>
+        <p style="font-size:13px;color:var(--muted);max-width:440px;margin:0 auto;">
+          Team Member Analysis has not been enabled on this account. Contact your account owner to activate it.
+        </p>
+      </div>`;
+    return;
+  }
   body.innerHTML = `
     <div style="text-align:center;padding:2rem 1rem;">
       <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:.75rem;">Team Member Analysis</div>
