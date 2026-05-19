@@ -82,37 +82,63 @@ export default async function handler(req, res) {
   const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
   if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
 
-  // Only account owners can manage config
-  const { data: acct } = await supabase
+  // Resolve account — owner path first, then captain/chief_officer member read-only path
+  let acct = null;
+  let dataUserId = user.id;
+  let isMember = false;
+
+  const { data: myAcct } = await supabase
     .from('accounts')
-    .select('has_sales_addon, is_admin, sales_entry_mode, checklist_email_config, checklist_token, company_name, sales_product_types')
+    .select('has_sales_addon, is_admin, sales_entry_mode, checklist_email_config, checklist_token, company_name, sales_product_types, has_commissions_addon')
     .eq('user_id', user.id)
     .single();
-  if (!acct) return res.status(403).json({ error: 'Owner access required' });
+
+  if (myAcct) {
+    acct = myAcct;
+  } else {
+    const { data: member } = await supabase
+      .from('account_members')
+      .select('owner_user_id, role')
+      .eq('member_user_id', user.id)
+      .eq('status', 'active')
+      .single();
+    if (!member || !['captain', 'chief_officer'].includes(member.role)) {
+      return res.status(403).json({ error: 'Owner access required' });
+    }
+    const { data: ownerAcct } = await supabase
+      .from('accounts')
+      .select('has_sales_addon, is_admin, sales_entry_mode, has_commissions_addon, company_name, sales_product_types')
+      .eq('user_id', member.owner_user_id)
+      .single();
+    if (!ownerAcct) return res.status(403).json({ error: 'Owner account not found' });
+    acct = ownerAcct;
+    dataUserId = member.owner_user_id;
+    isMember = true;
+  }
 
   // ── GET: load full config, seeding defaults if needed ────────────────────
   if (req.method === 'GET') {
     const [formRes, subcatRes] = await Promise.all([
-      supabase.from('checklist_config').select('*').eq('user_id', user.id).order('sort_order'),
-      supabase.from('sales_subcategories').select('*').eq('user_id', user.id).order('scoring_category').order('sort_order'),
+      supabase.from('checklist_config').select('*').eq('user_id', dataUserId).order('sort_order'),
+      supabase.from('sales_subcategories').select('*').eq('user_id', dataUserId).order('scoring_category').order('sort_order'),
     ]);
-    const { data: agentData }    = await supabase.from('agent_roster').select('id, agent_id, name, active').eq('user_id', user.id).order('name');
-    const { data: locationData } = await supabase.from('sales_locations').select('id, name, active, sort_order, address, phone, hours').eq('user_id', user.id).order('sort_order').order('created_at');
-    const { data: lsRow }        = await supabase.from('accounts').select('lead_sources').eq('user_id', user.id).single();
+    const { data: agentData }    = await supabase.from('agent_roster').select('id, agent_id, name, active, commission_structure_id').eq('user_id', dataUserId).order('name');
+    const { data: locationData } = await supabase.from('sales_locations').select('id, name, active, sort_order, address, phone, hours, goal_count, goal_premium, goals_enabled').eq('user_id', dataUserId).order('sort_order').order('created_at');
+    const { data: lsRow }        = await supabase.from('accounts').select('lead_sources').eq('user_id', dataUserId).single();
 
     let formConfig = formRes.data || [];
     let subcategories = subcatRes.data || [];
 
-    // Seed form types on first access
-    if (!formConfig.length) {
-      const rows = DEFAULT_FORM_TYPES.map(f => ({ ...f, user_id: user.id }));
+    // Seed form types on first access — skip for member requests (read-only)
+    if (!formConfig.length && !isMember) {
+      const rows = DEFAULT_FORM_TYPES.map(f => ({ ...f, user_id: dataUserId }));
       await supabase.from('checklist_config').insert(rows);
       formConfig = rows;
     }
 
-    // Fetch admin account once for defaults (skip if current user is admin)
+    // Fetch admin account once for defaults (skip if current user is admin or member)
     let adminDefaults = null;
-    const needsAdminDefaults = !acct.is_admin && (!subcategories.length || !acct.sales_product_types || !lsRow?.lead_sources);
+    const needsAdminDefaults = !isMember && !acct.is_admin && (!subcategories.length || !acct.sales_product_types || !lsRow?.lead_sources);
     if (needsAdminDefaults) {
       const { data: adminAcct } = await supabase.from('accounts')
         .select('user_id, sales_product_types, lead_sources')
@@ -120,8 +146,8 @@ export default async function handler(req, res) {
       adminDefaults = adminAcct || null;
     }
 
-    // Seed subcategories on first access — prefer admin account's subcategories as defaults
-    if (!subcategories.length) {
+    // Seed subcategories on first access — skip for member requests (read-only)
+    if (!subcategories.length && !isMember) {
       let seedRows;
       if (adminDefaults?.user_id) {
         const { data: adminSubs } = await supabase.from('sales_subcategories')
@@ -129,25 +155,25 @@ export default async function handler(req, res) {
           .eq('user_id', adminDefaults.user_id)
           .order('scoring_category').order('sort_order');
         if (adminSubs?.length) {
-          seedRows = adminSubs.map(s => ({ ...s, user_id: user.id, is_default: false }));
+          seedRows = adminSubs.map(s => ({ ...s, user_id: dataUserId, is_default: false }));
         }
       }
       if (!seedRows) {
-        seedRows = DEFAULT_SUBCATEGORIES.map(s => ({ ...s, user_id: user.id }));
+        seedRows = DEFAULT_SUBCATEGORIES.map(s => ({ ...s, user_id: dataUserId }));
       }
       await supabase.from('sales_subcategories').insert(seedRows);
-      const { data: fresh } = await supabase.from('sales_subcategories').select('*').eq('user_id', user.id).order('scoring_category').order('sort_order');
+      const { data: fresh } = await supabase.from('sales_subcategories').select('*').eq('user_id', dataUserId).order('scoring_category').order('sort_order');
       subcategories = fresh || seedRows;
     }
 
     // Default product types — prefer admin account's if user hasn't customized
     let productTypes = acct.sales_product_types || adminDefaults?.sales_product_types || DEFAULT_PRODUCT_TYPES;
 
-    // Default lead sources — seed from admin account on first access
+    // Default lead sources — seed from admin account on first access (skip for members)
     let leadSources = lsRow?.lead_sources ?? null;
-    if (!leadSources && adminDefaults?.lead_sources) {
+    if (!leadSources && adminDefaults?.lead_sources && !isMember) {
       leadSources = adminDefaults.lead_sources;
-      await supabase.from('accounts').update({ lead_sources: leadSources }).eq('user_id', user.id);
+      await supabase.from('accounts').update({ lead_sources: leadSources }).eq('user_id', dataUserId);
     }
 
     const emailCfg = acct.checklist_email_config || {
@@ -157,10 +183,22 @@ export default async function handler(req, res) {
       brand_color: '#00d4ff', greeting: '', footer: '',
     };
 
+    // Fetch commission structures if commissions add-on is active (or admin)
+    let commStructures = [];
+    if (acct.has_commissions_addon || acct.is_admin) {
+      const { data: csData } = await supabase
+        .from('commission_structures')
+        .select('id, name, default_split_ratio, pay_on_issue, thresholds, rates')
+        .eq('user_id', dataUserId)
+        .order('name');
+      commStructures = csData || [];
+    }
+
     return res.status(200).json({
-      hasSalesAddon:    acct.has_sales_addon || acct.is_admin || false,
-      salesEntryMode:   acct.sales_entry_mode || 'upload',
-      checklistToken:   acct.checklist_token,
+      hasSalesAddon:        acct.has_sales_addon || acct.is_admin || false,
+      hasCommissionsAddon:  acct.has_commissions_addon || acct.is_admin || false,
+      salesEntryMode:       acct.sales_entry_mode || 'upload',
+      checklistToken:       isMember ? null : acct.checklist_token,
       formConfig,
       subcategories,
       emailConfig: emailCfg,
@@ -168,11 +206,13 @@ export default async function handler(req, res) {
       locations: locationData || [],
       productTypes,
       leadSources,
+      commissionStructures: commStructures,
     });
   }
 
-  // ── PATCH: update config ──────────────────────────────────────────────────
+  // ── PATCH: update config (owner only) ────────────────────────────────────
   if (req.method === 'PATCH') {
+    if (isMember) return res.status(403).json({ error: 'Members cannot modify account configuration' });
     const { action, formTypes, subcategoryUpdates, emailConfig, salesEntryMode, clearCurrentSales, productTypes, locationUpdates, leadSources } = req.body || {};
 
     // Regenerate public link token
@@ -282,9 +322,15 @@ export default async function handler(req, res) {
           ({ error: locErr } = await supabase.from('sales_locations').update({ name: upd.name }).eq('id', upd.id).eq('user_id', user.id));
         } else if (upd.action === 'update_details') {
           ({ error: locErr } = await supabase.from('sales_locations').update({
-            address: upd.address || null,
-            phone:   upd.phone   || null,
-            hours:   upd.hours   || null,
+            address:    upd.address    || null,
+            phone:      upd.phone      || null,
+            hours:      upd.hours      || null,
+            goal_count:   upd.goal_count   != null ? (parseInt(upd.goal_count)   || null) : undefined,
+            goal_premium: upd.goal_premium != null ? (parseFloat(upd.goal_premium) || null) : undefined,
+          }).eq('id', upd.id).eq('user_id', user.id));
+        } else if (upd.action === 'update_goals_enabled') {
+          ({ error: locErr } = await supabase.from('sales_locations').update({
+            goals_enabled: !!upd.goals_enabled,
           }).eq('id', upd.id).eq('user_id', user.id));
         } else if (upd.action === 'delete') {
           ({ error: locErr } = await supabase.from('sales_locations').delete().eq('id', upd.id).eq('user_id', user.id));
