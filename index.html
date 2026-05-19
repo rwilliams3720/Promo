@@ -896,13 +896,14 @@
     <!-- Sales Performance sub-pane (from Manage tab) -->
     <div id="perf-sub-salesperf" style="display:none">
       <div id="perf-salesperf-teaser" style="display:none">
-        <div class="panel" style="text-align:center;padding:3rem 2rem;">
+        <div id="basic-sales-breakdown" style="display:none"></div>
+        <div class="panel" style="text-align:center;padding:2rem;">
           <div style="font-size:2rem;margin-bottom:1rem;">📊</div>
-          <div style="font-family:'Bebas Neue',sans-serif;font-size:1.6rem;letter-spacing:.04em;margin-bottom:.75rem;">Sales Performance</div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:1.6rem;letter-spacing:.04em;margin-bottom:.75rem;">Sales Tracking Add-On</div>
           <p style="font-size:14px;color:var(--muted);max-width:480px;margin:0 auto 1.5rem;line-height:1.7;">
-            Interactive pie charts that let you drill into your sales by product type, lead source, agent, subcategory, location, and more — with cross-filtering and premium totals. Available with the Sales Tracking add-on.
+            Unlock interactive pie charts with drilldown by lead source, location, subcategory, and more — plus manual entry, customer tracking, and commission integration.
           </p>
-          <button class="btn btn-primary" onclick="goToAccountTab('billing')">Add to Account</button>
+          <button class="btn btn-primary" onclick="goToAccountTab('billing')">Add to Account — $25/mo</button>
         </div>
       </div>
       <div id="perf-salesperf-content">
@@ -2719,7 +2720,10 @@ function showPerfSubTab(name, btn) {
     const content = document.getElementById('perf-' + name + '-content');
     if (teaser)  teaser.style.display  = hasSales ? 'none' : '';
     if (content) content.style.display = hasSales ? '' : 'none';
-    if (!hasSales) return;
+    if (!hasSales) {
+      if (name === 'salesperf') loadBasicSalesBreakdown().catch(() => {});
+      return;
+    }
     if (name === 'saleslog')  loadChecklistSubmissions();
     if (name === 'salesperf') initSalesPerf();
     return;
@@ -8656,6 +8660,129 @@ function _renderSlScorecard(entries) {
   }
 
   sc.innerHTML = parts.join('');
+}
+
+// ── Basic Sales Breakdown (no add-on, upload-only users) ─────────────────────
+
+async function loadBasicSalesBreakdown() {
+  const container = document.getElementById('basic-sales-breakdown');
+  if (!container) return;
+
+  const SKIP = new Set(['other','other2','other3','other4','other5','deposit','skip']);
+  const cats = activeCats().filter(c => !SKIP.has(c.key));
+
+  // Fetch historical wins (product columns only)
+  const { data: histRows } = await _supabase
+    .from('historical_wins')
+    .select('month, wl, ul, term, health, auto, fire')
+    .eq('user_id', _dataUserId);
+
+  const FULL_TO_ABBR = {
+    January:'Jan', February:'Feb', March:'Mar',  April:'Apr',
+    May:'May',     June:'Jun',     July:'Jul',   August:'Aug',
+    September:'Sep', October:'Oct', November:'Nov', December:'Dec',
+  };
+  const MONTH_ORDER = { Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12 };
+
+  // Aggregate historical months (sum all agents per month)
+  const monthTotals = {};
+  for (const row of (histRows || [])) {
+    const parts = row.month.trim().split(' ');
+    const norm  = (FULL_TO_ABBR[parts[0]] || parts[0]) + ' ' + parts[1];
+    if (!monthTotals[norm]) monthTotals[norm] = {};
+    for (const c of cats) monthTotals[norm][c.key] = (monthTotals[norm][c.key] || 0) + (row[c.key] || 0);
+  }
+
+  const sortedMonths = Object.keys(monthTotals).sort((a, b) => {
+    const [am, ay] = [MONTH_ORDER[a.split(' ')[0]], parseInt(a.split(' ')[1])];
+    const [bm, by] = [MONTH_ORDER[b.split(' ')[0]], parseInt(b.split(' ')[1])];
+    return ay !== by ? ay - by : am - bm;
+  }).slice(-12); // last 12 archived months
+
+  // Current period from race_data
+  const now    = new Date();
+  const curKey = `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][now.getUTCMonth()]} ${now.getUTCFullYear()}`;
+  const curTotals = {};
+  for (const c of cats) curTotals[c.key] = 0;
+  for (const ag of (_raceData || [])) {
+    for (const c of cats) curTotals[c.key] += (ag[c.key] || 0);
+  }
+  const hasCurData = cats.some(c => curTotals[c.key] > 0);
+
+  if (!sortedMonths.length && !hasCurData) {
+    container.style.display = 'none';
+    return;
+  }
+
+  const th = t => `<th style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;padding:4px 8px;text-align:center;white-space:nowrap;border-bottom:1px solid var(--border);">${t}</th>`;
+  const td = (v, hi) => `<td style="text-align:center;padding:3px 8px;font-family:'DM Mono',monospace;font-size:12px;color:${hi ? 'var(--accent2)' : v ? 'var(--text)' : 'var(--muted)'};">${v || '—'}</td>`;
+
+  // Month × product team-total table
+  const histTableRows = sortedMonths.map(mon => {
+    const row   = monthTotals[mon] || {};
+    const total = cats.reduce((s, c) => s + (row[c.key] || 0), 0);
+    return `<tr>
+      <td style="padding:3px 8px;font-size:12px;white-space:nowrap;">${mon}</td>
+      ${cats.map(c => td(row[c.key] || 0)).join('')}
+      ${td(total, true)}
+    </tr>`;
+  });
+
+  if (hasCurData) {
+    const curTotal = cats.reduce((s, c) => s + curTotals[c.key], 0);
+    histTableRows.push(`<tr style="border-top:1px solid var(--border);">
+      <td style="padding:3px 8px;font-size:12px;font-weight:700;color:var(--accent2);white-space:nowrap;">${curKey} ▸</td>
+      ${cats.map(c => td(curTotals[c.key] || 0)).join('')}
+      ${td(curTotal, true)}
+    </tr>`);
+  }
+
+  // Per-agent breakdown for current period
+  let agentSection = '';
+  if (hasCurData) {
+    const agentsSorted = (_raceData || [])
+      .map(ag => {
+        const products = {};
+        let total = 0;
+        for (const c of cats) { products[c.key] = ag[c.key] || 0; total += products[c.key]; }
+        return { name: ag.name || ag.agent_id, total, products };
+      })
+      .filter(ag => ag.total > 0)
+      .sort((a, b) => b.total - a.total);
+
+    if (agentsSorted.length) {
+      agentSection = `
+        <div style="margin-top:1.25rem;">
+          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.5rem;">Current Period — By Agent</div>
+          <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;">
+              <thead><tr>${th('Agent')}${cats.map(c => th(c.label)).join('')}${th('Total')}</tr></thead>
+              <tbody>${agentsSorted.map(ag => `<tr>
+                <td style="padding:3px 8px;font-size:12px;white-space:nowrap;">${escHtml(ag.name)}</td>
+                ${cats.map(c => td(ag.products[c.key] || 0)).join('')}
+                ${td(ag.total, true)}
+              </tr>`).join('')}</tbody>
+            </table>
+          </div>
+        </div>`;
+    }
+  }
+
+  const periodCount = sortedMonths.length + (hasCurData ? 1 : 0);
+  container.style.display = '';
+  container.innerHTML = `<div class="panel" style="margin-bottom:1rem;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+      <div style="font-size:13px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.04em;">Sales Overview</div>
+      <span style="font-size:11px;color:var(--muted);">Uploaded data · ${periodCount} period${periodCount !== 1 ? 's' : ''}</span>
+    </div>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;">
+        <thead><tr>${th('Period')}${cats.map(c => th(c.label)).join('')}${th('Total')}</tr></thead>
+        <tbody>${histTableRows.join('')}</tbody>
+      </table>
+    </div>
+    ${agentSection}
+  </div>`;
 }
 
 // ── Sales Performance Tab ─────────────────────────────────────────────────────
