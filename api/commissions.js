@@ -153,7 +153,7 @@ export default async function handler(req, res) {
     try {
       const [actTypesRes, actEntriesRes] = await Promise.all([
         supabase.from('bonus_activity_types').select('id, source, call_disposition').eq('user_id', dataUserId).eq('active', true),
-        supabase.from('bonus_activities').select('activity_type_id, agent_id, count').eq('user_id', dataUserId).gte('activity_date', fromDate).lte('activity_date', toDate),
+        supabase.from('bonus_activities').select('activity_type_id, agent_id, count').eq('user_id', dataUserId).eq('status', 'approved').gte('activity_date', fromDate).lte('activity_date', toDate),
       ]);
       for (const e of (actEntriesRes.data || [])) {
         if (!actCounts[e.agent_id]) actCounts[e.agent_id] = {};

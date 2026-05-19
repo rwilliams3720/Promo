@@ -89,7 +89,7 @@ export default async function handler(req, res) {
 
   const { data: myAcct } = await supabase
     .from('accounts')
-    .select('has_sales_addon, is_admin, sales_entry_mode, checklist_email_config, checklist_token, company_name, sales_product_types, has_commissions_addon')
+    .select('has_sales_addon, is_admin, sales_entry_mode, checklist_email_config, checklist_token, company_name, sales_product_types, has_commissions_addon, self_report_config')
     .eq('user_id', user.id)
     .single();
 
@@ -107,7 +107,7 @@ export default async function handler(req, res) {
     }
     const { data: ownerAcct } = await supabase
       .from('accounts')
-      .select('has_sales_addon, is_admin, sales_entry_mode, has_commissions_addon, company_name, sales_product_types')
+      .select('has_sales_addon, is_admin, sales_entry_mode, has_commissions_addon, company_name, sales_product_types, self_report_config')
       .eq('user_id', member.owner_user_id)
       .single();
     if (!ownerAcct) return res.status(403).json({ error: 'Owner account not found' });
@@ -207,13 +207,24 @@ export default async function handler(req, res) {
       productTypes,
       leadSources,
       commissionStructures: commStructures,
+      selfReportConfig: acct.self_report_config || {},
     });
   }
 
   // ── PATCH: update config (owner only) ────────────────────────────────────
   if (req.method === 'PATCH') {
-    if (isMember) return res.status(403).json({ error: 'Members cannot modify account configuration' });
     const { action, formTypes, subcategoryUpdates, emailConfig, salesEntryMode, clearCurrentSales, productTypes, locationUpdates, leadSources } = req.body || {};
+
+    if (action === 'update_self_report') {
+      if (isMember) return res.status(403).json({ error: 'Owner access required' });
+      const { error } = await supabase.from('accounts')
+        .update({ self_report_config: req.body.selfReportConfig || {} })
+        .eq('user_id', dataUserId);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ ok: true });
+    }
+
+    if (isMember) return res.status(403).json({ error: 'Members cannot modify account configuration' });
 
     // Regenerate public link token
     if (action === 'regenerate_token') {

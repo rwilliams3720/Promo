@@ -71,17 +71,28 @@ async function resolveUser(token) {
   if (!acct) {
     const { data: member } = await supabase
       .from('account_members')
-      .select('owner_user_id, role')
+      .select('owner_user_id, role, roster_agent_id')
       .eq('member_user_id', user.id)
       .eq('status', 'active')
       .single();
     if (!member) return null;
-    if (!['captain', 'chief_officer'].includes(member.role)) return null;
+    const isCapOrCO = ['captain', 'chief_officer'].includes(member.role);
     dataUserId = member.owner_user_id;
-    const { data: ownerAcct } = await supabase.from('accounts').select('has_sales_addon, is_admin').eq('user_id', dataUserId).single();
-    hasSalesAddon = (ownerAcct?.has_sales_addon || ownerAcct?.is_admin) ?? false;
+    const { data: ownerAcct } = await supabase.from('accounts').select('has_sales_addon, is_admin, self_report_config').eq('user_id', dataUserId).single();
+    const ownerSelfReport = ownerAcct?.self_report_config || {};
+    if (!isCapOrCO && !ownerSelfReport.sales_enabled) return null;
+    hasSalesAddon = (ownerAcct?.has_sales_addon || ownerAcct?.is_admin || ownerSelfReport.sales_enabled) ?? false;
+    return {
+      userId: user.id,
+      dataUserId,
+      hasSalesAddon,
+      isMember: true,
+      isCapOrCO,
+      memberAgentId: member.roster_agent_id || null,
+      selfReportConfig: ownerSelfReport,
+    };
   }
-  return { userId: user.id, dataUserId, hasSalesAddon };
+  return { userId: user.id, dataUserId, hasSalesAddon, isMember: false, isCapOrCO: false, memberAgentId: null, selfReportConfig: {} };
 }
 
 export default async function handler(req, res) {
@@ -145,8 +156,14 @@ export default async function handler(req, res) {
 
   // ── POST: create manual entry ─────────────────────────────────────────────
   if (req.method === 'POST') {
-    const { agentId, product, subcategory, saleDate, issuedDate, writtenPremium, customerName,
-            leadSource, period, autoIssued, splitSale, splitRatio, teammate, location } = req.body || {};
+    let { agentId, product, subcategory, saleDate, issuedDate, writtenPremium, customerName,
+          leadSource, period, autoIssued, splitSale, splitRatio, teammate, location } = req.body || {};
+
+    // Non-captain/CO members can only submit for themselves
+    if (ctx.isMember && !ctx.isCapOrCO) {
+      if (!ctx.memberAgentId) return res.status(400).json({ error: 'No roster agent linked to your account' });
+      agentId = ctx.memberAgentId;
+    }
 
     if (!product || !saleDate) return res.status(400).json({ error: 'product and saleDate required' });
 

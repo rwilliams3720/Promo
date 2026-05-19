@@ -726,6 +726,62 @@
       </div>
     </div>
 
+    <div id="manage-self-report" style="display:none;">
+      <!-- Self-report panel for members with self-reporting access -->
+      <div id="manage-sr-activities" style="display:none;">
+        <div class="panel">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;">
+            <div class="panel-title" style="margin:0;">My Activity Log</div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <select id="sr-act-month" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;"></select>
+              <select id="sr-act-year" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;"></select>
+              <button class="btn btn-secondary" style="font-size:12px;padding:4px 10px;" onclick="loadSrActivityLog()">Load</button>
+              <button class="btn btn-primary" style="font-size:12px;padding:4px 12px;" onclick="showSrActivityForm()">+ Log Activity</button>
+            </div>
+          </div>
+          <div id="sr-act-entry-form" style="display:none;background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.65rem .75rem;margin-bottom:.75rem;">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 80px;gap:.5rem;margin-bottom:.5rem;">
+              <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px;">Activity Type</label>
+                <select id="sr-act-entry-type" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;outline:none;"></select></div>
+              <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px;">Date</label>
+                <input id="sr-act-entry-date" type="text" placeholder="YYYY-MM-DD" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;outline:none;"></div>
+              <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px;">Notes</label>
+                <input id="sr-act-entry-notes" type="text" placeholder="Optional" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;outline:none;"></div>
+              <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px;">Count</label>
+                <input id="sr-act-entry-count" type="number" min="1" value="1" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;outline:none;"></div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <button class="btn btn-primary" style="font-size:12px;padding:4px 12px;" onclick="submitSrActivity(this)">Submit</button>
+              <button class="btn btn-secondary" style="font-size:12px;padding:4px 10px;" onclick="document.getElementById('sr-act-entry-form').style.display='none'">Cancel</button>
+              <span id="sr-act-entry-msg" style="font-size:12px;display:none;"></span>
+            </div>
+          </div>
+          <div id="sr-act-log-content" style="font-size:13px;color:var(--muted);">Select a month and click Load.</div>
+        </div>
+      </div>
+      <div id="manage-sr-sales" style="display:none;">
+        <div class="panel">
+          <div class="panel-title" style="margin-bottom:.75rem;">My Sales Entry</div>
+          <div id="sr-sales-rows"></div>
+          <button class="btn btn-secondary" style="margin-top:.5rem;" onclick="srSalesAddRow()">+ Add Row</button>
+          <div style="display:flex;gap:10px;margin-top:.75rem;align-items:center;">
+            <button class="btn btn-primary" onclick="srSalesSubmitAll(this)">Submit</button>
+            <div id="sr-sales-msg" style="font-size:13px;display:none;"></div>
+          </div>
+        </div>
+      </div>
+      <!-- Pending Approvals — visible to captain/chief_officer in Manage tab -->
+      <div id="manage-pending-approvals" style="display:none;">
+        <div class="panel" style="border-color:rgba(255,179,0,.25);">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;">
+            <div class="panel-title" style="margin:0;color:#ffb300;">Pending Approvals <span id="pending-count-badge" style="font-size:12px;background:rgba(255,179,0,.2);border-radius:10px;padding:1px 8px;margin-left:6px;"></span></div>
+            <button class="btn btn-secondary" style="font-size:12px;padding:4px 10px;" onclick="loadPendingApprovals()">Refresh</button>
+          </div>
+          <div id="pending-approvals-list" style="font-size:13px;color:var(--muted);">Loading...</div>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <!-- ── TAB: PERFORMANCE ── -->
@@ -1277,6 +1333,7 @@
             <button class="acct-stab"        id="sales-stab-locations"   onclick="showSalesSubTab('locations',this)"   style="font-size:13px;">Locations</button>
             <button class="acct-stab"        id="sales-stab-commissions" onclick="showSalesSubTab('commissions',this)" style="font-size:13px;">Commissions</button>
             <button class="acct-stab"        id="sales-stab-bonus"       onclick="showSalesSubTab('bonus',this)"       style="font-size:13px;">Bonus</button>
+            <button class="acct-stab"        id="sales-stab-access"      onclick="showSalesSubTab('access',this)"      style="font-size:13px;">Access</button>
           </div>
 
           <!-- ── Team sub-pane ── -->
@@ -1751,6 +1808,79 @@
 
           </div><!-- /sales-sub-bonus -->
 
+          <div id="sales-sub-access" style="display:none">
+            <div class="panel-title" style="margin-bottom:.75rem;">Agent Self-Reporting</div>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Let agents log their own activities and sales from the Manage tab. Submissions can require manager approval before counting toward bonuses and commissions.</p>
+
+            <div style="display:grid;gap:.85rem;max-width:560px;">
+
+              <!-- Activities toggle -->
+              <div style="background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:.85rem 1rem;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;">
+                  <div>
+                    <div style="font-size:13px;font-weight:600;">Activity Self-Reporting</div>
+                    <div style="font-size:12px;color:var(--muted);margin-top:2px;">Agents can log their own bonus activities from Manage tab</div>
+                  </div>
+                  <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                    <input type="checkbox" id="sr-activities-enabled" onchange="onSrConfigChange()">
+                    <span style="font-size:12px;color:var(--muted);">Enabled</span>
+                  </label>
+                </div>
+                <div id="sr-activity-fields" style="display:none;margin-top:.6rem;padding-top:.6rem;border-top:1px solid var(--border2);">
+                  <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.4rem;">Required Fields</div>
+                  <div style="display:flex;flex-wrap:wrap;gap:10px;">
+                    <label style="font-size:12px;display:flex;align-items:center;gap:5px;"><input type="checkbox" id="sr-req-act-notes"> Notes</label>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Sales toggle -->
+              <div style="background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:.85rem 1rem;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;">
+                  <div>
+                    <div style="font-size:13px;font-weight:600;">Sales Self-Reporting</div>
+                    <div style="font-size:12px;color:var(--muted);margin-top:2px;">Agents can enter their own sales from Manage tab</div>
+                  </div>
+                  <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                    <input type="checkbox" id="sr-sales-enabled" onchange="onSrConfigChange()">
+                    <span style="font-size:12px;color:var(--muted);">Enabled</span>
+                  </label>
+                </div>
+                <div id="sr-sales-fields" style="display:none;margin-top:.6rem;padding-top:.6rem;border-top:1px solid var(--border2);">
+                  <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.4rem;">Required Fields</div>
+                  <div style="display:flex;flex-wrap:wrap;gap:10px;">
+                    <label style="font-size:12px;display:flex;align-items:center;gap:5px;"><input type="checkbox" id="sr-req-customer-name"> Customer Name</label>
+                    <label style="font-size:12px;display:flex;align-items:center;gap:5px;"><input type="checkbox" id="sr-req-premium"> Premium</label>
+                    <label style="font-size:12px;display:flex;align-items:center;gap:5px;"><input type="checkbox" id="sr-req-subcategory"> Subcategory</label>
+                    <label style="font-size:12px;display:flex;align-items:center;gap:5px;"><input type="checkbox" id="sr-req-lead-source"> Lead Source</label>
+                    <label style="font-size:12px;display:flex;align-items:center;gap:5px;"><input type="checkbox" id="sr-req-location"> Location</label>
+                    <label style="font-size:12px;display:flex;align-items:center;gap:5px;"><input type="checkbox" id="sr-req-period"> Period</label>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Approval toggle -->
+              <div style="background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:.85rem 1rem;" id="sr-approval-card">
+                <div style="display:flex;align-items:center;justify-content:space-between;">
+                  <div>
+                    <div style="font-size:13px;font-weight:600;">Require Manager Approval</div>
+                    <div style="font-size:12px;color:var(--muted);margin-top:2px;">Submissions are pending until a Captain or Chief Officer approves them</div>
+                  </div>
+                  <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                    <input type="checkbox" id="sr-requires-approval" onchange="onSrConfigChange()">
+                    <span style="font-size:12px;color:var(--muted);">Enabled</span>
+                  </label>
+                </div>
+              </div>
+
+            </div>
+
+            <div style="display:flex;gap:8px;align-items:center;margin-top:1rem;">
+              <button class="btn btn-primary" onclick="saveSelfReportConfig(this)">Save Settings</button>
+              <span id="sr-save-msg" style="font-size:12px;display:none;"></span>
+            </div>
+          </div><!-- /sales-sub-access -->
+
         </div>
       </div>
 
@@ -2083,6 +2213,7 @@ let _salesTileEntries = [];         // sales_log entries for current race period
 let _salesTileLocation = 'all';     // selected location filter on race tile
 let _leadSources       = [];        // user-configured lead source list (falls back to LEAD_SOURCES constant)
 let _salesLogLocationFilter = 'all'; // location filter for sales log
+let _selfReportConfig = {};  // { activities_enabled, sales_enabled, requires_approval, req_act_notes, req_sales_fields:{} }
 
 // ── Member Analysis add-on state ─────────────────────────────────────────────
 let _hasMemberAnalysis    = false;
@@ -2279,7 +2410,7 @@ async function checkAccountAndShow(session) {
         _dataUserId       = _ownerUserId;
         const { data: ownerAcct } = await _supabase
           .from('accounts')
-          .select('company_name, plan, status, trial_ends_at, has_sales_addon, has_commissions_addon, sales_entry_mode, is_admin')
+          .select('company_name, plan, status, trial_ends_at, has_sales_addon, has_commissions_addon, sales_entry_mode, is_admin, self_report_config')
           .eq('user_id', _ownerUserId)
           .single();
         if (ownerAcct) {
@@ -2289,6 +2420,7 @@ async function checkAccountAndShow(session) {
           _hasSalesAddon       = ownerAcct.has_sales_addon || ownerAcct.is_admin || false;
           _hasCommissionsAddon = ownerAcct.has_commissions_addon || false;
           _salesEntryMode      = ownerAcct.sales_entry_mode    || 'upload';
+          _selfReportConfig    = ownerAcct.self_report_config  || {};
           if (_acctStatus === 'trial' && ownerAcct.trial_ends_at && new Date(ownerAcct.trial_ends_at) < new Date()) {
             _acctStatus = 'past_due'; _trialExpired = true;
           }
@@ -2300,8 +2432,8 @@ async function checkAccountAndShow(session) {
       }
     }
 
-    // Load add-on config for owners and for captain/chief_officer members (they need agent roster, subcats, etc.)
-    if (!_isMember || ['captain', 'chief_officer'].includes(_memberRole)) {
+    // Load add-on config for owners, captain/chief_officer members, and self-reporting members
+    if (!_isMember || ['captain', 'chief_officer'].includes(_memberRole) || _selfReportConfig.activities_enabled || _selfReportConfig.sales_enabled) {
       await loadAddonConfig().catch(e => console.error('loadAddonConfig:', e));
     }
 
@@ -2522,7 +2654,7 @@ function showAccountSubTab(name, btn) {
 }
 
 function showSalesSubTab(name, btn) {
-  ['team','checklist','products','locations','commissions','bonus'].forEach(n => {
+  ['team','checklist','products','locations','commissions','bonus','access'].forEach(n => {
     const p = document.getElementById('sales-sub-' + n);
     if (p) p.style.display = n === name ? '' : 'none';
   });
@@ -2531,6 +2663,7 @@ function showSalesSubTab(name, btn) {
   if (activeBtn) activeBtn.classList.add('active');
   if (name === 'commissions') renderCommissionStructuresList();
   if (name === 'bonus') initBonusSubTab();
+  if (name === 'access') renderSelfReportSettings();
 }
 
 function showManageSubTab(name, btn) {
@@ -4556,8 +4689,16 @@ function getAllowedTabs() {
   switch (_memberRole) {
     case 'captain':       return ['race','scoring','manage','perf','analysis','history'];
     case 'chief_officer': return ['race','scoring','manage','perf','history'];
-    case 'bosun':         return ['race','history'];
-    case 'custom':        return _memberCustomTabs.length ? _memberCustomTabs : ['race'];
+    case 'bosun': {
+      const bosunTabs = ['race','history'];
+      if (_selfReportConfig?.activities_enabled || _selfReportConfig?.sales_enabled) bosunTabs.push('manage');
+      return bosunTabs;
+    }
+    case 'custom': {
+      const customBase = _memberCustomTabs.length ? _memberCustomTabs : ['race'];
+      if ((_selfReportConfig?.activities_enabled || _selfReportConfig?.sales_enabled) && !customBase.includes('manage')) customBase.push('manage');
+      return customBase;
+    }
     default:              return ['race'];
   }
 }
@@ -6183,6 +6324,328 @@ async function deleteManageActivityEntry(id, btn) {
   } finally { btn.disabled = false; }
 }
 
+// ── Agent Self-Reporting ──────────────────────────────────────────────────────
+
+function renderSelfReportSettings() {
+  const cfg = _selfReportConfig || {};
+  const setChk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!val; };
+  setChk('sr-activities-enabled', cfg.activities_enabled);
+  setChk('sr-sales-enabled',      cfg.sales_enabled);
+  setChk('sr-requires-approval',  cfg.requires_approval);
+  setChk('sr-req-act-notes',      cfg.req_act_notes);
+  const rf = cfg.req_sales_fields || {};
+  setChk('sr-req-customer-name', rf.customer_name);
+  setChk('sr-req-premium',       rf.written_premium);
+  setChk('sr-req-subcategory',   rf.subcategory);
+  setChk('sr-req-lead-source',   rf.lead_source);
+  setChk('sr-req-location',      rf.location);
+  setChk('sr-req-period',        rf.period);
+  const actFields = document.getElementById('sr-activity-fields');
+  if (actFields) actFields.style.display = cfg.activities_enabled ? '' : 'none';
+  const salesFields = document.getElementById('sr-sales-fields');
+  if (salesFields) salesFields.style.display = cfg.sales_enabled ? '' : 'none';
+}
+
+function onSrConfigChange() {
+  const actEl   = document.getElementById('sr-activities-enabled');
+  const salesEl = document.getElementById('sr-sales-enabled');
+  const actFields   = document.getElementById('sr-activity-fields');
+  const salesFields = document.getElementById('sr-sales-fields');
+  if (actFields)   actFields.style.display   = actEl?.checked   ? '' : 'none';
+  if (salesFields) salesFields.style.display = salesEl?.checked ? '' : 'none';
+}
+
+async function saveSelfReportConfig(btn) {
+  btn.disabled = true;
+  const cfg = {
+    activities_enabled: document.getElementById('sr-activities-enabled')?.checked || false,
+    sales_enabled:      document.getElementById('sr-sales-enabled')?.checked      || false,
+    requires_approval:  document.getElementById('sr-requires-approval')?.checked  || false,
+    req_act_notes:      document.getElementById('sr-req-act-notes')?.checked      || false,
+    req_sales_fields: {
+      customer_name:   document.getElementById('sr-req-customer-name')?.checked  || false,
+      written_premium: document.getElementById('sr-req-premium')?.checked        || false,
+      subcategory:     document.getElementById('sr-req-subcategory')?.checked    || false,
+      lead_source:     document.getElementById('sr-req-lead-source')?.checked    || false,
+      location:        document.getElementById('sr-req-location')?.checked       || false,
+      period:          document.getElementById('sr-req-period')?.checked         || false,
+    },
+  };
+  try {
+    const r = await fetch('/api/checklist-config', {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'update_self_report', selfReportConfig: cfg }),
+    });
+    if (r.ok) {
+      _selfReportConfig = cfg;
+      showInlineMsg('sr-save-msg', 'Saved', 'ok');
+    } else {
+      showInlineMsg('sr-save-msg', 'Error saving', 'err');
+    }
+  } catch(e) { showInlineMsg('sr-save-msg', e.message, 'err'); }
+  finally { btn.disabled = false; }
+}
+
+function _initSrMonthYearPickers() {
+  const mSel = document.getElementById('sr-act-month');
+  const ySel = document.getElementById('sr-act-year');
+  if (mSel && !mSel.options.length) {
+    ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].forEach((m,i) => {
+      const o = document.createElement('option'); o.value = i+1; o.textContent = m; mSel.appendChild(o);
+    });
+    mSel.value = new Date().getMonth() + 1;
+  }
+  if (ySel && !ySel.options.length) {
+    const y = new Date().getFullYear();
+    for (let i = y-1; i <= y+1; i++) { const o = document.createElement('option'); o.value = i; o.textContent = i; ySel.appendChild(o); }
+    ySel.value = y;
+  }
+}
+
+function _populateSrActivityTypes() {
+  const sel = document.getElementById('sr-act-entry-type');
+  if (!sel) return;
+  const manualTypes = _activityTypes.filter(t => t.source === 'manual' && t.active !== false);
+  sel.innerHTML = manualTypes.length
+    ? '<option value="">— Select type —</option>' + manualTypes.map(t => `<option value="${escHtml(t.id)}">${escHtml(t.name)}${t.subcategory?' · '+escHtml(t.subcategory):''}</option>`).join('')
+    : '<option value="">No manual types defined</option>';
+}
+
+function showSrActivityForm() {
+  _populateSrActivityTypes();
+  const form = document.getElementById('sr-act-entry-form');
+  if (form) form.style.display = '';
+  const dateEl = document.getElementById('sr-act-entry-date');
+  if (dateEl && !dateEl.value) {
+    const now = new Date();
+    dateEl.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  }
+}
+
+async function loadSrActivityLog() {
+  const month = parseInt(document.getElementById('sr-act-month')?.value) || (new Date().getMonth()+1);
+  const year  = parseInt(document.getElementById('sr-act-year')?.value)  || new Date().getFullYear();
+  const el    = document.getElementById('sr-act-log-content');
+  if (el) el.innerHTML = '<span style="color:var(--muted);">Loading...</span>';
+  try {
+    const r = await fetch(`/api/bonus-activities?month=${month}&year=${year}`, { headers: authHeaders() });
+    if (!r.ok) { if (el) el.innerHTML = '<span style="color:var(--danger);">Error loading log.</span>'; return; }
+    const d = await r.json();
+    _bonusLogEntries    = d.entries    || [];
+    _bonusLogCallTotals = d.callTotals || [];
+    _renderSrActivityLog(el);
+  } catch(e) { if (el) el.innerHTML = '<span style="color:var(--danger);">Error.</span>'; }
+}
+
+function _renderSrActivityLog(el) {
+  if (!el) return;
+  const statusBadge = s => {
+    if (s === 'pending')  return '<span style="font-size:10px;background:rgba(255,179,0,.15);color:#ffb300;border:1px solid rgba(255,179,0,.3);border-radius:4px;padding:1px 6px;margin-left:4px;">Pending</span>';
+    if (s === 'rejected') return '<span style="font-size:10px;background:rgba(255,107,107,.15);color:#ff6b6b;border:1px solid rgba(255,107,107,.3);border-radius:4px;padding:1px 6px;margin-left:4px;">Rejected</span>';
+    return '<span style="font-size:10px;background:rgba(0,229,180,.12);color:var(--accent2);border:1px solid rgba(0,229,180,.2);border-radius:4px;padding:1px 6px;margin-left:4px;">Approved</span>';
+  };
+  const myEntries = _bonusLogEntries;
+  if (!myEntries.length && !_bonusLogCallTotals.length) {
+    el.innerHTML = '<span style="color:var(--muted);">No activities logged for this month.</span>';
+    return;
+  }
+  el.innerHTML = _activityTypes.filter(t => t.active !== false).map(t => {
+    const entries = myEntries.filter(e => e.activity_type_id === t.id);
+    if (!entries.length) return '';
+    return `<div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.6rem .75rem;margin-bottom:.5rem;">
+      <strong style="font-size:13px;">${escHtml(t.name)}</strong>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:.4rem;">
+        <thead><tr style="color:var(--muted);">
+          <th style="padding:3px 8px 3px 0;font-weight:600;text-align:left;">Date</th>
+          <th style="padding:3px 8px 3px 0;text-align:left;">Count</th>
+          <th style="padding:3px 8px 3px 0;text-align:left;">Notes</th>
+          <th style="padding:3px 8px 3px 0;text-align:left;">Status</th>
+        </tr></thead>
+        <tbody>${entries.map(e => `<tr style="border-top:1px solid var(--border2);">
+          <td style="padding:4px 8px 4px 0;">${escHtml(e.activity_date||'')}</td>
+          <td style="padding:4px 8px 4px 0;">${e.count}</td>
+          <td style="padding:4px 8px 4px 0;">${escHtml(e.notes||'—')}</td>
+          <td style="padding:4px 8px 4px 0;">${statusBadge(e.status||'approved')}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>`;
+  }).filter(Boolean).join('') || '<span style="color:var(--muted);">No manual activities this month.</span>';
+}
+
+async function submitSrActivity(btn) {
+  const activity_type_id = document.getElementById('sr-act-entry-type')?.value;
+  const activity_date    = (document.getElementById('sr-act-entry-date')?.value || '').trim();
+  const count            = parseInt(document.getElementById('sr-act-entry-count')?.value) || 1;
+  const notes            = (document.getElementById('sr-act-entry-notes')?.value || '').trim() || null;
+  if (!activity_type_id || !activity_date) return showInlineMsg('sr-act-entry-msg', 'Type and date required', 'err');
+  if (_selfReportConfig?.req_act_notes && !notes) return showInlineMsg('sr-act-entry-msg', 'Notes are required', 'err');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/bonus-activities', {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'add_entry', activity_type_id, activity_date, count, notes }),
+    });
+    if (!r.ok) { const d = await r.json(); showInlineMsg('sr-act-entry-msg', d.error || 'Failed', 'err'); return; }
+    document.getElementById('sr-act-entry-form').style.display = 'none';
+    document.getElementById('sr-act-entry-notes').value = '';
+    loadSrActivityLog();
+  } finally { btn.disabled = false; }
+}
+
+function srSalesAddRow() {
+  const container = document.getElementById('sr-sales-rows');
+  if (!container) return;
+  const rowId = 'sr-sr-' + Date.now();
+  const si = 'width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 7px;font-size:12px;outline:none;';
+  const cfg = (_selfReportConfig?.req_sales_fields) || {};
+  const req = (field) => cfg[field] ? `<span style="color:var(--danger);margin-left:2px;">*</span>` : '';
+  const cats = activeCats();
+  const productOpts = '<option value="">— Product —</option>' + cats.map(c => `<option value="${c.key}">${c.label}</option>`).join('');
+  const srcOpts = '<option value="">—</option>' + getLeadSources().map(s => `<option value="${escHtml(s)}">${escHtml(s)}</option>`).join('');
+  const locOpts = '<option value="">— optional —</option>' + _salesLocations.filter(l => l.active !== false).map(l => `<option value="${escHtml(l.name)}">${escHtml(l.name)}</option>`).join('');
+  const div = document.createElement('div');
+  div.className = 'sr-sale-row'; div.id = rowId;
+  div.style.cssText = 'background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.75rem;margin-bottom:.5rem;';
+  div.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem;">
+      <div><label style="font-size:11px;color:var(--muted);">PRODUCT</label>
+        <select id="${rowId}-product" onchange="srUpdateSubcat(this,'${rowId}')" style="${si}">${productOpts}</select></div>
+      <div><label style="font-size:11px;color:var(--muted);">SUBCATEGORY${req('subcategory')}</label>
+        <select id="${rowId}-subcat" style="${si}"><option value="">— select product first —</option></select></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;margin-bottom:.5rem;">
+      <div><label style="font-size:11px;color:var(--muted);">SALE DATE *</label>
+        <input id="${rowId}-date" type="text" placeholder="YYYY-MM-DD" style="${si}"></div>
+      <div><label style="font-size:11px;color:var(--muted);">CUSTOMER NAME${req('customer_name')}</label>
+        <input id="${rowId}-customer" type="text" style="${si}"></div>
+      <div><label style="font-size:11px;color:var(--muted);">PREMIUM${req('written_premium')}</label>
+        <input id="${rowId}-prem" type="number" step="0.01" style="${si}"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:.5rem;align-items:end;">
+      <div><label style="font-size:11px;color:var(--muted);">LEAD SOURCE${req('lead_source')}</label>
+        <select id="${rowId}-source" style="${si}">${srcOpts}</select></div>
+      <div><label style="font-size:11px;color:var(--muted);">PERIOD${req('period')}</label>
+        <select id="${rowId}-period" style="${si}"><option value="">—</option><option value="6">6</option><option value="12">12</option></select></div>
+      <div><label style="font-size:11px;color:var(--muted);">LOCATION${req('location')}</label>
+        <select id="${rowId}-location" style="${si}">${locOpts}</select></div>
+      <button onclick="this.closest('.sr-sale-row').remove()" style="background:none;border:1px solid var(--border2);color:var(--danger);border-radius:5px;padding:5px 8px;cursor:pointer;font-size:12px;">✕</button>
+    </div>`;
+  container.appendChild(div);
+  const dateEl = div.querySelector(`#${rowId}-date`);
+  if (dateEl) {
+    const now = new Date();
+    dateEl.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    if (!dateEl._flatpickr) flatpickr(dateEl, { dateFormat: 'Y-m-d', allowInput: true });
+  }
+}
+
+function srUpdateSubcat(sel, rowId) {
+  const product = sel.value;
+  const subcatSel = document.getElementById(rowId + '-subcat');
+  if (subcatSel) subcatSel.innerHTML = _slSubcatOpts(product, '');
+}
+
+async function srSalesSubmitAll(btn) {
+  const rows = document.querySelectorAll('.sr-sale-row');
+  if (!rows.length) return;
+  const cfg = (_selfReportConfig?.req_sales_fields) || {};
+  const msgs = [];
+  const entries = [];
+  rows.forEach((row, i) => {
+    const id     = row.id;
+    const product    = document.getElementById(id+'-product')?.value;
+    const saleDate   = document.getElementById(id+'-date')?.value?.trim();
+    const customer   = document.getElementById(id+'-customer')?.value?.trim();
+    const prem       = document.getElementById(id+'-prem')?.value;
+    const subcatRaw  = document.getElementById(id+'-subcat')?.value || '';
+    const subcategory = subcatRaw.includes('|') ? subcatRaw.split('|')[1] : null;
+    const leadSource = document.getElementById(id+'-source')?.value;
+    const period     = document.getElementById(id+'-period')?.value;
+    const location   = document.getElementById(id+'-location')?.value;
+
+    if (!product) { msgs.push(`Row ${i+1}: product required`); return; }
+    if (!saleDate) { msgs.push(`Row ${i+1}: sale date required`); return; }
+    if (cfg.customer_name && !customer) { msgs.push(`Row ${i+1}: customer name required`); return; }
+    if (cfg.written_premium && !prem) { msgs.push(`Row ${i+1}: premium required`); return; }
+    if (cfg.subcategory && !subcategory) { msgs.push(`Row ${i+1}: subcategory required`); return; }
+    if (cfg.lead_source && !leadSource) { msgs.push(`Row ${i+1}: lead source required`); return; }
+    if (cfg.location && !location) { msgs.push(`Row ${i+1}: location required`); return; }
+    if (cfg.period && !period) { msgs.push(`Row ${i+1}: period required`); return; }
+
+    entries.push({ product, saleDate, customerName: customer, writtenPremium: prem || null,
+      subcategory, leadSource: leadSource || null, period: period || null, location: location || null });
+  });
+
+  if (msgs.length) { showInlineMsg('sr-sales-msg', msgs[0], 'err'); return; }
+  btn.disabled = true;
+  try {
+    const results = await Promise.all(entries.map(e =>
+      fetch('/api/sales', {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(e),
+      })
+    ));
+    const failed = results.filter(r => !r.ok);
+    if (failed.length) { showInlineMsg('sr-sales-msg', `${failed.length} submission(s) failed.`, 'err'); return; }
+    document.getElementById('sr-sales-rows').innerHTML = '';
+    showInlineMsg('sr-sales-msg', `${entries.length} sale(s) submitted.`, 'ok');
+    srSalesAddRow();
+  } finally { btn.disabled = false; }
+}
+
+async function loadPendingApprovals() {
+  const el = document.getElementById('pending-approvals-list');
+  const badge = document.getElementById('pending-count-badge');
+  if (el) el.innerHTML = '<span style="color:var(--muted);">Loading...</span>';
+  try {
+    const r = await fetch('/api/bonus-activities?resource=pending', { headers: authHeaders() });
+    if (!r.ok) { if (el) el.innerHTML = '<span style="color:var(--danger);">Error loading approvals.</span>'; return; }
+    const data = await r.json();
+    if (badge) badge.textContent = data.length || '';
+    if (!data.length) { if (el) el.innerHTML = '<span style="color:var(--muted);">No pending submissions.</span>'; return; }
+    const getAgentName = id => _agentRoster.find(a => a.agent_id === id)?.name || id;
+    const getTypeName  = id => { const t = _activityTypes.find(x => x.id === id); return t ? t.name : id; };
+    if (el) el.innerHTML = data.map(e => `
+      <div id="pend-row-${escHtml(e.id)}" style="background:var(--card2);border:1px solid rgba(255,179,0,.2);border-radius:8px;padding:.6rem .75rem;margin-bottom:.4rem;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:200px;">
+          <div style="font-size:13px;font-weight:600;">${escHtml(getAgentName(e.agent_id))}</div>
+          <div style="font-size:12px;color:var(--muted);">${escHtml(getTypeName(e.activity_type_id))} · ${escHtml(e.activity_date||'')} · Count: ${e.count}${e.notes?` · <em>${escHtml(e.notes)}</em>`:''}</div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <input id="pend-note-${escHtml(e.id)}" type="text" placeholder="Note (optional)" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:4px 7px;font-size:12px;outline:none;width:160px;">
+          <button class="btn btn-primary" style="font-size:11px;padding:3px 10px;" onclick="approveActivity('${escHtml(e.id)}','approved',this)">Approve</button>
+          <button class="btn btn-danger" style="font-size:11px;padding:3px 10px;" onclick="approveActivity('${escHtml(e.id)}','rejected',this)">Reject</button>
+        </div>
+      </div>`).join('');
+  } catch(e) { if (el) el.innerHTML = '<span style="color:var(--danger);">Error.</span>'; }
+}
+
+async function approveActivity(id, status, btn) {
+  btn.disabled = true;
+  const note = document.getElementById('pend-note-' + id)?.value || null;
+  try {
+    const r = await fetch('/api/bonus-activities', {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'set_status', id, status, approval_note: note }),
+    });
+    if (r.ok) {
+      const row = document.getElementById('pend-row-' + id);
+      if (row) row.remove();
+      const badge = document.getElementById('pending-count-badge');
+      const remaining = document.querySelectorAll('[id^="pend-row-"]').length;
+      if (badge) badge.textContent = remaining || '';
+      if (!remaining) {
+        const el = document.getElementById('pending-approvals-list');
+        if (el) el.innerHTML = '<span style="color:var(--muted);">No pending submissions.</span>';
+      }
+    }
+  } finally { btn.disabled = false; }
+}
+
 // ── Bonus: required activities helpers (commission builder) ───────────────────
 
 function updateRequiredActivity(tId, actTypeId, checked) {
@@ -7347,6 +7810,45 @@ function renderManageTabMode() {
   }
   // Show activity log panel for users with commissions add-on or admin
   if (actLogPanel) actLogPanel.style.display = (_hasCommissionsAddon || _isAdmin) ? '' : 'none';
+
+  // Self-report panels for members
+  const srPanel = document.getElementById('manage-self-report');
+  const srAct   = document.getElementById('manage-sr-activities');
+  const srSales = document.getElementById('manage-sr-sales');
+  const pendingPanel = document.getElementById('manage-pending-approvals');
+  const isCapOrCO = ['captain', 'chief_officer'].includes(_memberRole);
+  const cfg = _selfReportConfig || {};
+
+  if (_isMember) {
+    // Show the self-report panel container
+    if (srPanel) srPanel.style.display = '';
+    // Hide the upload panel for non-captain/CO members (they can't upload)
+    const uploadDiv = document.getElementById('manage-sub-upload');
+    if (uploadDiv && !isCapOrCO) uploadDiv.style.display = 'none';
+
+    // Member self-report forms (only for non-approvers)
+    if (!isCapOrCO) {
+      if (srAct)   srAct.style.display   = cfg.activities_enabled ? '' : 'none';
+      if (srSales) srSales.style.display = cfg.sales_enabled      ? '' : 'none';
+      // Populate month/year pickers on first render
+      _initSrMonthYearPickers();
+      if (cfg.activities_enabled) _populateSrActivityTypes();
+      if (cfg.sales_enabled && !document.getElementById('sr-sales-rows').children.length) srSalesAddRow();
+    } else {
+      if (srAct)   srAct.style.display   = 'none';
+      if (srSales) srSales.style.display = 'none';
+    }
+
+    // Pending approvals for captains/chief_officers when approval is required
+    if (isCapOrCO && cfg.requires_approval && (cfg.activities_enabled || cfg.sales_enabled)) {
+      if (pendingPanel) { pendingPanel.style.display = ''; loadPendingApprovals(); }
+    } else {
+      if (pendingPanel) pendingPanel.style.display = 'none';
+    }
+  } else {
+    if (srPanel)      srPanel.style.display      = 'none';
+    if (pendingPanel) pendingPanel.style.display = 'none';
+  }
 }
 
 // ── Load add-on config ────────────────────────────────────────────────────────
@@ -7361,13 +7863,14 @@ async function loadAddonConfig() {
   _checklistToken   = d.checklistToken;
   _checklistEmailCfg= d.emailConfig;
   _checklistFormCfg = d.formConfig    || [];
-  _salesSubcats     = d.subcategories || [];
-  _agentRoster      = d.agents        || [];
-  _salesLocations   = d.locations     || [];
-  _productTypes     = d.productTypes  || [];
-  _leadSources      = d.leadSources   || [];
-  // Load activity types if commissions add-on is active
-  if (_hasCommissionsAddon || _isAdmin) {
+  _salesSubcats       = d.subcategories    || [];
+  _agentRoster        = d.agents           || [];
+  _salesLocations     = d.locations        || [];
+  _productTypes       = d.productTypes     || [];
+  _leadSources        = d.leadSources      || [];
+  _selfReportConfig   = d.selfReportConfig || {};
+  // Load activity types if commissions add-on is active, admin, or self-reporting of activities is enabled
+  if (_hasCommissionsAddon || _isAdmin || _selfReportConfig.activities_enabled) {
     fetch('/api/bonus-activities?resource=types', { headers: authHeaders() })
       .then(r => r.ok ? r.json() : [])
       .then(data => { _activityTypes = Array.isArray(data) ? data : []; })
@@ -7943,6 +8446,52 @@ function _renderSlScorecard(entries) {
           const bord = met ? 'border-color:var(--accent2);' : pct >= 0.8 ? 'border-color:#ffa94d;' : '';
           const txt  = met ? `✓ ${actType.name}!` : `${actType.name}`;
           parts.push(pill(`<span style="color:${col};">${escHtml(txt)}</span> <strong style="color:${col};">${actCount} / ${fmtN(goal)}</strong>`, bord));
+        }
+      }
+    }
+  } else {
+    // "All Locations" — aggregate goals across all enabled locations
+    const enabledLocs = (_salesLocations || []).filter(l => l.goals_enabled && l.active !== false);
+    if (enabledLocs.length > 0) {
+      const totalCountGoal = enabledLocs.reduce((s, l) => s + (parseInt(l.goal_count) || 0), 0);
+      const totalPremGoal  = enabledLocs.reduce((s, l) => s + (parseFloat(l.goal_premium) || 0), 0);
+
+      if (totalCountGoal > 0) {
+        const actual = entries.length;
+        const pct    = totalCountGoal > 0 ? actual / totalCountGoal : 0;
+        const color  = pct >= 1 ? 'rgba(0,229,180,.4)' : pct >= 0.8 ? 'rgba(255,179,0,.4)' : 'rgba(255,255,255,.15)';
+        const textColor = pct >= 1 ? 'var(--accent2)' : pct >= 0.8 ? '#ffb300' : 'var(--muted)';
+        parts.push(pill(`All Offices: <strong>${actual}</strong><span style="font-size:10px;color:${textColor};display:block;">/ ${totalCountGoal} goal</span>`, `border-color:${color};`));
+      }
+      if (totalPremGoal > 0) {
+        const actualPrem = Object.values(prems).reduce((a,b)=>a+b,0);
+        const pct    = totalPremGoal > 0 ? actualPrem / totalPremGoal : 0;
+        const color  = pct >= 1 ? 'rgba(0,229,180,.4)' : pct >= 0.8 ? 'rgba(255,179,0,.4)' : 'rgba(255,255,255,.15)';
+        const textColor = pct >= 1 ? 'var(--accent2)' : pct >= 0.8 ? '#ffb300' : 'var(--muted)';
+        parts.push(pill(`Premium: <strong>$${fmtN(actualPrem)}</strong><span style="font-size:10px;color:${textColor};display:block;">/ $${fmtN(totalPremGoal)} goal</span>`, `border-color:${color};`));
+      }
+
+      // Activity goals aggregated across all enabled locations
+      if (_bonusLogEntries.length || _bonusLogCallTotals.length) {
+        const combinedActGoals = {};
+        for (const l of enabledLocs) {
+          for (const [typeId, goal] of Object.entries(l.activity_goals || {})) {
+            combinedActGoals[typeId] = (combinedActGoals[typeId] || 0) + parseFloat(goal);
+          }
+        }
+        for (const [typeId, goalVal] of Object.entries(combinedActGoals)) {
+          const actType = _activityTypes.find(t => t.id === typeId);
+          if (!actType || actType.active === false) continue;
+          let actual = 0;
+          if (actType.source === 'call_log') {
+            actual = _bonusLogCallTotals.filter(x => x.activity_type_id === typeId).reduce((s,r)=>s+r.count,0);
+          } else {
+            actual = _bonusLogEntries.filter(e => e.activity_type_id === typeId && (e.status === 'approved' || !e.status)).reduce((s,e)=>s+e.count,0);
+          }
+          const pct = goalVal > 0 ? actual / goalVal : 0;
+          const color = pct >= 1 ? 'rgba(0,229,180,.4)' : pct >= 0.8 ? 'rgba(255,179,0,.4)' : 'rgba(255,255,255,.15)';
+          const textColor = pct >= 1 ? 'var(--accent2)' : pct >= 0.8 ? '#ffb300' : 'var(--muted)';
+          parts.push(pill(`${escHtml(actType.name)}: <strong>${actual}</strong><span style="font-size:10px;color:${textColor};display:block;">/ ${goalVal} goal</span>`, `border-color:${color};`));
         }
       }
     }

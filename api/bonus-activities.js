@@ -8,33 +8,49 @@ async function resolveUser(token) {
 
   const { data: acct } = await supabase
     .from('accounts')
-    .select('has_commissions_addon, is_admin')
+    .select('has_commissions_addon, is_admin, self_report_config')
     .eq('user_id', user.id)
     .single();
 
   if (acct) {
-    return { userId: user.id, dataUserId: user.id, hasAddon: acct.has_commissions_addon || acct.is_admin || false };
+    return {
+      userId: user.id, dataUserId: user.id,
+      hasAddon: acct.has_commissions_addon || acct.is_admin || false,
+      isMember: false, memberRole: null, memberAgentId: null,
+      canApprove: true, selfReportConfig: acct.self_report_config || {},
+    };
   }
 
   const { data: member } = await supabase
     .from('account_members')
-    .select('owner_user_id, role')
+    .select('owner_user_id, role, roster_agent_id')
     .eq('member_user_id', user.id)
     .eq('status', 'active')
     .single();
-
-  if (!member || !['captain', 'chief_officer'].includes(member.role)) return null;
+  if (!member) return null;
 
   const { data: ownerAcct } = await supabase
     .from('accounts')
-    .select('has_commissions_addon, is_admin')
+    .select('has_commissions_addon, is_admin, self_report_config')
     .eq('user_id', member.owner_user_id)
     .single();
+
+  const cfg = ownerAcct?.self_report_config || {};
+  const isCapOrCO = ['captain', 'chief_officer'].includes(member.role);
+  const hasAddon  = ownerAcct?.has_commissions_addon || ownerAcct?.is_admin || false;
+
+  // Block access entirely if: not a captain/CO AND activities not enabled
+  if (!isCapOrCO && !cfg.activities_enabled) return null;
 
   return {
     userId: user.id,
     dataUserId: member.owner_user_id,
-    hasAddon: ownerAcct?.has_commissions_addon || ownerAcct?.is_admin || false,
+    hasAddon: hasAddon || cfg.activities_enabled, // self-reporters get access even without addon
+    isMember: true,
+    memberRole: member.role,
+    memberAgentId: member.roster_agent_id || null,
+    canApprove: isCapOrCO,
+    selfReportConfig: cfg,
   };
 }
 
@@ -64,19 +80,34 @@ export default async function handler(req, res) {
       return res.status(200).json(data || []);
     }
 
+    if (req.query.resource === 'pending') {
+      if (!ctx.canApprove) return res.status(403).json({ error: 'Approver access required' });
+      const { data, error } = await supabase
+        .from('bonus_activities')
+        .select('id, activity_type_id, agent_id, activity_date, count, notes, status, approval_note, submitted_by')
+        .eq('user_id', dataUserId)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: true });
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json(data || []);
+    }
+
     const month   = parseInt(req.query.month) || new Date().getMonth() + 1;
     const year    = parseInt(req.query.year)  || new Date().getFullYear();
     const from    = `${year}-${String(month).padStart(2,'0')}-01`;
     const lastDay = new Date(year, month, 0).getDate();
     const to      = `${year}-${String(month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
 
-    const { data: entries, error: eErr } = await supabase
-      .from('bonus_activities')
-      .select('id, activity_type_id, agent_id, activity_date, count, notes')
+    let q = supabase.from('bonus_activities')
+      .select('id, activity_type_id, agent_id, activity_date, count, notes, status')
       .eq('user_id', dataUserId)
       .gte('activity_date', from)
       .lte('activity_date', to)
       .order('activity_date', { ascending: false });
+    if (ctx.isMember && !ctx.canApprove && ctx.memberAgentId) {
+      q = q.eq('agent_id', ctx.memberAgentId);
+    }
+    const { data: entries, error: eErr } = await q;
     if (eErr) return res.status(500).json({ error: eErr.message });
 
     // Auto-aggregate call-type activities from call_log
@@ -140,10 +171,17 @@ export default async function handler(req, res) {
     }
 
     if (action === 'add_entry') {
-      const { activity_type_id, agent_id, activity_date, count, notes } = req.body;
+      let { activity_type_id, agent_id, activity_date, count, notes } = req.body;
+      // Members can only submit for themselves
+      if (ctx.isMember && !ctx.canApprove) {
+        if (!ctx.memberAgentId) return res.status(400).json({ error: 'No roster agent linked to your account' });
+        agent_id = ctx.memberAgentId;
+      }
       if (!activity_type_id || !agent_id || !activity_date) {
         return res.status(400).json({ error: 'activity_type_id, agent_id, and activity_date required' });
       }
+      const status = (ctx.isMember && !ctx.canApprove && ctx.selfReportConfig?.requires_approval)
+        ? 'pending' : 'approved';
       const { data, error } = await supabase
         .from('bonus_activities')
         .insert({
@@ -153,8 +191,10 @@ export default async function handler(req, res) {
           activity_date,
           count: parseInt(count) || 1,
           notes: notes || null,
+          status,
+          submitted_by: ctx.userId,
         })
-        .select('id, activity_type_id, agent_id, activity_date, count, notes')
+        .select('id, activity_type_id, agent_id, activity_date, count, notes, status')
         .single();
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json(data);
@@ -197,6 +237,19 @@ export default async function handler(req, res) {
       const { error } = await supabase
         .from('bonus_activities')
         .update(update)
+        .eq('user_id', dataUserId)
+        .eq('id', id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ ok: true });
+    }
+
+    if (action === 'set_status') {
+      if (!ctx.canApprove) return res.status(403).json({ error: 'Approver access required' });
+      const { status, approval_note } = req.body;
+      if (!['approved','rejected'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+      const { error } = await supabase
+        .from('bonus_activities')
+        .update({ status, approval_note: approval_note || null })
         .eq('user_id', dataUserId)
         .eq('id', id);
       if (error) return res.status(500).json({ error: error.message });
