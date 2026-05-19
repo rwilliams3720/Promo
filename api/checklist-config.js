@@ -123,7 +123,7 @@ export default async function handler(req, res) {
       supabase.from('sales_subcategories').select('*').eq('user_id', dataUserId).order('scoring_category').order('sort_order'),
     ]);
     const { data: agentData }    = await supabase.from('agent_roster').select('id, agent_id, name, active, commission_structure_id').eq('user_id', dataUserId).order('name');
-    const { data: locationData } = await supabase.from('sales_locations').select('id, name, active, sort_order, address, phone, hours, goal_count, goal_premium, goals_enabled').eq('user_id', dataUserId).order('sort_order').order('created_at');
+    const { data: locationData } = await supabase.from('sales_locations').select('id, name, active, sort_order, address, phone, hours, goal_count, goal_premium, goals_enabled, activity_goals').eq('user_id', dataUserId).order('sort_order').order('created_at');
     const { data: lsRow }        = await supabase.from('accounts').select('lead_sources').eq('user_id', dataUserId).single();
 
     let formConfig = formRes.data || [];
@@ -321,13 +321,18 @@ export default async function handler(req, res) {
         } else if (upd.action === 'update') {
           ({ error: locErr } = await supabase.from('sales_locations').update({ name: upd.name }).eq('id', upd.id).eq('user_id', user.id));
         } else if (upd.action === 'update_details') {
-          ({ error: locErr } = await supabase.from('sales_locations').update({
+          const detailsUpdate = {
             address:    upd.address    || null,
             phone:      upd.phone      || null,
             hours:      upd.hours      || null,
             goal_count:   upd.goal_count   != null ? (parseInt(upd.goal_count)   || null) : undefined,
             goal_premium: upd.goal_premium != null ? (parseFloat(upd.goal_premium) || null) : undefined,
-          }).eq('id', upd.id).eq('user_id', user.id));
+          };
+          if (upd.activity_goals !== undefined) detailsUpdate.activity_goals = upd.activity_goals || {};
+          ({ error: locErr } = await supabase.from('sales_locations').update(detailsUpdate).eq('id', upd.id).eq('user_id', user.id));
+        } else if (upd.action === 'update_activity_goals') {
+          ({ error: locErr } = await supabase.from('sales_locations').update({ activity_goals: upd.activity_goals || {} })
+            .eq('user_id', dataUserId).eq('id', upd.id));
         } else if (upd.action === 'update_goals_enabled') {
           ({ error: locErr } = await supabase.from('sales_locations').update({
             goals_enabled: !!upd.goals_enabled,

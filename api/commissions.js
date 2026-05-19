@@ -125,7 +125,7 @@ export default async function handler(req, res) {
     // Sales: broad OR filter — sale_date OR issued_date within the month (for pay_on_issue support)
     const [salesRes, rosterRes, structuresRes, subcatsRes] = await Promise.all([
       supabase.from('sales_log')
-        .select('hash, agent_id, product, subcategory, written_premium, split_sale, split_ratio, teammate, sale_date, issued_date')
+        .select('hash, agent_id, product, subcategory, written_premium, split_sale, split_ratio, teammate, sale_date, issued_date, is_cancelled, chargeback_date')
         .eq('user_id', dataUserId)
         .or(`and(sale_date.gte.${fromDate},sale_date.lte.${toDate}),and(issued_date.gte.${fromDate},issued_date.lte.${toDate})`),
       supabase.from('agent_roster')
@@ -172,6 +172,17 @@ export default async function handler(req, res) {
         }
       }
     } catch(_) { /* bonus tables may not be migrated yet */ }
+
+    // Fetch activity type payment amounts for bonus calculation
+    const actPayments = {}; // typeId → payment
+    try {
+      const { data: actTypesFull } = await supabase
+        .from('bonus_activity_types')
+        .select('id, payment')
+        .eq('user_id', dataUserId)
+        .eq('active', true);
+      for (const at of (actTypesFull || [])) actPayments[at.id] = parseFloat(at.payment) || 0;
+    } catch(_) {}
 
     // Build lookup maps
     const structureById = {};
@@ -392,6 +403,39 @@ export default async function handler(req, res) {
       acc.threshold_note = anyFailed ? buildThresholdNote(thresholds, groupStatus, groupCounts, groupEarned) : null;
     }
 
+    // Calculate bonus_earned per agent from activity counts × payment rates
+    const bonusEarned = {};
+    for (const agent of roster) {
+      const agActs = actCounts[agent.agent_id] || {};
+      let bonus = 0;
+      for (const [typeId, count] of Object.entries(agActs)) {
+        bonus += count * (actPayments[typeId] || 0);
+      }
+      bonusEarned[agent.agent_id] = Math.round(bonus * 100) / 100;
+    }
+
+    // Process chargebacks: cancelled sales where chargeback_date falls in this month
+    const chargebacks = {}; // agentId → [{hash, product, premium, share, commission, chargeback_date}]
+    for (const sale of sales) {
+      if (!sale.is_cancelled || !sale.chargeback_date) continue;
+      const cbDate = sale.chargeback_date;
+      if (cbDate < fromDate || cbDate > toDate) continue;
+      const primaryId = sale.agent_id;
+      const premium   = parseFloat(sale.written_premium) || 0;
+      const product   = sale.product || 'other';
+      const isSplit   = !!sale.split_sale;
+      const isFS      = isFinancialService[sale.subcategory] || false;
+      if (primaryId) {
+        const struct       = getStructure(primaryId);
+        const defaultRatio = struct?.default_split_ratio ?? 0.5;
+        const ratio        = isSplit ? (sale.split_ratio ?? defaultRatio) : 1;
+        const share        = premium * ratio;
+        const commission   = applyRate(struct, product, sale.subcategory || null, share, premium, isFS);
+        if (!chargebacks[primaryId]) chargebacks[primaryId] = [];
+        chargebacks[primaryId].push({ hash: sale.hash, product, premium, share, commission, chargeback_date: cbDate });
+      }
+    }
+
     // Fetch commission payments for this month
     const { data: payments } = await supabase
       .from('commission_payments')
@@ -406,15 +450,26 @@ export default async function handler(req, res) {
     let results = roster.map(agent => {
       const acc  = accumulator[agent.agent_id];
       const paid = paymentByAgent[agent.agent_id] || null;
+      const cbList         = chargebacks[agent.agent_id] || [];
+      const chargeback_total = Math.round(cbList.reduce((s, c) => s + c.commission, 0) * 100) / 100;
+      const agentEarned    = acc ? Math.round(acc.earned * 100) / 100 : 0;
+      const agentBonus     = bonusEarned[agent.agent_id] || 0;
+      const net_earned     = Math.round((agentEarned - chargeback_total) * 100) / 100;
+      const recalculated   = paid != null && Math.abs(parseFloat(paid.amount_paid) - (agentEarned + agentBonus - chargeback_total)) > 0.01;
       return {
-        agent_id:        agent.agent_id,
-        name:            agent.name,
-        earned:          acc ? Math.round(acc.earned * 100) / 100 : 0,
-        breakdown:       acc ? acc.breakdown : [],
-        threshold_note:  acc?.threshold_note || null,
-        group_details:   acc?.group_details   || null,
+        agent_id:         agent.agent_id,
+        name:             agent.name,
+        earned:           agentEarned,
+        breakdown:        acc ? acc.breakdown : [],
+        threshold_note:   acc?.threshold_note || null,
+        group_details:    acc?.group_details   || null,
         ungrouped_earned: acc?.ungrouped_earned ?? null,
         paid,
+        bonus_earned:     agentBonus,
+        chargebacks:      cbList,
+        chargeback_total,
+        net_earned,
+        recalculated,
       };
     });
 

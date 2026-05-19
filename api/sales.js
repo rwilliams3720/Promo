@@ -111,7 +111,7 @@ export default async function handler(req, res) {
     if (req.query.fromDate) fromDate = req.query.fromDate;
     if (req.query.toDate)   toDate   = req.query.toDate;
 
-    const COLS = 'hash, agent_id, product, subcategory, sale_date, issued_date, written_premium, source, customer_name, lead_source, period, auto_issued, split_sale, teammate, checklist_id, hidden, location';
+    const COLS = 'hash, agent_id, product, subcategory, sale_date, issued_date, written_premium, source, customer_name, lead_source, period, auto_issued, split_sale, split_ratio, teammate, checklist_id, hidden, location, is_cancelled, chargeback_date';
 
     // Selected month
     let q1 = supabase.from('sales_log').select(COLS)
@@ -146,7 +146,7 @@ export default async function handler(req, res) {
   // ── POST: create manual entry ─────────────────────────────────────────────
   if (req.method === 'POST') {
     const { agentId, product, subcategory, saleDate, issuedDate, writtenPremium, customerName,
-            leadSource, period, autoIssued, splitSale, teammate, location } = req.body || {};
+            leadSource, period, autoIssued, splitSale, splitRatio, teammate, location } = req.body || {};
 
     if (!product || !saleDate) return res.status(400).json({ error: 'product and saleDate required' });
 
@@ -169,9 +169,12 @@ export default async function handler(req, res) {
       period:          period         ? parseInt(period) : null,
       auto_issued:     autoIssued     ?? null,
       split_sale:      splitSale      ?? null,
+      split_ratio:     splitRatio != null ? parseFloat(splitRatio) || null : null,
       teammate:        teammate       || null,
       checklist_id:    null,
       location:        location       || null,
+      is_cancelled:    false,
+      chargeback_date: null,
     }, { onConflict: 'user_id,hash', ignoreDuplicates: false });
 
     if (error) return res.status(500).json({ error: error.message });
@@ -188,13 +191,17 @@ export default async function handler(req, res) {
     const { data: existing } = await supabase.from('sales_log').select('agent_id').eq('user_id', dataUserId).eq('hash', hash).single();
 
     const allowed = ['agent_id','product','subcategory','sale_date','issued_date','written_premium',
-                     'customer_name','lead_source','period','auto_issued','split_sale','teammate','hidden','location'];
+                     'customer_name','lead_source','period','auto_issued','split_sale','split_ratio','teammate','hidden','location',
+                     'is_cancelled','chargeback_date'];
     const update = {};
     for (const k of allowed) {
       if (fields[k] !== undefined) update[k] = fields[k];
     }
     if (update.customer_name)   update.customer_name   = privacyName(update.customer_name);
     if (update.written_premium) update.written_premium = parseFloat(update.written_premium);
+    if (update.split_ratio != null) update.split_ratio = parseFloat(update.split_ratio) || null;
+    if (fields.is_cancelled !== undefined) update.is_cancelled = !!fields.is_cancelled;
+    if (fields.chargeback_date !== undefined) update.chargeback_date = fields.chargeback_date || null;
     if (update.auto_issued && update.sale_date) update.issued_date = update.sale_date;
     else if (update.auto_issued && !update.sale_date) {
       const { data: cur } = await supabase.from('sales_log').select('sale_date').eq('user_id', dataUserId).eq('hash', hash).single();

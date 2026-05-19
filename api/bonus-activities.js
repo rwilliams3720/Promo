@@ -56,7 +56,7 @@ export default async function handler(req, res) {
     if (req.query.resource === 'types') {
       const { data, error } = await supabase
         .from('bonus_activity_types')
-        .select('id, name, category, subcategory, source, call_disposition, active, sort_order')
+        .select('id, name, category, subcategory, source, call_disposition, active, sort_order, payment')
         .eq('user_id', dataUserId)
         .order('sort_order')
         .order('created_at');
@@ -117,7 +117,7 @@ export default async function handler(req, res) {
     const { action } = req.body || {};
 
     if (action === 'add_type') {
-      const { name, category, subcategory, source, call_disposition } = req.body;
+      const { name, category, subcategory, source, call_disposition, payment } = req.body;
       if (!name) return res.status(400).json({ error: 'name required' });
       const { data, error } = await supabase
         .from('bonus_activity_types')
@@ -128,8 +128,9 @@ export default async function handler(req, res) {
           subcategory:      subcategory       || null,
           source:           source            || 'manual',
           call_disposition: call_disposition  || null,
+          payment:          parseFloat(payment) || 0,
         })
-        .select('id, name, category, subcategory, source, call_disposition, active, sort_order')
+        .select('id, name, category, subcategory, source, call_disposition, active, sort_order, payment')
         .single();
       if (error) {
         if (error.code === '23505') return res.status(409).json({ error: 'An activity type with that name already exists' });
@@ -168,7 +169,7 @@ export default async function handler(req, res) {
     if (!id) return res.status(400).json({ error: 'id required' });
 
     if (action === 'update_type') {
-      const { name, category, subcategory, source, call_disposition, active } = req.body;
+      const { name, category, subcategory, source, call_disposition, active, payment } = req.body;
       const update = {};
       if (name             !== undefined) update.name             = name;
       if (category         !== undefined) update.category         = category;
@@ -176,6 +177,7 @@ export default async function handler(req, res) {
       if (source           !== undefined) update.source           = source;
       if (call_disposition !== undefined) update.call_disposition = call_disposition || null;
       if (active           !== undefined) update.active           = !!active;
+      if (payment          !== undefined) update.payment          = parseFloat(payment) || 0;
       if (!Object.keys(update).length) return res.status(400).json({ error: 'Nothing to update' });
       const { error } = await supabase
         .from('bonus_activity_types')

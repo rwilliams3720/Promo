@@ -685,6 +685,45 @@
           <button class="btn btn-danger" onclick="confirmArchive()">Archive Month &amp; Reset</button>
         </div>
       </div>
+
+      <!-- Activity Log panel in Manage tab (gated: commissions add-on or admin) -->
+      <div id="manage-activity-log-panel" style="display:none;">
+        <div class="panel" style="padding:0;">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 1rem;cursor:pointer;" onclick="showManageActivityLog(this)">
+            <div class="panel-title" style="margin:0;">Activity Log</div>
+            <button class="btn btn-secondary" style="font-size:12px;padding:3px 10px;" id="manage-act-toggle-btn">Show ▾</button>
+          </div>
+          <div id="manage-act-panel-body" style="display:none;padding:.75rem 1rem;border-top:1px solid var(--border2);">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:.75rem;">
+              <select id="manage-act-month" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;"></select>
+              <select id="manage-act-year" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;"></select>
+              <button class="btn btn-secondary" style="font-size:12px;padding:4px 12px;" onclick="loadManageActivityLog()">Load</button>
+              <button class="btn btn-primary" style="font-size:12px;padding:4px 12px;" onclick="showManageActivityEntryForm()">+ Log Activity</button>
+            </div>
+            <div id="manage-act-entry-form" style="display:none;background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.65rem .75rem;margin-bottom:.75rem;">
+              <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem;">Log Activity</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr 130px 70px;gap:.5rem;margin-bottom:.5rem;align-items:end;">
+                <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Agent</label>
+                  <select id="manage-act-entry-agent" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;outline:none;"></select></div>
+                <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Activity Type</label>
+                  <select id="manage-act-entry-type" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;outline:none;"></select></div>
+                <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Date</label>
+                  <input id="manage-act-entry-date" type="text" placeholder="YYYY-MM-DD" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;outline:none;"></div>
+                <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Count</label>
+                  <input id="manage-act-entry-count" type="number" min="1" value="1" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;outline:none;"></div>
+              </div>
+              <div style="margin-bottom:.5rem;"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Notes (optional)</label>
+                <input id="manage-act-entry-notes" type="text" placeholder="Optional notes" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;outline:none;"></div>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <button class="btn btn-primary" style="font-size:12px;padding:5px 14px;" onclick="saveManageActivityEntry(this)">Save</button>
+                <button class="btn btn-secondary" style="font-size:12px;padding:4px 10px;" onclick="document.getElementById('manage-act-entry-form').style.display='none'">Cancel</button>
+                <span id="manage-act-entry-msg" style="font-size:12px;display:none;"></span>
+              </div>
+            </div>
+            <div id="manage-act-log-content" style="font-size:13px;color:var(--muted);">Select a month and click Load.</div>
+          </div>
+        </div>
+      </div>
     </div>
 
   </div>
@@ -1666,6 +1705,10 @@
                       <option value="voicemail">Voicemail</option>
                       <option value="missed">Missed / Abandon</option>
                     </select></div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr;gap:.5rem;margin-bottom:.5rem;">
+                  <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">$ / Occurrence (optional)</label>
+                    <input id="bonus-new-payment" type="number" min="0" step="0.01" placeholder="0.00" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;outline:none;max-width:160px;"></div>
                 </div>
                 <div style="display:flex;align-items:center;gap:8px;">
                   <button class="btn btn-primary" style="font-size:12px;padding:5px 14px;" onclick="addBonusActivityType(this)">+ Add</button>
@@ -5730,12 +5773,12 @@ function renderBonusActivityTypes() {
       <div style="display:flex;align-items:center;gap:8px;">
         <input type="checkbox" ${t.active !== false ? 'checked' : ''} onchange="toggleBonusTypeActive('${sid}',this.checked)" title="Active">
         <span style="font-size:11px;background:${catBg};border-radius:4px;padding:1px 7px;white-space:nowrap;">${escHtml(catLb)}</span>
-        <span style="font-size:13px;font-weight:600;flex:1;">${escHtml(t.name)}${t.subcategory ? ` <span style="font-size:11px;color:var(--muted);font-weight:400;">· ${escHtml(t.subcategory)}</span>` : ''}${srcBadge}</span>
+        <span style="font-size:13px;font-weight:600;flex:1;">${escHtml(t.name)}${t.subcategory ? ` <span style="font-size:11px;color:var(--muted);font-weight:400;">· ${escHtml(t.subcategory)}</span>` : ''}${t.payment > 0 ? ` · <span style="color:var(--accent2);">$${t.payment.toFixed(2)}</span>` : ''}${srcBadge}</span>
         <button class="btn btn-secondary" style="padding:2px 9px;font-size:11px;" onclick="toggleBonusTypeEdit('${sid}')">Edit</button>
         <button class="btn btn-secondary" style="padding:2px 8px;font-size:11px;" onclick="deleteBonusActivityType('${sid}',this)">✕</button>
       </div>
       <div id="bonus-type-edit-${sid}" style="display:none;margin-top:.6rem;padding-top:.6rem;border-top:1px solid var(--border2);">
-        <div style="display:grid;grid-template-columns:1fr 140px 150px;gap:.5rem;margin-bottom:.5rem;">
+        <div style="display:grid;grid-template-columns:1fr 140px 150px 110px;gap:.5rem;margin-bottom:.5rem;">
           <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px;">Name</label>
             <input id="bonus-edit-name-${sid}" type="text" value="${escHtml(t.name)}" style="${_bonusInputSt()}"></div>
           <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px;">Category</label>
@@ -5750,6 +5793,8 @@ function renderBonusActivityTypes() {
               <option value="manual"${t.source==='manual'?' selected':''}>Manual Entry</option>
               <option value="call_log"${t.source==='call_log'?' selected':''}>From Call Log</option>
             </select></div>
+          <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px;">$ / Occurrence</label>
+            <input id="bonus-edit-payment-${sid}" type="number" min="0" step="0.01" value="${t.payment||0}" style="${_bonusInputSt()}"></div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem;">
           <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px;">Subcategory / Type</label>
@@ -5797,12 +5842,13 @@ async function addBonusActivityType(btn) {
   const source   = document.getElementById('bonus-new-source')?.value   || 'manual';
   const subcategory    = (document.getElementById('bonus-new-subcat')?.value || '').trim() || null;
   const call_disposition = source === 'call_log' ? (document.getElementById('bonus-new-call-disp')?.value || null) : null;
+  const payment  = parseFloat(document.getElementById('bonus-new-payment')?.value) || 0;
   if (!name) return showInlineMsg('bonus-type-add-msg', 'Name is required', 'err');
   btn.disabled = true;
   try {
     const r = await fetch('/api/bonus-activities', {
       method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'add_type', name, category, subcategory, source, call_disposition }),
+      body: JSON.stringify({ action: 'add_type', name, category, subcategory, source, call_disposition, payment }),
     });
     const d = await r.json();
     if (!r.ok) { showInlineMsg('bonus-type-add-msg', d.error || 'Failed', 'err'); return; }
@@ -5810,6 +5856,7 @@ async function addBonusActivityType(btn) {
     renderBonusActivityTypes();
     document.getElementById('bonus-new-name').value = '';
     document.getElementById('bonus-new-subcat').value = '';
+    if (document.getElementById('bonus-new-payment')) document.getElementById('bonus-new-payment').value = '';
     showInlineMsg('bonus-type-add-msg', 'Added', 'ok');
   } finally { btn.disabled = false; }
 }
@@ -5820,16 +5867,17 @@ async function saveBonusActivityType(id, btn) {
   const source           = document.getElementById('bonus-edit-src-' + id)?.value  || 'manual';
   const subcategory      = (document.getElementById('bonus-edit-subcat-' + id)?.value || '').trim() || null;
   const call_disposition = source === 'call_log' ? (document.getElementById('bonus-edit-disp-' + id)?.value || null) : null;
+  const payment          = parseFloat(document.getElementById('bonus-edit-payment-' + id)?.value) || 0;
   btn.disabled = true;
   try {
     const r = await fetch('/api/bonus-activities', {
       method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'update_type', id, name, category, subcategory, source, call_disposition }),
+      body: JSON.stringify({ action: 'update_type', id, name, category, subcategory, source, call_disposition, payment }),
     });
     const msgEl = document.getElementById('bonus-type-save-msg-' + id);
     if (r.ok) {
       const t = _activityTypes.find(x => x.id === id);
-      if (t) Object.assign(t, { name, category, subcategory, source, call_disposition });
+      if (t) Object.assign(t, { name, category, subcategory, source, call_disposition, payment });
       renderBonusActivityTypes();
     } else {
       if (msgEl) { msgEl.textContent = 'Error saving'; msgEl.style.color='var(--danger)'; msgEl.style.display=''; setTimeout(()=>{ if(msgEl) msgEl.style.display='none'; },2500); }
@@ -5977,6 +6025,161 @@ async function deleteBonusEntry(id, btn) {
   try {
     const r = await fetch(`/api/bonus-activities?resource=entries&id=${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders() });
     if (r.ok) { _bonusLogEntries = _bonusLogEntries.filter(e => e.id !== id); renderBonusLog(); }
+  } finally { btn.disabled = false; }
+}
+
+// ── Manage Tab: Activity Log ──────────────────────────────────────────────────
+
+let _manageActLogLoaded = false;
+
+function showManageActivityLog(btn) {
+  const body = document.getElementById('manage-act-panel-body');
+  const toggleBtn = document.getElementById('manage-act-toggle-btn');
+  if (!body) return;
+  const isHidden = body.style.display === 'none';
+  body.style.display = isHidden ? '' : 'none';
+  if (toggleBtn) toggleBtn.textContent = isHidden ? 'Hide ▴' : 'Show ▾';
+  if (isHidden && !_manageActLogLoaded) {
+    _manageActLogLoaded = true;
+    // Populate month/year selectors
+    const now = new Date();
+    const mSel = document.getElementById('manage-act-month');
+    const ySel = document.getElementById('manage-act-year');
+    if (mSel && !mSel.options.length) {
+      const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      MONTHS.forEach((m, i) => { const o = document.createElement('option'); o.value = i+1; o.textContent = m; if (i+1 === now.getMonth()+1) o.selected = true; mSel.appendChild(o); });
+    }
+    if (ySel && !ySel.options.length) {
+      for (let y = now.getFullYear(); y >= now.getFullYear() - 3; y--) {
+        const o = document.createElement('option'); o.value = y; o.textContent = y; if (y === now.getFullYear()) o.selected = true; ySel.appendChild(o);
+      }
+    }
+    loadManageActivityLog();
+  }
+}
+
+async function loadManageActivityLog() {
+  const month = parseInt(document.getElementById('manage-act-month')?.value) || (new Date().getMonth() + 1);
+  const year  = parseInt(document.getElementById('manage-act-year')?.value)  || new Date().getFullYear();
+  const el    = document.getElementById('manage-act-log-content');
+  if (el) el.innerHTML = '<span style="color:var(--muted);">Loading…</span>';
+  try {
+    const r = await fetch(`/api/bonus-activities?month=${month}&year=${year}`, { headers: authHeaders() });
+    if (!r.ok) { if (el) el.innerHTML = '<span style="color:var(--danger);">Error loading log.</span>'; return; }
+    const d = await r.json();
+    _bonusLogEntries    = d.entries    || [];
+    _bonusLogCallTotals = d.callTotals || [];
+    renderManageActivityLog();
+  } catch(e) { if (el) el.innerHTML = '<span style="color:var(--danger);">Error loading log.</span>'; }
+}
+
+function renderManageActivityLog() {
+  const el = document.getElementById('manage-act-log-content');
+  if (!el) return;
+  const activeTypes = _activityTypes.filter(t => t.active !== false);
+  if (!activeTypes.length) { el.innerHTML = '<span style="color:var(--muted);">No activity types defined.</span>'; return; }
+  const hasData = _bonusLogEntries.length || _bonusLogCallTotals.length;
+  if (!hasData) { el.innerHTML = '<span style="color:var(--muted);">No activities logged for this month.</span>'; return; }
+
+  const getAgentName = id => _agentRoster.find(a => a.agent_id === id)?.name || id;
+
+  el.innerHTML = activeTypes.map(t => {
+    const catBg = BONUS_CAT_COLORS[t.category] || BONUS_CAT_COLORS.custom;
+    const catLb = BONUS_CAT_LABELS[t.category] || t.category;
+
+    if (t.source === 'call_log') {
+      const rows = _bonusLogCallTotals.filter(x => x.activity_type_id === t.id);
+      if (!rows.length) return '';
+      const total = rows.reduce((s,r)=>s+r.count,0);
+      return `<div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.65rem .75rem;margin-bottom:.5rem;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:.4rem;">
+          <span style="font-size:11px;background:${catBg};border-radius:4px;padding:1px 7px;">${escHtml(catLb)}</span>
+          <strong style="font-size:13px;">${escHtml(t.name)}${t.subcategory?` <span style="font-weight:400;color:var(--muted);">· ${escHtml(t.subcategory)}</span>`:''}</strong>
+          <span style="font-size:10px;background:rgba(255,165,0,.15);border:1px solid rgba(255,165,0,.3);border-radius:4px;padding:1px 6px;">Auto · Call Log</span>
+          <span style="margin-left:auto;font-size:12px;color:var(--muted);">Total: <strong style="color:var(--text);">${total}</strong></span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${rows.map(r=>`<span style="font-size:12px;background:rgba(255,255,255,.04);border:1px solid var(--border2);border-radius:6px;padding:3px 10px;">${escHtml(getAgentName(r.agent_id))} <strong>${r.count}</strong></span>`).join('')}
+        </div>
+      </div>`;
+    }
+
+    // Manual type
+    const entries = _bonusLogEntries.filter(x => x.activity_type_id === t.id);
+    if (!entries.length) return '';
+    const total = entries.reduce((s,e)=>s+e.count,0);
+    return `<div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.65rem .75rem;margin-bottom:.5rem;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:.4rem;">
+        <span style="font-size:11px;background:${catBg};border-radius:4px;padding:1px 7px;">${escHtml(catLb)}</span>
+        <strong style="font-size:13px;">${escHtml(t.name)}${t.subcategory?` <span style="font-weight:400;color:var(--muted);">· ${escHtml(t.subcategory)}</span>`:''}</strong>
+        <span style="margin-left:auto;font-size:12px;color:var(--muted);">Total: <strong style="color:var(--text);">${total}</strong></span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead><tr style="color:var(--muted);text-align:left;">
+          <th style="padding:3px 8px 3px 0;font-weight:600;">Agent</th>
+          <th style="padding:3px 8px 3px 0;">Date</th>
+          <th style="padding:3px 8px 3px 0;">Count</th>
+          <th style="padding:3px 8px 3px 0;">Notes</th>
+          <th></th>
+        </tr></thead>
+        <tbody>${entries.map(e=>`<tr style="border-top:1px solid var(--border2);">
+          <td style="padding:4px 8px 4px 0;">${escHtml(getAgentName(e.agent_id))}</td>
+          <td style="padding:4px 8px 4px 0;">${escHtml(e.activity_date||'')}</td>
+          <td style="padding:4px 8px 4px 0;"><strong>${e.count}</strong></td>
+          <td style="padding:4px 8px 4px 0;color:var(--muted);">${escHtml(e.notes||'')}</td>
+          <td style="padding:4px 0;text-align:right;"><button onclick="deleteManageActivityEntry('${escHtml(e.id)}',this)" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;opacity:.6;" title="Delete">✕</button></td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>`;
+  }).filter(Boolean).join('') || '<span style="color:var(--muted);">No activities logged for this month.</span>';
+}
+
+function showManageActivityEntryForm() {
+  const manualTypes = _activityTypes.filter(t => t.source === 'manual' && t.active !== false);
+  if (!manualTypes.length) { alert('No manual activity types defined. Add a Manual Entry type in the Bonus tab first.'); return; }
+  const agentSel = document.getElementById('manage-act-entry-agent');
+  const typeSel  = document.getElementById('manage-act-entry-type');
+  if (agentSel) {
+    agentSel.innerHTML = '<option value="">— Select agent —</option>' +
+      _agentRoster.filter(a => a.active !== false).map(a => `<option value="${escHtml(a.agent_id)}">${escHtml(a.name)}</option>`).join('');
+  }
+  if (typeSel) {
+    typeSel.innerHTML = manualTypes.map(t => `<option value="${escHtml(t.id)}">${escHtml(t.name)}${t.subcategory?' · '+escHtml(t.subcategory):''}</option>`).join('');
+  }
+  const dateEl = document.getElementById('manage-act-entry-date');
+  if (dateEl && !dateEl.value) {
+    const now = new Date();
+    dateEl.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  }
+  const form = document.getElementById('manage-act-entry-form');
+  if (form) form.style.display = '';
+}
+
+async function saveManageActivityEntry(btn) {
+  const activity_type_id = document.getElementById('manage-act-entry-type')?.value;
+  const agent_id         = document.getElementById('manage-act-entry-agent')?.value;
+  const activity_date    = (document.getElementById('manage-act-entry-date')?.value || '').trim();
+  const count            = parseInt(document.getElementById('manage-act-entry-count')?.value) || 1;
+  const notes            = (document.getElementById('manage-act-entry-notes')?.value || '').trim() || null;
+  if (!activity_type_id || !agent_id || !activity_date) return showInlineMsg('manage-act-entry-msg', 'Agent, type, and date required', 'err');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/bonus-activities', {
+      method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'add_entry', activity_type_id, agent_id, activity_date, count, notes }),
+    });
+    if (!r.ok) { const d = await r.json(); showInlineMsg('manage-act-entry-msg', d.error || 'Failed', 'err'); return; }
+    document.getElementById('manage-act-entry-form').style.display = 'none';
+    document.getElementById('manage-act-entry-notes').value = '';
+    loadManageActivityLog();
+  } finally { btn.disabled = false; }
+}
+
+async function deleteManageActivityEntry(id, btn) {
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/api/bonus-activities?resource=entries&id=${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders() });
+    if (r.ok) { _bonusLogEntries = _bonusLogEntries.filter(e => e.id !== id); renderManageActivityLog(); }
   } finally { btn.disabled = false; }
 }
 
@@ -6173,6 +6376,9 @@ function renderCommissions() {
       <tr style="border-bottom:1px solid var(--border2);">
         <th style="text-align:left;padding:8px 10px;color:var(--muted);font-weight:600;">Agent</th>
         <th style="text-align:right;padding:8px 10px;color:var(--muted);font-weight:600;">Earned</th>
+        <th style="text-align:right;padding:8px 10px;color:var(--muted);font-weight:600;">Bonus</th>
+        <th style="text-align:right;padding:8px 10px;color:var(--muted);font-weight:600;">Net</th>
+        <th style="text-align:right;padding:8px 10px;color:var(--muted);font-weight:600;">CB</th>
         <th style="text-align:right;padding:8px 10px;color:var(--muted);font-weight:600;">Paid</th>
         <th style="text-align:center;padding:8px 10px;color:var(--muted);font-weight:600;">Status</th>
         <th style="padding:8px 10px;"></th>
@@ -6182,9 +6388,14 @@ function renderCommissions() {
       ${results.map(r => {
         const isPaid = r.paid?.amount_paid != null;
         const notes  = r.paid?.notes || '';
-        return `<tr style="border-bottom:1px solid var(--border2);" id="comm-row-${escHtml(r.agent_id)}">
+        const netTotal = r.earned + (r.bonus_earned || 0);
+        const rowBg  = r.recalculated ? 'background:rgba(255,179,0,.06);' : '';
+        return `<tr style="border-bottom:1px solid var(--border2);${rowBg}" id="comm-row-${escHtml(r.agent_id)}">
           <td style="padding:8px 10px;">${escHtml(r.name)}</td>
           <td style="padding:8px 10px;text-align:right;font-weight:600;">$${r.earned.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+          <td style="padding:8px 10px;text-align:right;color:var(--accent);">${r.bonus_earned > 0 ? '$'+r.bonus_earned.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) : '<span style="color:var(--muted);">—</span>'}</td>
+          <td style="padding:8px 10px;text-align:right;font-weight:700;">$${netTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+          <td style="padding:8px 10px;text-align:right;">${r.chargeback_total > 0 ? `<span style="color:#ff6b6b;">-$${r.chargeback_total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>` : '<span style="color:var(--muted);">—</span>'}</td>
           <td style="padding:8px 10px;text-align:right;">
             ${isPaid
               ? `<div style="font-weight:600;">$${parseFloat(r.paid.amount_paid).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
@@ -6194,15 +6405,17 @@ function renderCommissions() {
           <td style="padding:8px 10px;text-align:center;">
             ${r.threshold_note
               ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(255,179,0,.12);color:#ffb300;cursor:help;" title="${escHtml(r.threshold_note)}">⚠ Min not met</span>`
-              : `<span style="font-size:11px;padding:2px 8px;border-radius:20px;${isPaid ? 'background:rgba(0,229,180,.15);color:var(--accent2)' : 'background:rgba(255,255,255,.06);color:var(--muted)'};">${isPaid ? 'Paid' : 'Unpaid'}</span>`}
+              : r.recalculated
+                ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(255,179,0,.12);color:#ffb300;">⚠ Recalculated</span>`
+                : `<span style="font-size:11px;padding:2px 8px;border-radius:20px;${isPaid ? 'background:rgba(0,229,180,.15);color:var(--accent2)' : 'background:rgba(255,255,255,.06);color:var(--muted)'};">${isPaid ? 'Paid' : 'Unpaid'}</span>`}
           </td>
           <td style="padding:8px 10px;display:flex;gap:4px;align-items:center;">
             <button class="btn btn-secondary" style="font-size:11px;padding:3px 9px;" onclick="toggleCommBreakdown('${escHtml(r.agent_id)}')">&darr;</button>
-            <button class="btn btn-secondary" style="font-size:11px;padding:3px 9px;" onclick="openPayForm('${escHtml(r.agent_id)}','${escHtml(r.name)}',${r.earned},'${escHtml(month)}')">${isPaid ? 'Edit' : 'Mark Paid'}</button>
+            <button class="btn btn-secondary" style="font-size:11px;padding:3px 9px;" onclick="openPayForm('${escHtml(r.agent_id)}','${escHtml(r.name)}',${netTotal},'${escHtml(month)}')">${isPaid ? 'Edit' : 'Mark Paid'}</button>
           </td>
         </tr>
         <tr id="comm-breakdown-${escHtml(r.agent_id)}" style="display:none;">
-          <td colspan="5" style="padding:4px 10px 16px 28px;">
+          <td colspan="8" style="padding:4px 10px 16px 28px;">
             ${r.breakdown.length ? `<table style="font-size:12px;border-collapse:collapse;margin-bottom:10px;">
               <thead><tr style="border-bottom:1px solid var(--border2);">
                 <th style="text-align:left;padding:3px 8px;color:var(--muted);">Product</th>
@@ -6247,6 +6460,28 @@ function renderCommissions() {
                   </tr></thead>
                   <tbody>${rows}${ungroupedRow}</tbody>
                 </table>`;
+            })() : ''}
+            ${(r.chargebacks && r.chargebacks.length) ? (() => {
+              const fmt = n => '$' + (n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+              return `<div style="margin-top:10px;padding:8px;background:rgba(255,107,107,.05);border:1px solid rgba(255,107,107,.15);border-radius:6px;">
+                <div style="font-size:11px;font-weight:700;color:#ff6b6b;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Chargebacks This Month</div>
+                <table style="font-size:12px;border-collapse:collapse;width:100%;">
+                  <thead><tr style="border-bottom:1px solid rgba(255,107,107,.2);">
+                    <th style="text-align:left;padding:3px 8px;color:var(--muted);">Product</th>
+                    <th style="text-align:right;padding:3px 8px;color:var(--muted);">Premium</th>
+                    <th style="text-align:right;padding:3px 8px;color:var(--muted);">Share</th>
+                    <th style="text-align:right;padding:3px 8px;color:var(--muted);">Commission</th>
+                    <th style="text-align:right;padding:3px 8px;color:var(--muted);">CB Date</th>
+                  </tr></thead>
+                  <tbody>${r.chargebacks.map(cb => `<tr style="border-bottom:1px solid rgba(255,107,107,.1);">
+                    <td style="padding:3px 8px;">${escHtml(cb.product)}</td>
+                    <td style="padding:3px 8px;text-align:right;">${fmt(cb.premium)}</td>
+                    <td style="padding:3px 8px;text-align:right;">${fmt(cb.share)}</td>
+                    <td style="padding:3px 8px;text-align:right;color:#ff6b6b;font-weight:600;">-${fmt(cb.commission)}</td>
+                    <td style="padding:3px 8px;text-align:right;color:var(--muted);">${escHtml(cb.chargeback_date)}</td>
+                  </tr>`).join('')}</tbody>
+                </table>
+              </div>`;
             })() : ''}
           </td>
         </tr>`;
@@ -6462,6 +6697,16 @@ function renderLocationsList() {
             <div><label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px;">Premium Goal ($)</label>
               <input id="loc-goal-prem-${safeId}" type="number" min="0" value="${l.goal_premium||''}" placeholder="e.g. 100000" style="${_locInputSt()}"></div>
           </div>
+          <div id="loc-act-goals-${safeId}" style="display:${l.goals_enabled ? '' : 'none'};margin-top:.4rem;padding-top:.4rem;border-top:1px solid var(--border2);">
+            <div style="font-size:11px;color:var(--muted);margin-bottom:.4rem;">Activity Goals (per month)</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.4rem;">
+              ${_activityTypes.filter(at => at.active !== false).map(at => {
+                const currentGoal = (l.activity_goals || {})[at.id] || '';
+                return `<div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px;">${escHtml(at.name)}</label>
+                  <input id="loc-act-goal-${safeId}-${escHtml(at.id)}" type="number" min="0" value="${currentGoal}" placeholder="—" style="${_locInputSt()}"></div>`;
+              }).join('')}
+            </div>
+          </div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
           <button class="btn btn-primary" style="padding:4px 12px;font-size:12px;" onclick="saveLocationDetails('${safeId}',this)">Save</button>
@@ -6479,8 +6724,10 @@ function toggleLocationEdit(id) {
 }
 
 async function toggleLocationGoals(id, enabled) {
-  const fields = document.getElementById('loc-goals-fields-' + id);
-  if (fields) fields.style.display = enabled ? 'grid' : 'none';
+  const fields   = document.getElementById('loc-goals-fields-' + id);
+  const actGoals = document.getElementById('loc-act-goals-' + id);
+  if (fields)   fields.style.display   = enabled ? 'grid' : 'none';
+  if (actGoals) actGoals.style.display = enabled ? '' : 'none';
   const loc = _salesLocations.find(l => l.id === id);
   if (loc) loc.goals_enabled = enabled;
   await fetch('/api/checklist-config', {
@@ -6496,15 +6743,20 @@ async function saveLocationDetails(id, btn) {
   const hours      = (document.getElementById('loc-hours-' + id)?.value || '').trim();
   const goal_count   = document.getElementById('loc-goal-count-' + id)?.value || null;
   const goal_premium = document.getElementById('loc-goal-prem-' + id)?.value  || null;
+  const actGoals = {};
+  (_activityTypes || []).filter(at => at.active !== false).forEach(at => {
+    const v = document.getElementById(`loc-act-goal-${id}-${at.id}`)?.value;
+    if (v && parseFloat(v) > 0) actGoals[at.id] = parseFloat(v);
+  });
   btn.disabled = true;
   try {
     const r = await fetch('/api/checklist-config', {
       method: 'PATCH',
       headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ locationUpdates: [{ action: 'update_details', id, address, phone, hours, goal_count, goal_premium }] }),
+      body: JSON.stringify({ locationUpdates: [{ action: 'update_details', id, address, phone, hours, goal_count, goal_premium, activity_goals: actGoals }] }),
     });
     const loc = _salesLocations.find(l => l.id === id);
-    if (loc) { loc.address = address; loc.phone = phone; loc.hours = hours; loc.goal_count = goal_count ? parseInt(goal_count) : null; loc.goal_premium = goal_premium ? parseFloat(goal_premium) : null; }
+    if (loc) { loc.address = address; loc.phone = phone; loc.hours = hours; loc.goal_count = goal_count ? parseInt(goal_count) : null; loc.goal_premium = goal_premium ? parseFloat(goal_premium) : null; loc.activity_goals = actGoals; }
     const msgEl = document.getElementById('loc-save-msg-' + id);
     if (msgEl) {
       msgEl.textContent = r.ok ? 'Saved' : 'Error saving';
@@ -7077,6 +7329,7 @@ function renderManageTabMode() {
   const banner      = document.getElementById('manage-mode-banner');
   const uploadPanelS= document.getElementById('upload-panel-sales');
   const manualPanel = document.getElementById('manual-entry-panel');
+  const actLogPanel = document.getElementById('manage-activity-log-panel');
   if (!banner) return;
   if (_hasSalesAddon || _isAdmin) {
     banner.style.display = 'flex';
@@ -7092,6 +7345,8 @@ function renderManageTabMode() {
     if (manualPanel)  manualPanel.style.display  = 'none';
     if (uploadPanelS) uploadPanelS.style.display = '';
   }
+  // Show activity log panel for users with commissions add-on or admin
+  if (actLogPanel) actLogPanel.style.display = (_hasCommissionsAddon || _isAdmin) ? '' : 'none';
 }
 
 // ── Load add-on config ────────────────────────────────────────────────────────
@@ -7441,8 +7696,22 @@ function _buildSlEditForm(e) {
         <button class="btn btn-secondary" style="padding:4px 10px;font-size:12px;" onclick="cancelSalesLogEdit('${h}')">Cancel</button>
       </div>
     </div>
+    <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;margin-top:.5rem;padding:6px 8px;background:rgba(255,100,100,.05);border-radius:6px;border:1px solid rgba(255,100,100,.1);">
+      <label style="font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer;">
+        <input id="sl-cancelled-${h}" type="checkbox"${e.is_cancelled ? ' checked' : ''} onchange="slCancelledChanged(this,'${h}')"> Policy Cancelled / Chargeback
+      </label>
+      <div id="sl-chargeback-row-${h}" style="display:${e.is_cancelled ? '' : 'none'};flex:1;">
+        <span style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">CHARGEBACK DATE</span>
+        <input id="sl-chargeback-date-${h}" type="text" placeholder="YYYY-MM-DD" value="${escHtml(e.chargeback_date||'')}" style="${si};max-width:160px;">
+      </div>
+    </div>
   </div>`;
 }
+function slCancelledChanged(el, h) {
+  const row = document.getElementById('sl-chargeback-row-' + h);
+  if (row) row.style.display = el.checked ? '' : 'none';
+}
+
 function editSalesLogRow(h) {
   const edit = document.getElementById('sl-edit-' + h);
   if (!edit) return;
@@ -7457,6 +7726,10 @@ function editSalesLogRow(h) {
     }
     if (issuedDateEl && !issuedDateEl._flatpickr) {
       flatpickr(issuedDateEl, { dateFormat: 'Y-m-d', allowInput: true });
+    }
+    const cbDateEl = document.getElementById('sl-chargeback-date-' + h);
+    if (cbDateEl && !cbDateEl._flatpickr) {
+      flatpickr(cbDateEl, { dateFormat: 'Y-m-d', allowInput: true });
     }
   }
 }
@@ -7487,6 +7760,9 @@ async function saveSalesLogRow(h, btn) {
                        : null,
       teammate:      document.getElementById('sl-teammate-' + h)?.value     || null,
       location:      document.getElementById('sl-location-' + h)?.value     || null,
+      is_cancelled:  document.getElementById('sl-cancelled-' + h)?.checked  ?? false,
+      chargeback_date: document.getElementById('sl-cancelled-' + h)?.checked
+        ? (document.getElementById('sl-chargeback-date-' + h)?.value || null) : null,
     };
     const r = await fetch('/api/sales', { method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const d = await r.json();
@@ -7646,6 +7922,28 @@ function _renderSlScorecard(entries) {
         const rem  = Math.ceil(loc.goal_premium - totalPrem);
         const txt  = met ? '✓ Premium Goal!' : `$${fmtN(rem)} to premium goal`;
         parts.push(pill(`<span style="color:${col};">${escHtml(txt)}</span> <strong style="color:${col};">$${fmtN(totalPrem)} / $${fmtN(loc.goal_premium)}</strong>`, bord));
+      }
+      // Activity goal pills — only when bonus log data is available
+      if (loc.activity_goals && (Object.keys(loc.activity_goals).length > 0) && (_bonusLogEntries.length || _bonusLogCallTotals.length)) {
+        for (const [typeId, goalVal] of Object.entries(loc.activity_goals)) {
+          const actType = _activityTypes.find(a => a.id === typeId);
+          if (!actType) continue;
+          // Calculate total count for this activity type
+          let actCount = 0;
+          if (actType.source === 'call_log') {
+            actCount = _bonusLogCallTotals.filter(x => x.activity_type_id === typeId).reduce((s, x) => s + x.count, 0);
+          } else {
+            actCount = _bonusLogEntries.filter(x => x.activity_type_id === typeId).reduce((s, x) => s + x.count, 0);
+          }
+          const goal = parseFloat(goalVal);
+          if (!goal) continue;
+          const met  = actCount >= goal;
+          const pct  = actCount / goal;
+          const col  = met ? 'var(--accent2)' : pct >= 0.8 ? '#ffa94d' : 'var(--text)';
+          const bord = met ? 'border-color:var(--accent2);' : pct >= 0.8 ? 'border-color:#ffa94d;' : '';
+          const txt  = met ? `✓ ${actType.name}!` : `${actType.name}`;
+          parts.push(pill(`<span style="color:${col};">${escHtml(txt)}</span> <strong style="color:${col};">${actCount} / ${fmtN(goal)}</strong>`, bord));
+        }
       }
     }
   }
@@ -7998,6 +8296,9 @@ function renderSalesLog() {
     const isHidden = !!e.hidden;
     const isUnissued = !e.issued_date;
 
+    const chargebackBadge = e.is_cancelled
+      ? `<span style="font-size:11px;font-weight:600;color:#ff6b6b;background:rgba(255,107,107,.12);padding:1px 7px;border-radius:10px;white-space:nowrap;">Chargeback${e.chargeback_date ? ' ' + e.chargeback_date : ''}</span>`
+      : '';
     const issuedBadge = e.issued_date
       ? `<span style="font-size:11px;font-weight:600;color:var(--accent2);background:rgba(0,200,120,.12);padding:1px 7px;border-radius:10px;white-space:nowrap;">Issued ✓</span>`
       : isHidden
@@ -8014,8 +8315,8 @@ function renderSalesLog() {
       : '';
     const editForm = canEdit ? `<div id="sl-edit-${e.hash}" style="display:none;">${_buildSlEditForm(e)}</div>` : '';
 
-    return `<div id="sl-row-${e.hash}" style="border-bottom:1px solid var(--border2);padding:7px 0;${isHidden ? 'opacity:.5;' : ''}">
-      <div style="display:grid;grid-template-columns:18px 82px 1fr 1fr 1fr 60px auto auto auto;gap:8px;align-items:center;">
+    return `<div id="sl-row-${e.hash}" style="border-bottom:1px solid var(--border2);padding:7px 0;${isHidden ? 'opacity:.5;' : ''}${e.is_cancelled ? 'background:rgba(255,100,100,.04);' : ''}">
+      <div style="display:grid;grid-template-columns:18px 82px 1fr 1fr 1fr 60px auto auto auto auto;gap:8px;align-items:center;">
         <span style="font-size:14px;">${src}</span>
         <span style="font-size:11px;color:var(--muted);">${e.sale_date || '—'}</span>
         <span style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(agName)}</span>
@@ -8023,6 +8324,7 @@ function renderSalesLog() {
         <span style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(e.customer_name || '—')}</span>
         <span style="font-size:12px;color:var(--accent2);text-align:right;">${premium}</span>
         ${issuedBadge}
+        ${chargebackBadge}
         <div style="display:flex;gap:4px;">${hideBtn}</div>
         <div style="display:flex;gap:4px;">${editBtn}</div>
       </div>
@@ -8061,6 +8363,8 @@ function downloadSalesLogXlsx() {
     'Location':      e.location      || '',
     'Source':        e.source        || '',
     'Hidden':        e.hidden        ? 'Yes' : '',
+    'Cancelled':      e.is_cancelled  ? 'Yes' : '',
+    'Chargeback Date': e.chargeback_date || '',
   }));
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
