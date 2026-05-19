@@ -10,12 +10,13 @@ const PLAN_BY_PRICE = {
   [process.env.STRIPE_PRICE_PREMIUM]: 'premium',
 };
 
-// Returns 'plan'|'sales_addon'|'commissions_addon'|'unknown'
+// Returns 'plan'|'sales_addon'|'commissions_addon'|'lead_analysis_addon'|'unknown'
 function subType(sub) {
   const priceId = sub?.items?.data?.[0]?.price?.id;
   if (PLAN_BY_PRICE[priceId]) return 'plan';
-  if (priceId && priceId === process.env.STRIPE_PRICE_SALES_ADDON)       return 'sales_addon';
-  if (priceId && priceId === process.env.STRIPE_PRICE_COMMISSIONS_ADDON) return 'commissions_addon';
+  if (priceId && priceId === process.env.STRIPE_PRICE_SALES_ADDON)         return 'sales_addon';
+  if (priceId && priceId === process.env.STRIPE_PRICE_COMMISSIONS_ADDON)   return 'commissions_addon';
+  if (priceId && priceId === process.env.STRIPE_PRICE_LEAD_ANALYSIS_ADDON) return 'lead_analysis_addon';
   return 'unknown';
 }
 
@@ -71,6 +72,11 @@ export default async function handler(req, res) {
             has_commissions_addon: true,
             stripe_customer_id:    session.customer,
           }).eq('user_id', userId);
+        } else if (type === 'lead_analysis_addon') {
+          await supabase.from('accounts').update({
+            has_lead_analysis_addon: true,
+            stripe_customer_id:      session.customer,
+          }).eq('user_id', userId);
         }
         break;
       }
@@ -92,6 +98,9 @@ export default async function handler(req, res) {
             .eq('stripe_customer_id', customerId);
         } else if (type === 'commissions_addon') {
           await supabase.from('accounts').update({ has_commissions_addon: true })
+            .eq('stripe_customer_id', customerId);
+        } else if (type === 'lead_analysis_addon') {
+          await supabase.from('accounts').update({ has_lead_analysis_addon: true })
             .eq('stripe_customer_id', customerId);
         }
         break;
@@ -131,6 +140,10 @@ export default async function handler(req, res) {
           const isActive = sub.status === 'active';
           await supabase.from('accounts').update({ has_commissions_addon: isActive })
             .eq('stripe_customer_id', customerId);
+        } else if (type === 'lead_analysis_addon') {
+          const isActive = sub.status === 'active';
+          await supabase.from('accounts').update({ has_lead_analysis_addon: isActive })
+            .eq('stripe_customer_id', customerId);
         }
         break;
       }
@@ -144,6 +157,9 @@ export default async function handler(req, res) {
             .eq('stripe_customer_id', customerId);
         } else if (type === 'commissions_addon') {
           await supabase.from('accounts').update({ has_commissions_addon: false })
+            .eq('stripe_customer_id', customerId);
+        } else if (type === 'lead_analysis_addon') {
+          await supabase.from('accounts').update({ has_lead_analysis_addon: false })
             .eq('stripe_customer_id', customerId);
         } else if (type === 'plan') {
           // Don't override 'deferred' — admin set it intentionally to preserve access after cancel

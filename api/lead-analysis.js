@@ -27,15 +27,15 @@ export default async function handler(req, res) {
 
   const { data: acct, error: acctErr } = await supabase
     .from('accounts')
-    .select('is_admin,has_sales_addon,plan,status,trial_ends_at,company_name,lead_analysis_cache,lead_analysis_at')
+    .select('is_admin,has_lead_analysis_addon,plan,status,trial_ends_at,company_name,lead_analysis_cache,lead_analysis_at')
     .eq('user_id', dataUserId)
     .single();
 
   if (acctErr || !acct) return res.status(500).json({ error: 'Account not found' });
 
   const trialExpired = acct.status === 'trial' && acct.trial_ends_at && new Date(acct.trial_ends_at) < new Date();
-  const allowed = acct.is_admin || (acct.has_sales_addon && !trialExpired && ['paid','deferred','trial'].includes(acct.status));
-  if (!allowed) return res.status(403).json({ error: 'Sales add-on required' });
+  const allowed = acct.is_admin || (acct.has_lead_analysis_addon && !trialExpired && ['paid','deferred','trial'].includes(acct.status));
+  if (!allowed) return res.status(403).json({ error: 'Lead Analysis add-on required' });
 
   const force = req.query?.force === '1';
 

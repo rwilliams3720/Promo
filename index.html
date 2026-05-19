@@ -792,6 +792,7 @@
       <button class="acct-stab"        id="perf-stab-saleslog"    onclick="showPerfSubTab('saleslog',this)"    style="font-size:13px;">Sales Log</button>
       <button class="acct-stab"        id="perf-stab-salesperf"   onclick="showPerfSubTab('salesperf',this)"   style="font-size:13px;">Sales Performance</button>
       <button class="acct-stab"        id="perf-stab-commissions" onclick="showPerfSubTab('commissions',this)" style="font-size:13px;">Commissions</button>
+      <button class="acct-stab"        id="perf-stab-goals"       onclick="showPerfSubTab('goals',this)"       style="font-size:13px;">Goals</button>
     </div>
 
     <!-- Call Performance sub-pane -->
@@ -1080,6 +1081,25 @@
       </div>
     </div><!-- /perf-sub-commissions -->
 
+    <!-- Goals sub-pane -->
+    <div id="perf-sub-goals" style="display:none">
+      <div class="panel">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.2rem;">
+          <div class="panel-title" style="margin:0">Agent Goals</div>
+          <div style="display:flex;gap:5px;flex-wrap:wrap;" id="goals-period-filter">
+            <button data-filter="all"         onclick="setGoalsFilter('all')"         style="font-size:11px;padding:3px 10px;background:var(--accent2);color:#000;border:none;border-radius:4px;cursor:pointer;font-weight:600;">All</button>
+            <button data-filter="monthly"     onclick="setGoalsFilter('monthly')"     style="font-size:11px;padding:3px 10px;background:var(--card2);color:var(--muted);border:1px solid var(--border2);border-radius:4px;cursor:pointer;">Monthly</button>
+            <button data-filter="quarterly"   onclick="setGoalsFilter('quarterly')"   style="font-size:11px;padding:3px 10px;background:var(--card2);color:var(--muted);border:1px solid var(--border2);border-radius:4px;cursor:pointer;">Quarterly</button>
+            <button data-filter="semi_annual" onclick="setGoalsFilter('semi_annual')" style="font-size:11px;padding:3px 10px;background:var(--card2);color:var(--muted);border:1px solid var(--border2);border-radius:4px;cursor:pointer;">Semi-Annual</button>
+            <button data-filter="annual"      onclick="setGoalsFilter('annual')"      style="font-size:11px;padding:3px 10px;background:var(--card2);color:var(--muted);border:1px solid var(--border2);border-radius:4px;cursor:pointer;">Annual</button>
+          </div>
+        </div>
+        <div id="goals-content">
+          <div style="color:var(--muted);font-size:13px;text-align:center;padding:2rem;">Set goals in <button class="btn btn-secondary" style="padding:2px 8px;font-size:12px;" onclick="goToAccountTab('sales')">Account → Sales → Team</button></div>
+        </div>
+      </div>
+    </div><!-- /perf-sub-goals -->
+
   </div>
 
   <!-- ── TAB: ANALYSIS ── -->
@@ -1347,13 +1367,10 @@
             <div id="ma-cancel-msg" style="font-size:13px;margin-top:8px;display:none;"></div>
           </div>
         </div>
-      </div>
 
-      <!-- Commissions Add-On — account owners only -->
+        <!-- Commissions Add-On — account owners only -->
         <div class="acct-section" id="commissions-addon-section" style="display:none">
           <h3>Commissions Add-On</h3>
-
-          <!-- Upsell (no add-on) -->
           <div id="commissions-addon-upsell" style="display:none">
             <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Build commission structures with tiered rates, escalators, and minimums. Assign structures per agent, track activity bonuses, manage chargebacks, and mark payments paid.</p>
             <div style="background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:1.2rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;">
@@ -1368,8 +1385,6 @@
             </div>
             <div id="commissions-addon-upsell-msg" style="font-size:13px;display:none;margin-top:6px;"></div>
           </div>
-
-          <!-- Active status (has add-on) -->
           <div id="commissions-addon-active" style="display:none">
             <div style="background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:1rem 1.2rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1.25rem;">
               <div>
@@ -1384,6 +1399,40 @@
             <div id="commissions-addon-cancel-msg" style="font-size:13px;margin-top:8px;display:none;"></div>
           </div>
         </div>
+
+        <!-- Lead Source Analysis Add-On — account owners only -->
+        <div class="acct-section" id="lead-analysis-addon-section" style="display:none">
+          <h3>Lead Source Analysis Add-On</h3>
+          <div id="lead-analysis-addon-upsell" style="display:none">
+            <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Unlock AI-powered analysis of your lead channels — volume, average premium, product mix, trend momentum, and agent-source fit. Refreshes every 3 days.</p>
+            <div style="background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:1.2rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;">
+              <div>
+                <div style="font-size:15px;font-weight:700;color:var(--text);">Lead Source Analysis</div>
+                <div style="font-size:13px;color:var(--muted);">Channel performance · Avg premium · Trend · Agent-source fit</div>
+              </div>
+              <div style="text-align:right;">
+                <div style="font-size:1.3rem;font-weight:700;color:var(--accent);">$10<span style="font-size:13px;color:var(--muted);font-weight:400;">/mo</span></div>
+                <button class="btn btn-primary" style="margin-top:6px;" onclick="purchaseLeadAnalysisAddon(this)">Add to Plan</button>
+              </div>
+            </div>
+            <div id="lead-analysis-addon-upsell-msg" style="font-size:13px;display:none;margin-top:6px;"></div>
+          </div>
+          <div id="lead-analysis-addon-active" style="display:none">
+            <div style="background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:1rem 1.2rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1.25rem;">
+              <div>
+                <div style="font-size:14px;font-weight:700;color:var(--text);">Lead Source Analysis <span style="font-size:11px;background:rgba(0,212,255,.12);color:var(--accent);padding:2px 8px;border-radius:4px;margin-left:6px;font-weight:600;">Active</span></div>
+                <div style="font-size:13px;color:var(--muted);margin-top:3px;">View insights on the <button class="btn-link" onclick="showTab('analysis',document.querySelector('.tab[onclick*=analysis]'));showAnalysisSubTab('leadsources',document.getElementById('analysis-stab-leadsources'))">Lead Sources tab</button>.</div>
+              </div>
+              <div style="font-size:1.1rem;font-weight:700;color:var(--muted);">$10<span style="font-size:12px;font-weight:400;">/mo</span></div>
+            </div>
+            <div style="font-size:12px;font-weight:600;color:var(--danger);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem;">Remove Add-On</div>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Cancels the Lead Source Analysis subscription. Cached analysis data is preserved.</p>
+            <button class="btn" style="background:rgba(255,77,109,.12);color:var(--danger);border:1px solid rgba(255,77,109,.3);" onclick="cancelLeadAnalysisAddon(this)">Remove Add-On</button>
+            <div id="lead-analysis-addon-cancel-msg" style="font-size:13px;margin-top:8px;display:none;"></div>
+          </div>
+        </div>
+
+      </div>
 
       <!-- ── PANE: Sales ── -->
       <div id="acct-pane-sales" class="acct-pane" style="display:none">
@@ -2264,8 +2313,13 @@ let _hasMemberAnalysis    = false;
 let _memberAnalysisCount  = 0;
 let _memberAnalysisAgents = [];
 let _memberAnalysisAt     = null;
-let _leadAnalysisAt       = null;
-let _leadAnalysisLoading  = false;
+let _leadAnalysisAt         = null;
+let _leadAnalysisLoading    = false;
+let _hasLeadAnalysisAddon   = false;
+let _agentGoals       = [];
+let _goalsLoaded      = false;
+let _goalsViewFilter  = 'all';
+let _raceCurrentMonth = '';
 let _memberAnalysisLoading = false;
 let _memberHoursData      = [];   // periods array from accounts.member_hours_data
 let _maHoursFileRows      = [];   // raw parsed rows from dropped file
@@ -2427,7 +2481,8 @@ async function checkAccountAndShow(session) {
       _columnMap      = acct.sales_column_map || {};
       _analysisAt     = acct.ai_analysis_at   || null;
       _hasSalesAddon  = acct.has_sales_addon  || false;
-      _leadAnalysisAt       = acct.lead_analysis_at      || null;
+      _leadAnalysisAt         = acct.lead_analysis_at       || null;
+      _hasLeadAnalysisAddon   = acct.has_lead_analysis_addon || false;
       _memberAnalysisAgents = acct.member_analysis_agents || [];
       _memberAnalysisAt     = acct.member_analysis_at    || null;
       _hasMemberAnalysis    = acct.has_member_analysis   || false;
@@ -2457,7 +2512,7 @@ async function checkAccountAndShow(session) {
         _dataUserId       = _ownerUserId;
         const { data: ownerAcct } = await _supabase
           .from('accounts')
-          .select('company_name, plan, status, trial_ends_at, has_sales_addon, has_commissions_addon, sales_entry_mode, is_admin, self_report_config, ai_analysis_at, lead_analysis_at, has_member_analysis, member_analysis_agents, member_analysis_at, member_analysis_count, member_hours_data')
+          .select('company_name, plan, status, trial_ends_at, has_sales_addon, has_commissions_addon, has_lead_analysis_addon, sales_entry_mode, is_admin, self_report_config, ai_analysis_at, lead_analysis_at, has_member_analysis, member_analysis_agents, member_analysis_at, member_analysis_count, member_hours_data')
           .eq('user_id', _ownerUserId)
           .single();
         if (ownerAcct) {
@@ -2469,7 +2524,8 @@ async function checkAccountAndShow(session) {
           _salesEntryMode         = ownerAcct.sales_entry_mode       || 'upload';
           _selfReportConfig       = ownerAcct.self_report_config     || {};
           _analysisAt             = ownerAcct.ai_analysis_at         || null;
-          _leadAnalysisAt         = ownerAcct.lead_analysis_at       || null;
+          _leadAnalysisAt         = ownerAcct.lead_analysis_at        || null;
+          _hasLeadAnalysisAddon   = ownerAcct.has_lead_analysis_addon || false;
           _hasMemberAnalysis      = ownerAcct.has_member_analysis    || false;
           _memberAnalysisAgents   = ownerAcct.member_analysis_agents || [];
           _memberAnalysisAt       = ownerAcct.member_analysis_at     || null;
@@ -2490,6 +2546,8 @@ async function checkAccountAndShow(session) {
     if (!_isMember || ['captain', 'chief_officer'].includes(_memberRole) || _selfReportConfig.activities_enabled || _selfReportConfig.sales_enabled) {
       await loadAddonConfig().catch(e => console.error('loadAddonConfig:', e));
     }
+    // Goals load for every user — bosun/custom members need to see public goals on race tab
+    loadAgentGoals().catch(() => {});
 
     showScreen('app');
     document.getElementById('user-info').textContent = _isMember
@@ -2525,6 +2583,16 @@ async function checkAccountAndShow(session) {
         loadAccountTab().catch(() => {});
       }, 800);
     } else if (_urlParams.get('addon') === 'commissions_cancel') {
+      history.replaceState({}, '', '/app');
+    } else if (_urlParams.get('addon') === 'lead_analysis_success') {
+      history.replaceState({}, '', '/app');
+      _hasLeadAnalysisAddon = true;
+      setTimeout(() => {
+        const msg = document.getElementById('lead-analysis-addon-upsell-msg');
+        if (msg) { msg.style.display='block'; msg.style.color='var(--accent2)'; msg.textContent='Lead Source Analysis add-on activated!'; }
+        loadAccountTab().catch(() => {});
+      }, 800);
+    } else if (_urlParams.get('addon') === 'lead_analysis_cancel') {
       history.replaceState({}, '', '/app');
     } else if (_urlParams.get('member_analysis') === 'success') {
       history.replaceState({}, '', '/app');
@@ -2735,7 +2803,7 @@ function showManageSubTab(name, btn) {
 }
 
 function showPerfSubTab(name, btn) {
-  ['callperf','saleslog','salesperf','commissions'].forEach(n => {
+  ['callperf','saleslog','salesperf','commissions','goals'].forEach(n => {
     const p = document.getElementById('perf-sub-' + n);
     if (p) p.style.display = n === name ? '' : 'none';
   });
@@ -2782,6 +2850,8 @@ function showPerfSubTab(name, btn) {
     if (!hasComm) return;
     loadCommissions();
   }
+
+  if (name === 'goals') loadGoalsTab();
 }
 
 function goToAccountTab(pane) {
@@ -2856,6 +2926,7 @@ async function loadRaceData() {
 
   const month = (rcRes.data || []).find(r => r.key === 'current_month')?.value || '';
   document.getElementById('header-month').textContent = month || 'No race data uploaded';
+  _raceCurrentMonth = month;
 
   const EXTRA_CATS = ['deposit','other','other2','other3','other4','other5'];
   const depOthCounts = {};
@@ -2995,6 +3066,7 @@ function renderRace(data) {
           ${(ag.other4 ||0) && SCORING.other4_enabled ?`<span class="pill">${CAT_LABELS.other4}×${ag.other4}</span>`:''}
           ${(ag.other5 ||0) && SCORING.other5_enabled ?`<span class="pill">${CAT_LABELS.other5}×${ag.other5}</span>`:''}
         </div>
+        ${renderRaceGoalsRow(ag)}
         <div class="race-bar-bg" style="margin-top:6px">
           <div class="race-bar-fill" style="width:${barW}%;background:linear-gradient(90deg,${ag.color}88,${ag.color})">
             <span class="race-bar-text">${fmtMins(ag.talk_min)}</span>
@@ -4175,7 +4247,20 @@ const ADDONS = [
     price: '$10/head/mo',
     active: acct => !!(acct.has_member_analysis),
   },
-  // Future add-ons: add a new object here following the same shape.
+  {
+    key:   'commissions',
+    label: 'Commissions',
+    desc:  'Tiered structures, escalators, activity bonuses, chargebacks, and payment tracking.',
+    price: '$25/mo',
+    active: acct => !!(acct.has_commissions_addon),
+  },
+  {
+    key:   'lead_analysis',
+    label: 'Lead Source Analysis',
+    desc:  'AI analysis of channel performance — volume, avg premium, trend momentum, and agent-source fit.',
+    price: '$10/mo',
+    active: acct => !!(acct.has_lead_analysis_addon),
+  },
 ];
 
 function renderAddonsOverview(acct) {
@@ -4290,6 +4375,9 @@ async function loadAccountTab() {
   // Commissions add-on section
   document.getElementById('commissions-addon-section').style.display = '';
   renderCommissionsAddonSection(acct);
+  // Lead Analysis add-on section
+  document.getElementById('lead-analysis-addon-section').style.display = '';
+  renderLeadAnalysisAddonSection(acct);
 }
 
 async function confirmResetMyData(btn) {
@@ -4594,6 +4682,15 @@ function renderAdminTable(rows) {
                 color:${r.has_commissions_addon?'var(--bronze)':'var(--muted)'};"
               title="${r.has_commissions_addon?'Disable':'Enable'} Commissions">
               Comm ${r.has_commissions_addon?'✓':'—'}
+            </button>
+          </div>
+          <div style="display:flex;align-items:center;gap:4px;">
+            <button onclick="adminSave('${r.user_id}','has_lead_analysis_addon',${!r.has_lead_analysis_addon})"
+              style="font-size:10px;padding:2px 7px;border-radius:4px;border:none;cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:600;
+                background:${r.has_lead_analysis_addon?'rgba(123,97,255,.15)':'rgba(255,255,255,.06)'};
+                color:${r.has_lead_analysis_addon?'var(--purple, #7b61ff)':'var(--muted)'};"
+              title="${r.has_lead_analysis_addon?'Disable':'Enable'} Lead Analysis">
+              Lead ${r.has_lead_analysis_addon?'✓':'—'}
             </button>
           </div>
         </div>
@@ -5366,6 +5463,7 @@ function renderAgentRoster() {
         <button class="btn btn-secondary" style="padding:2px 8px;font-size:11px;" onclick="deleteAgentRoster('${escHtml(a.id)}', this)">&#x2715;</button>
       </div>
       ${structSection}
+      ${renderAgentRosterGoalsSection(a)}
     </div>`;
   }).join('');
 }
@@ -8126,6 +8224,506 @@ async function cancelCommissionsAddon(btn) {
     showInlineMsg('commissions-addon-cancel-msg', e.message, 'err');
     btn.disabled = false; btn.textContent = 'Remove Add-On'; btn.dataset.confirming = '';
   }
+}
+
+// ── Lead Analysis add-on ──────────────────────────────────────────────────────
+function renderLeadAnalysisAddonSection(acct) {
+  const hasAddon = !!(acct.has_lead_analysis_addon) || _isAdmin;
+  document.getElementById('lead-analysis-addon-upsell').style.display = hasAddon ? 'none' : '';
+  document.getElementById('lead-analysis-addon-active').style.display = hasAddon ? ''     : 'none';
+}
+
+async function purchaseLeadAnalysisAddon(btn) {
+  btn.disabled = true; btn.textContent = 'Redirecting…';
+  try {
+    const r = await fetch('/api/lead-analysis-checkout', { method: 'POST', headers: authHeaders() });
+    const d = await r.json();
+    if (d.url) window.location.href = d.url;
+    else { showInlineMsg('lead-analysis-addon-upsell-msg', d.error || 'Error', 'err'); btn.disabled = false; btn.textContent = 'Add to Plan'; }
+  } catch(e) { showInlineMsg('lead-analysis-addon-upsell-msg', e.message, 'err'); btn.disabled = false; btn.textContent = 'Add to Plan'; }
+}
+
+async function cancelLeadAnalysisAddon(btn) {
+  if (btn.dataset.confirming !== 'yes') {
+    btn.dataset.confirming = 'yes';
+    btn.textContent = 'Confirm Remove — click again to cancel';
+    setTimeout(() => {
+      if (btn.dataset.confirming === 'yes') { btn.dataset.confirming = ''; btn.textContent = 'Remove Add-On'; }
+    }, 5000);
+    return;
+  }
+  btn.disabled = true; btn.textContent = 'Removing…';
+  try {
+    const r = await fetch('/api/lead-analysis-checkout', { method: 'DELETE', headers: authHeaders() });
+    const d = await r.json();
+    if (!r.ok) {
+      showInlineMsg('lead-analysis-addon-cancel-msg', d.error || 'Error removing add-on', 'err');
+      btn.disabled = false; btn.textContent = 'Remove Add-On'; btn.dataset.confirming = '';
+      return;
+    }
+    _hasLeadAnalysisAddon = false;
+    await loadAccountTab();
+    showAccountSubTab('billing', document.querySelector('[data-pane=billing]'));
+  } catch(e) {
+    showInlineMsg('lead-analysis-addon-cancel-msg', e.message, 'err');
+    btn.disabled = false; btn.textContent = 'Remove Add-On'; btn.dataset.confirming = '';
+  }
+}
+
+// ── Agent Goals ───────────────────────────────────────────────────────────────
+async function loadAgentGoals() {
+  try {
+    const r = await fetch('/api/agent-goals', { headers: authHeaders() });
+    const d = await r.json();
+    _agentGoals  = Array.isArray(d) ? d : [];
+    _goalsLoaded = true;
+  } catch(e) { _agentGoals = []; _goalsLoaded = true; }
+}
+
+function currentPeriodLabel(periodType) {
+  const now = new Date();
+  const yr  = now.getFullYear();
+  const mo  = now.getMonth();
+  const MO  = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  if (periodType === 'monthly')     return MO[mo] + ' ' + yr;
+  if (periodType === 'quarterly')   return `Q${Math.floor(mo/3)+1} ${yr}`;
+  if (periodType === 'semi_annual') return mo < 6 ? `H1 ${yr}` : `H2 ${yr}`;
+  return String(yr);
+}
+
+function currentPeriodRange(periodType) {
+  const now = new Date();
+  const yr  = now.getFullYear();
+  const mo  = now.getMonth();
+  const iso = d => d.toISOString().slice(0,10);
+  if (periodType === 'monthly')     return { start: iso(new Date(yr, mo, 1)),     end: iso(new Date(yr, mo + 1, 0)) };
+  if (periodType === 'quarterly')   { const q = Math.floor(mo/3); return { start: iso(new Date(yr, q*3, 1)), end: iso(new Date(yr, q*3+3, 0)) }; }
+  if (periodType === 'semi_annual') { const h = mo < 6 ? 0 : 1;   return { start: iso(new Date(yr, h*6, 1)), end: iso(new Date(yr, h*6+6, 0)) }; }
+  return { start: `${yr}-01-01`, end: `${yr}-12-31` };
+}
+
+function getGoalPeriodOptions(periodType) {
+  const now = new Date();
+  const yr  = now.getFullYear();
+  const mo  = now.getMonth(); // 0-indexed
+  const MO  = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const opts = [];
+  if (periodType === 'monthly') {
+    for (let off = -3; off <= 3; off++) {
+      let m = mo + off, y = yr;
+      while (m < 0)  { m += 12; y--; }
+      while (m > 11) { m -= 12; y++; }
+      const s = new Date(y, m, 1), e = new Date(y, m + 1, 0);
+      opts.push({ label: MO[m] + ' ' + y, start: s.toISOString().slice(0,10), end: e.toISOString().slice(0,10), isCurrent: off === 0 });
+    }
+  } else if (periodType === 'quarterly') {
+    const curQ = Math.floor(mo / 3);
+    for (let off = -2; off <= 3; off++) {
+      let q = curQ + off, y = yr;
+      while (q < 0) { q += 4; y--; }
+      while (q > 3) { q -= 4; y++; }
+      const sm = q * 3, s = new Date(y, sm, 1), e = new Date(y, sm + 3, 0);
+      opts.push({ label: `Q${q+1} ${y}`, start: s.toISOString().slice(0,10), end: e.toISOString().slice(0,10), isCurrent: off === 0 });
+    }
+  } else if (periodType === 'semi_annual') {
+    const curH = mo < 6 ? 0 : 1;
+    for (let off = -2; off <= 3; off++) {
+      let h = curH + off, y = yr;
+      while (h < 0) { h += 2; y--; }
+      while (h > 1) { h -= 2; y++; }
+      const sm = h * 6, s = new Date(y, sm, 1), e = new Date(y, sm + 6, 0);
+      opts.push({ label: `H${h+1} ${y}`, start: s.toISOString().slice(0,10), end: e.toISOString().slice(0,10), isCurrent: off === 0 });
+    }
+  } else {
+    for (let off = -2; off <= 3; off++) {
+      const y = yr + off;
+      opts.push({ label: String(y), start: `${y}-01-01`, end: `${y}-12-31`, isCurrent: off === 0 });
+    }
+  }
+  return opts;
+}
+
+function updateGoalFormPeriods(agentId) {
+  const typeEl   = document.getElementById('gf-type-' + agentId);
+  const periodEl = document.getElementById('gf-period-' + agentId);
+  if (!typeEl || !periodEl) return;
+  const opts = getGoalPeriodOptions(typeEl.value);
+  periodEl.innerHTML = opts.map(o =>
+    `<option value="${escHtml(o.label)}" data-start="${o.start}" data-end="${o.end}"${o.isCurrent?' selected':''}>${escHtml(o.label)}</option>`
+  ).join('');
+}
+
+function goalMetricToggle(agentId, metricKey) {
+  const cb  = document.getElementById(`gf-check-${agentId}-${metricKey}`);
+  const inp = document.getElementById(`gf-val-${agentId}-${metricKey}`);
+  if (!cb || !inp) return;
+  inp.style.display = cb.checked ? '' : 'none';
+  if (cb.checked) inp.focus();
+}
+
+function buildGoalMetricsHtml(agentId, existingGoals) {
+  const rows = [];
+  const cats = (_productTypes.length ? _productTypes : DEFAULT_SCORING_CATS).filter(c =>
+    ['wl','ul','term','health','auto','fire'].includes(c.key)
+  );
+  for (const c of cats) {
+    const val = existingGoals[c.key] || '';
+    rows.push(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+      <input type="checkbox" id="gf-check-${escHtml(agentId)}-${c.key}" ${val?'checked':''} onchange="goalMetricToggle('${escHtml(agentId)}','${c.key}')">
+      <label style="font-size:11px;min-width:130px;">${escHtml(c.label||c.key)}</label>
+      <input type="number" id="gf-val-${escHtml(agentId)}-${c.key}" min="0" value="${escHtml(String(val))}" placeholder="target" style="width:70px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 5px;font-size:11px;outline:none;${val?'':'display:none;'}">
+    </div>`);
+  }
+  const polVal  = existingGoals.policies || '';
+  const premVal = existingGoals.premium  || '';
+  rows.push(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+    <input type="checkbox" id="gf-check-${escHtml(agentId)}-policies" ${polVal?'checked':''} onchange="goalMetricToggle('${escHtml(agentId)}','policies')">
+    <label style="font-size:11px;min-width:130px;">Total Policies</label>
+    <input type="number" id="gf-val-${escHtml(agentId)}-policies" min="0" value="${escHtml(String(polVal))}" placeholder="target" style="width:70px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 5px;font-size:11px;outline:none;${polVal?'':'display:none;'}">
+  </div>`);
+  rows.push(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+    <input type="checkbox" id="gf-check-${escHtml(agentId)}-premium" ${premVal?'checked':''} onchange="goalMetricToggle('${escHtml(agentId)}','premium')">
+    <label style="font-size:11px;min-width:130px;">Premium ($)</label>
+    <input type="number" id="gf-val-${escHtml(agentId)}-premium" min="0" value="${escHtml(String(premVal))}" placeholder="target" style="width:70px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 5px;font-size:11px;outline:none;${premVal?'':'display:none;'}">
+  </div>`);
+  if (_hasCommissionsAddon || _isAdmin) {
+    for (const t of _activityTypes) {
+      const key = 'activity_' + t.id;
+      const val = existingGoals[key] || '';
+      const safeTypeId = escHtml(t.id);
+      const safeName   = escHtml(t.name.length > 20 ? t.name.slice(0,18) + '…' : t.name);
+      rows.push(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+        <input type="checkbox" id="gf-check-${escHtml(agentId)}-act-${safeTypeId}" ${val?'checked':''} onchange="goalMetricToggle('${escHtml(agentId)}','act-${safeTypeId}')">
+        <label style="font-size:11px;min-width:130px;" title="${escHtml(t.name)}">${safeName}</label>
+        <input type="number" id="gf-val-${escHtml(agentId)}-act-${safeTypeId}" min="0" value="${escHtml(String(val))}" placeholder="target" style="width:70px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 5px;font-size:11px;outline:none;${val?'':'display:none;'}">
+      </div>`);
+    }
+  }
+  return rows.join('');
+}
+
+function showGoalForm(agentId, existingGoalId) {
+  const container = document.getElementById('goal-form-' + agentId);
+  if (!container) return;
+  const existing   = existingGoalId ? _agentGoals.find(g => g.id === existingGoalId) : null;
+  const periodType = existing?.period_type || 'monthly';
+  const opts       = getGoalPeriodOptions(periodType);
+  const PT = { monthly:'Monthly', quarterly:'Quarterly', semi_annual:'Semi-Annual', annual:'Annual' };
+  container.style.display = '';
+  container.innerHTML = `<div style="border-top:1px solid var(--border2);padding-top:8px;">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;align-items:flex-end;">
+      <div>
+        <label style="font-size:9px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px;">Period Type</label>
+        <select id="gf-type-${escHtml(agentId)}" onchange="updateGoalFormPeriods('${escHtml(agentId)}')" style="background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:3px 6px;font-size:11px;outline:none;">
+          ${Object.entries(PT).map(([v,l]) => `<option value="${v}"${v===periodType?' selected':''}>${l}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label style="font-size:9px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px;">Period</label>
+        <select id="gf-period-${escHtml(agentId)}" style="background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:3px 6px;font-size:11px;outline:none;">
+          ${opts.map(o => `<option value="${escHtml(o.label)}" data-start="${o.start}" data-end="${o.end}"${o.label===(existing?.period_label)||(!existing?.period_label&&o.isCurrent)?' selected':''}>${escHtml(o.label)}</option>`).join('')}
+        </select>
+      </div>
+      <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px;cursor:pointer;padding-bottom:2px;">
+        <input type="checkbox" id="gf-public-${escHtml(agentId)}" ${existing?.is_public?'checked':''}> Public
+      </label>
+      <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px;cursor:pointer;padding-bottom:2px;" title="Auto-apply these targets to each new period — no need to recreate monthly">
+        <input type="checkbox" id="gf-recurring-${escHtml(agentId)}" ${existing?.is_recurring?'checked':''}> ↻ Recurring
+      </label>
+    </div>
+    <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;">Target Metrics</div>
+    <div id="gf-metrics-${escHtml(agentId)}">${buildGoalMetricsHtml(agentId, existing?.goals||{})}</div>
+    <div style="display:flex;gap:6px;align-items:center;margin-top:8px;">
+      <button onclick="saveGoalForm('${escHtml(agentId)}','${existingGoalId||''}')" style="background:var(--accent2);color:#000;border:none;border-radius:5px;padding:4px 12px;font-size:12px;cursor:pointer;font-weight:600;">Save</button>
+      <button onclick="document.getElementById('goal-form-${escHtml(agentId)}').style.display='none'" style="background:none;border:1px solid var(--border2);color:var(--muted);border-radius:5px;padding:4px 10px;font-size:12px;cursor:pointer;">Cancel</button>
+      <span id="gf-msg-${escHtml(agentId)}" style="font-size:11px;display:none;color:var(--danger);"></span>
+    </div>
+  </div>`;
+}
+
+async function saveGoalForm(agentId, existingGoalId) {
+  const periodEl = document.getElementById('gf-period-' + agentId);
+  const typeEl   = document.getElementById('gf-type-'   + agentId);
+  const publicEl    = document.getElementById('gf-public-'    + agentId);
+  const recurringEl = document.getElementById('gf-recurring-' + agentId);
+  const msgEl       = document.getElementById('gf-msg-'       + agentId);
+  if (!periodEl || !typeEl) return;
+
+  const period_type  = typeEl.value;
+  const period_label = periodEl.value;
+  const selOpt       = periodEl.selectedOptions[0];
+  const period_start = selOpt.dataset.start;
+  const period_end   = selOpt.dataset.end;
+  const is_public    = publicEl?.checked    || false;
+  const is_recurring = recurringEl?.checked || false;
+
+  const goals = {};
+  const PROD_KEYS = ['wl','ul','term','health','auto','fire','policies','premium'];
+  for (const key of PROD_KEYS) {
+    const cb  = document.getElementById(`gf-check-${agentId}-${key}`);
+    const inp = document.getElementById(`gf-val-${agentId}-${key}`);
+    if (cb?.checked && inp?.value) goals[key] = parseFloat(inp.value) || 0;
+  }
+  for (const t of _activityTypes) {
+    const mk  = 'act-' + t.id;
+    const cb  = document.getElementById(`gf-check-${agentId}-${mk}`);
+    const inp = document.getElementById(`gf-val-${agentId}-${mk}`);
+    if (cb?.checked && inp?.value) goals['activity_' + t.id] = parseFloat(inp.value) || 0;
+  }
+
+  if (!Object.keys(goals).length) {
+    if (msgEl) { msgEl.style.display=''; msgEl.textContent='Add at least one metric target.'; }
+    return;
+  }
+
+  const saveBtn = document.querySelector(`#goal-form-${agentId} button`);
+  if (saveBtn) { saveBtn.disabled=true; saveBtn.textContent='Saving…'; }
+
+  try {
+    let r;
+    if (existingGoalId) {
+      r = await fetch('/api/agent-goals', {
+        method: 'PATCH',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: existingGoalId, goals, is_public, is_recurring }),
+      });
+    } else {
+      r = await fetch('/api/agent-goals', {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent_id: agentId, period_type, period_label, period_start, period_end, goals, is_public, is_recurring }),
+      });
+    }
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Save failed');
+    if (existingGoalId) {
+      const idx = _agentGoals.findIndex(g => g.id === existingGoalId);
+      if (idx >= 0) _agentGoals[idx] = { ..._agentGoals[idx], goals, is_public, is_recurring };
+    } else {
+      _agentGoals.push(d);
+    }
+    document.getElementById('goal-form-' + agentId).style.display = 'none';
+    renderAgentRoster();
+  } catch(e) {
+    if (msgEl) { msgEl.style.display=''; msgEl.textContent=e.message; }
+    if (saveBtn) { saveBtn.disabled=false; saveBtn.textContent='Save'; }
+  }
+}
+
+async function deleteAgentGoal(goalId, btn) {
+  if (btn.dataset.confirming !== 'yes') {
+    btn.dataset.confirming = 'yes';
+    btn.textContent = '?';
+    setTimeout(() => { if (btn.dataset.confirming==='yes') { btn.dataset.confirming=''; btn.innerHTML='&#x2715;'; } }, 3000);
+    return;
+  }
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/agent-goals?id=' + encodeURIComponent(goalId), { method: 'DELETE', headers: authHeaders() });
+    if (!r.ok) { btn.disabled=false; btn.innerHTML='&#x2715;'; return; }
+    _agentGoals = _agentGoals.filter(g => g.id !== goalId);
+    renderAgentRoster();
+  } catch(e) { btn.disabled=false; btn.innerHTML='&#x2715;'; }
+}
+
+function renderAgentRosterGoalsSection(a) {
+  const agGoals = _agentGoals.filter(g => g.agent_id === a.agent_id)
+    .sort((x, y) => x.period_start < y.period_start ? 1 : -1);
+  const sid = escHtml(a.agent_id);
+  const PT  = { monthly:'Monthly', quarterly:'Quarterly', semi_annual:'Semi-Annual', annual:'Annual' };
+  const ML  = { wl:'WL', ul:'UL', term:'Term', health:'Health', auto:'Auto', fire:'Fire', policies:'Policies', premium:'Premium' };
+  const goalRows = agGoals.map(g => {
+    const keys = Object.keys(g.goals||{}).filter(k => g.goals[k]);
+    const summary = keys.slice(0,4).map(k => {
+      if (k.startsWith('activity_')) {
+        const at = _activityTypes.find(t => 'activity_'+t.id === k);
+        return `${at ? at.name : k}:${g.goals[k]}`;
+      }
+      return `${ML[k]||k}:${g.goals[k]}`;
+    }).join(' · ');
+    const badge = g.is_public
+      ? '<span style="font-size:9px;background:rgba(0,229,180,.12);color:var(--accent2);border-radius:3px;padding:1px 5px;margin-left:4px;">Public</span>'
+      : '<span style="font-size:9px;background:rgba(255,255,255,.06);color:var(--muted);border-radius:3px;padding:1px 5px;margin-left:4px;">Private</span>';
+    const recBadge = g.is_recurring
+      ? '<span style="font-size:9px;background:rgba(123,97,255,.15);color:#a78bfa;border-radius:3px;padding:1px 5px;margin-left:4px;">↻ Recurring</span>'
+      : '';
+    const displayLabel = g.is_recurring ? currentPeriodLabel(g.period_type) : g.period_label;
+    return `<div style="display:flex;align-items:flex-start;gap:5px;margin-bottom:4px;padding:4px 6px;background:var(--card);border-radius:4px;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:11px;font-weight:600;">${escHtml(displayLabel)} <span style="color:var(--muted);font-weight:400;font-size:10px;">(${PT[g.period_type]||g.period_type})</span>${badge}${recBadge}</div>
+        ${summary ? `<div style="font-size:10px;color:var(--muted);margin-top:1px;">${escHtml(summary)}</div>` : ''}
+      </div>
+      <button onclick="showGoalForm('${sid}','${escHtml(g.id)}')" style="background:none;border:1px solid var(--border2);color:var(--muted);border-radius:3px;padding:1px 6px;font-size:10px;cursor:pointer;white-space:nowrap;">Edit</button>
+      <button onclick="deleteAgentGoal('${escHtml(g.id)}',this)" style="background:none;border:1px solid var(--border2);color:var(--danger);border-radius:3px;padding:1px 5px;font-size:10px;cursor:pointer;">&#x2715;</button>
+    </div>`;
+  }).join('');
+  return `<div id="goals-section-${sid}" style="margin-top:6px;padding:6px 8px;background:var(--deep);border-radius:6px;border:1px solid var(--border2);">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;">
+      <div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">Goals</div>
+      <button onclick="showGoalForm('${sid}')" style="background:none;border:1px solid var(--border2);color:var(--accent);border-radius:3px;padding:1px 7px;font-size:10px;cursor:pointer;">+ Add</button>
+    </div>
+    ${agGoals.length ? goalRows : '<div style="font-size:11px;color:var(--muted);">No goals set</div>'}
+    <div id="goal-form-${sid}" style="display:none;margin-top:6px;"></div>
+  </div>`;
+}
+
+function renderRaceGoalsRow(ag) {
+  if (!_goalsLoaded || !_agentGoals.length || !_raceCurrentMonth) return '';
+  const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const MONTHS_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function parseMoLabel(label) {
+    const parts = (label||'').trim().split(/\s+/);
+    if (parts.length < 2) return null;
+    const mStr = parts[0].toLowerCase();
+    const yr   = parseInt(parts[parts.length - 1]);
+    if (isNaN(yr)) return null;
+    let mi = MONTHS_FULL.findIndex(m => m.toLowerCase() === mStr);
+    if (mi < 0) mi = MONTHS_ABBR.findIndex(m => m.toLowerCase() === mStr);
+    return mi >= 0 ? { year: yr, month: mi } : null;
+  }
+  const raceMo = parseMoLabel(_raceCurrentMonth);
+  if (!raceMo) return '';
+  const canPrivate = _isAdmin || !_isMember || ['captain','chief_officer'].includes(_memberRole);
+  const visible = g => g.agent_id === ag.agent_id && g.period_type === 'monthly' && (g.is_public || canPrivate);
+  // Prefer an exact period match; fall back to any recurring monthly goal
+  let agGoal = _agentGoals.find(g => {
+    if (!visible(g) || g.is_recurring) return false;
+    const d = new Date(g.period_start + 'T00:00:00Z');
+    return d.getUTCFullYear() === raceMo.year && d.getUTCMonth() === raceMo.month;
+  });
+  if (!agGoal) agGoal = _agentGoals.find(g => visible(g) && g.is_recurring);
+  if (!agGoal) return '';
+  const PROD = { wl:'WL', ul:'UL', term:'T', health:'H', auto:'A', fire:'F' };
+  const items = [];
+  for (const [key, target] of Object.entries(agGoal.goals || {})) {
+    if (!target) continue;
+    let actual = 0, label = '';
+    if (PROD[key])       { actual = ag[key] || 0; label = PROD[key]; }
+    else if (key === 'policies') {
+      actual = (ag.wl||0)+(ag.ul||0)+(ag.term||0)+(ag.health||0)+(ag.auto||0)+(ag.fire||0);
+      label  = 'Pol';
+    } else continue;
+    const pct = target > 0 ? Math.min(100, Math.round(actual / target * 100)) : 0;
+    const col = pct >= 100 ? 'var(--accent2)' : pct >= 70 ? '#fbbf24' : 'var(--muted)';
+    items.push({ label, actual, target, pct, col });
+  }
+  if (!items.length) return '';
+  const lock = !agGoal.is_public ? ' <span style="font-size:9px;opacity:.7;">🔒</span>' : '';
+  return `<div style="margin-top:5px;padding:5px 7px;background:var(--deep);border-radius:5px;border:1px solid var(--border2);">
+    <div style="font-size:9px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Goals${lock}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;">
+      ${items.map(it => `<div style="min-width:55px;flex:1;max-width:90px;">
+        <div style="display:flex;justify-content:space-between;font-size:9px;margin-bottom:2px;">
+          <span style="color:var(--muted);">${it.label}</span><span style="color:${it.col};">${it.actual}/${it.target}</span>
+        </div>
+        <div style="height:3px;background:var(--border2);border-radius:2px;overflow:hidden;">
+          <div style="height:3px;width:${it.pct}%;background:${it.col};border-radius:2px;"></div>
+        </div>
+      </div>`).join('')}
+    </div>
+  </div>`;
+}
+
+async function loadGoalsTab() {
+  const el = document.getElementById('goals-content');
+  if (!el) return;
+  syncGoalsFilterButtons();
+  el.innerHTML = '<div style="color:var(--muted);font-size:13px;text-align:center;padding:2rem;">Loading…</div>';
+  try {
+    const r = await fetch('/api/agent-goals?withActuals=1', { headers: authHeaders() });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Load failed');
+    _agentGoals  = Array.isArray(d) ? d : [];
+    _goalsLoaded = true;
+    renderGoalsTab();
+  } catch(e) {
+    el.innerHTML = `<div style="color:var(--danger);font-size:13px;text-align:center;padding:2rem;">${escHtml(e.message)}</div>`;
+  }
+}
+
+function syncGoalsFilterButtons() {
+  document.querySelectorAll('#goals-period-filter button').forEach(b => {
+    const active = b.dataset.filter === _goalsViewFilter;
+    b.style.background  = active ? 'var(--accent2)' : 'var(--card2)';
+    b.style.color       = active ? '#000' : 'var(--muted)';
+    b.style.border      = active ? 'none' : '1px solid var(--border2)';
+    b.style.fontWeight  = active ? '600'  : '';
+  });
+}
+
+function setGoalsFilter(filter) {
+  _goalsViewFilter = filter;
+  syncGoalsFilterButtons();
+  renderGoalsTab();
+}
+
+function renderGoalsTab() {
+  const el = document.getElementById('goals-content');
+  if (!el) return;
+  const PT = { monthly:'Monthly', quarterly:'Quarterly', semi_annual:'Semi-Annual', annual:'Annual' };
+  const ML = { wl:'WL', ul:'UL', term:'Term', health:'Health', auto:'Auto', fire:'Fire', policies:'Total Policies', premium:'Premium ($)' };
+  const filtered = _goalsViewFilter === 'all'
+    ? _agentGoals
+    : _agentGoals.filter(g => g.period_type === _goalsViewFilter);
+  if (!filtered.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:13px;text-align:center;padding:2rem;">No goals found. Set goals in <button class="btn btn-secondary" style="padding:2px 8px;font-size:12px;" onclick="goToAccountTab(\'sales\')">Account → Sales → Team</button></div>';
+    return;
+  }
+  const byAgent = {};
+  for (const g of filtered) {
+    if (!byAgent[g.agent_id]) byAgent[g.agent_id] = [];
+    byAgent[g.agent_id].push(g);
+  }
+  const agentName = id => (_agentRoster.find(x => x.agent_id === id)?.name) || id;
+  el.innerHTML = Object.entries(byAgent).map(([agentId, goals]) => {
+    const name  = agentName(agentId);
+    const cards = [...goals].sort((a,b) => b.period_start > a.period_start ? 1 : -1).map(g => {
+      const badge = g.is_public
+        ? '<span style="font-size:10px;background:rgba(0,229,180,.12);color:var(--accent2);border-radius:3px;padding:1px 6px;">Public</span>'
+        : '<span style="font-size:10px;background:rgba(255,255,255,.06);color:var(--muted);border-radius:3px;padding:1px 6px;">Private</span>';
+      const recBadge = g.is_recurring
+        ? '<span style="font-size:10px;background:rgba(123,97,255,.15);color:#a78bfa;border-radius:3px;padding:1px 6px;">↻ Recurring</span>'
+        : '';
+      const metrics = Object.entries(g.goals || {}).filter(([,v]) => v);
+      if (!metrics.length) return '';
+      const rows = metrics.map(([key, target]) => {
+        const raw    = g.actuals?.[key];
+        const actual = typeof raw === 'number' ? raw : null;
+        const label  = key.startsWith('activity_')
+          ? (_activityTypes.find(t => 'activity_'+t.id === key)?.name || key)
+          : (ML[key] || key);
+        const numTgt = parseFloat(target) || 0;
+        const pct    = actual !== null && numTgt > 0 ? Math.min(100, Math.round(actual/numTgt*100)) : null;
+        const col    = pct === null ? 'var(--muted)' : pct>=100 ? 'var(--accent2)' : pct>=70 ? '#fbbf24' : 'var(--danger)';
+        const dispA  = actual === null ? '—' : key==='premium' ? '$'+Math.round(actual).toLocaleString() : actual;
+        const dispT  = key === 'premium' ? '$'+parseFloat(target).toLocaleString() : target;
+        return `<div style="margin-bottom:8px;">
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">
+            <span>${escHtml(label)}</span>
+            <span style="color:${col};">${dispA} / ${dispT}${pct!==null?' ('+pct+'%)':''}</span>
+          </div>
+          <div style="height:5px;background:var(--border2);border-radius:3px;overflow:hidden;">
+            ${pct!==null?`<div style="height:5px;width:${pct}%;background:${col};border-radius:3px;transition:width .3s;"></div>`:''}
+          </div>
+        </div>`;
+      }).join('');
+      const displayLabel = g.is_recurring ? currentPeriodLabel(g.period_type) : g.period_label;
+      const range        = g.is_recurring ? currentPeriodRange(g.period_type) : { start: g.period_start, end: g.period_end };
+      return `<div style="background:var(--deep);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+          <span style="font-size:13px;font-weight:600;">${escHtml(displayLabel)}</span>
+          <span style="font-size:11px;color:var(--muted);">${PT[g.period_type]||g.period_type}</span>
+          ${badge}${recBadge}
+          <span style="font-size:10px;color:var(--muted);margin-left:auto;">${range.start} – ${range.end}</span>
+        </div>
+        ${rows}
+      </div>`;
+    }).join('');
+    return `<div style="margin-bottom:1.5rem;">
+      <div style="font-size:14px;font-weight:700;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid var(--border2);">${escHtml(name)}</div>
+      ${cards || '<div style="color:var(--muted);font-size:12px;">No goals for this filter.</div>'}
+    </div>`;
+  }).join('');
 }
 
 // ── Manual entry (Manage tab) ─────────────────────────────────────────────────
