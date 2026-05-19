@@ -1,7 +1,16 @@
-1. Add secure, free, and easy method for creating a log in upon first load.  Research clerk, supabase, firebase, and auth.js models for password and account management.  Each account should have its own unique data set.
 
-2.Add method for creating admin that would allow to change the point structure.  Admin should be on the manage page and only able to update via password that matches the main login and handled by the solution from step 1.
+1. Inside the account tab, create subsection for agency management, give the user the ability to create/invite and delete/remove users that would be able to log in and view the user's account inside new subsection. The primary objective would be for viewing the sales data tab for now.  Later developments will expand to include logging sales and viewing commissions.  This invite should give the user the ability to create a unique to them login, but the view will be limited to the sales tab data of the user who invited them.  This view should also be uniform across browsers.
 
-3. Remove ability to update google sheet id.  Confirm auto refresh setting is updating as selected in drop down.  Research if Google Sheets is best source for storing data if multiple users accounts need unique data sets.  Free storage solutions is a must.
 
-4. Highlight any issues that may have been overlooked.
+Main user should be able to assign account level access.  Captain gives full access, chief officer gives access to score/manage/performance tab, bosun race tab, Custom allow user to select which tabs.  Informational explanations should be next to each selection.
+
+2. Research sales log ~/documents/promo/buich jan.xlsx ~/documents/promo/Justin sample.xlsx ~/documents/promo/admin all product sales (April 2026)(2).xlsx for different data sets and explore UI that would capture data manually and store in supabase for recall later in race data.
+
+The sales log should be viewable if manually entered for editing sales, can only store the first 2 initials of a customer's first name and full last name.  If the sales log is being used then there should be a toggle to turn off the upload to avoid duplication.  If the toggle is turned off from upload remove uploaded data and warn user with confirmation button advising best to do at the beginning of a new month or restart or sales tracking.  
+
+Confirm no matter how the sales data is uploaded or entered that the analyzer will fetch the data and update historical coaching from the source being used while preserving previously used sources - keeping historical fetches accurate.
+
+The toggle button will be an add on for any of the tier levels.  Confirm in the account section that there is an interface to add the sales tracking onto whichever package they have and give me directions for updating any stripe subscriptions that cannot autumnally be handled.  The add on will be $25 total for sales tracking.
+
+3. Will add a commissions calculator for users - interface undecided at this time.  Build into consideration.  This will also be another add on to each tier - consider updates needed as building add on for sales tracking.  Further instruction for how to add calculations to come.
+

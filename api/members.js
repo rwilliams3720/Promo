@@ -20,7 +20,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     const { data, error } = await supabase
       .from('account_members')
-      .select('id, email, role, custom_tabs, status, created_at, member_user_id')
+      .select('id, email, role, custom_tabs, roster_agent_id, status, created_at, member_user_id')
       .eq('owner_user_id', user.id)
       .neq('status', 'removed')
       .order('created_at', { ascending: false });
@@ -31,14 +31,23 @@ export default async function handler(req, res) {
 
   // ── PATCH — update role ──────────────────────────────────────────────────────
   if (req.method === 'PATCH') {
-    const { memberId, role, custom_tabs } = req.body || {};
-    if (!memberId || !role) return res.status(400).json({ error: 'memberId and role required.' });
-    if (!['captain','chief_officer','bosun','custom'].includes(role))
-      return res.status(400).json({ error: 'Invalid role.' });
+    const { memberId, role, custom_tabs, roster_agent_id } = req.body || {};
+    if (!memberId) return res.status(400).json({ error: 'memberId required.' });
+
+    const update = {};
+    if (role !== undefined) {
+      if (!['captain','chief_officer','bosun','custom'].includes(role))
+        return res.status(400).json({ error: 'Invalid role.' });
+      update.role = role;
+      update.custom_tabs = custom_tabs || null;
+    }
+    if (roster_agent_id !== undefined) update.roster_agent_id = roster_agent_id || null;
+
+    if (!Object.keys(update).length) return res.status(400).json({ error: 'No updates provided.' });
 
     const { error } = await supabase
       .from('account_members')
-      .update({ role, custom_tabs: custom_tabs || null })
+      .update(update)
       .eq('id', memberId)
       .eq('owner_user_id', user.id);
 
