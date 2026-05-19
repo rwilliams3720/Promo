@@ -961,10 +961,13 @@
       <div id="perf-commissions-teaser" style="display:none">
         <div class="panel" style="text-align:center;padding:3rem 2rem;">
           <div style="font-family:'Bebas Neue',sans-serif;font-size:1.6rem;letter-spacing:.04em;margin-bottom:.75rem;">Commissions Calculator</div>
-          <p style="font-size:14px;color:var(--muted);max-width:480px;margin:0 auto 1.5rem;line-height:1.7;">
-            Calculate and track agent commissions by month. Define rate structures per product, handle split sales, and mark payments as paid. Available with the Commissions add-on.
+          <p style="font-size:14px;color:var(--muted);max-width:480px;margin:0 auto 1rem;line-height:1.7;">
+            Calculate and track agent commissions by month. Define tiered rate structures with escalators, assign multiple structures per agent, track activity bonuses, handle chargebacks, and mark payments paid.
           </p>
-          <button class="btn btn-primary" onclick="goToAccountTab('billing')">Learn More</button>
+          <div style="font-size:1.4rem;font-weight:700;color:var(--accent);margin-bottom:1.25rem;">$35<span style="font-size:14px;font-weight:400;color:var(--muted);">/mo</span></div>
+          <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+            <button class="btn btn-primary" onclick="goToAccountTab('billing');showAccountSubTab('billing',document.querySelector('[data-pane=billing]'))">Add to Plan — $35/mo</button>
+          </div>
         </div>
       </div>
       <!-- Content when add-on active -->
@@ -1312,6 +1315,42 @@
           </div>
         </div>
       </div>
+
+      <!-- Commissions Add-On — account owners only -->
+        <div class="acct-section" id="commissions-addon-section" style="display:none">
+          <h3>Commissions Add-On</h3>
+
+          <!-- Upsell (no add-on) -->
+          <div id="commissions-addon-upsell" style="display:none">
+            <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Build commission structures with tiered rates, escalators, and minimums. Assign structures per agent, track activity bonuses, manage chargebacks, and mark payments paid.</p>
+            <div style="background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:1.2rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;">
+              <div>
+                <div style="font-size:15px;font-weight:700;color:var(--text);">Commissions</div>
+                <div style="font-size:13px;color:var(--muted);">Structures · Activity bonuses · Chargebacks · Payment tracking</div>
+              </div>
+              <div style="text-align:right;">
+                <div style="font-size:1.3rem;font-weight:700;color:var(--accent);">$35<span style="font-size:13px;color:var(--muted);font-weight:400;">/mo</span></div>
+                <button class="btn btn-primary" style="margin-top:6px;" onclick="purchaseCommissionsAddon(this)">Add to Plan</button>
+              </div>
+            </div>
+            <div id="commissions-addon-upsell-msg" style="font-size:13px;display:none;margin-top:6px;"></div>
+          </div>
+
+          <!-- Active status (has add-on) -->
+          <div id="commissions-addon-active" style="display:none">
+            <div style="background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:1rem 1.2rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1.25rem;">
+              <div>
+                <div style="font-size:14px;font-weight:700;color:var(--text);">Commissions <span style="font-size:11px;background:rgba(0,212,255,.12);color:var(--accent);padding:2px 8px;border-radius:4px;margin-left:6px;font-weight:600;">Active</span></div>
+                <div style="font-size:13px;color:var(--muted);margin-top:3px;">Manage structures and bonus types on the <button class="btn-link" onclick="showTab('perf',document.querySelector('.tab[onclick*=perf]'));showPerfSubTab('commissions',document.getElementById('perf-stab-commissions'))">Commissions tab</button>.</div>
+              </div>
+              <div style="font-size:1.1rem;font-weight:700;color:var(--muted);">$35<span style="font-size:12px;font-weight:400;">/mo</span></div>
+            </div>
+            <div style="font-size:12px;font-weight:600;color:var(--danger);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem;">Remove Add-On</div>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Cancels the Commissions subscription. Your commission structures and history are preserved.</p>
+            <button class="btn" style="background:rgba(255,77,109,.12);color:var(--danger);border:1px solid rgba(255,77,109,.3);" onclick="cancelCommissionsAddon(this)">Remove Add-On</button>
+            <div id="commissions-addon-cancel-msg" style="font-size:13px;margin-top:8px;display:none;"></div>
+          </div>
+        </div>
 
       <!-- ── PANE: Sales ── -->
       <div id="acct-pane-sales" class="acct-pane" style="display:none">
@@ -2461,6 +2500,16 @@ async function checkAccountAndShow(session) {
         loadAddonConfig().then(() => renderManageTabMode()).catch(() => {});
       }, 800);
     } else if (_urlParams.get('addon') === 'cancel') {
+      history.replaceState({}, '', '/app');
+    } else if (_urlParams.get('addon') === 'commissions_success') {
+      history.replaceState({}, '', '/app');
+      _hasCommissionsAddon = true;
+      setTimeout(() => {
+        const msg = document.getElementById('commissions-addon-upsell-msg');
+        if (msg) { msg.style.display='block'; msg.style.color='var(--accent2)'; msg.textContent='Commissions add-on activated!'; }
+        loadAccountTab().catch(() => {});
+      }, 800);
+    } else if (_urlParams.get('addon') === 'commissions_cancel') {
       history.replaceState({}, '', '/app');
     } else if (_urlParams.get('member_analysis') === 'success') {
       history.replaceState({}, '', '/app');
@@ -4218,6 +4267,9 @@ async function loadAccountTab() {
   // Member analysis add-on section
   document.getElementById('member-analysis-section').style.display = '';
   renderMemberAnalysisSection(acct);
+  // Commissions add-on section
+  document.getElementById('commissions-addon-section').style.display = '';
+  renderCommissionsAddonSection(acct);
 }
 
 async function confirmResetMyData(btn) {
@@ -4514,6 +4566,15 @@ function renderAdminTable(rows) {
               onblur="adminSave('${r.user_id}','member_analysis_count',parseInt(this.value)||1)"
               title="Agent seats"
               style="width:38px;padding:2px 5px;font-size:11px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:4px;text-align:center;">` : ''}
+          </div>
+          <div style="display:flex;align-items:center;gap:4px;">
+            <button onclick="adminSave('${r.user_id}','has_commissions_addon',${!r.has_commissions_addon})"
+              style="font-size:10px;padding:2px 7px;border-radius:4px;border:none;cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:600;
+                background:${r.has_commissions_addon?'rgba(255,140,66,.15)':'rgba(255,255,255,.06)'};
+                color:${r.has_commissions_addon?'var(--orange)':'var(--muted)'};"
+              title="${r.has_commissions_addon?'Disable':'Enable'} Commissions">
+              Comm ${r.has_commissions_addon?'✓':'—'}
+            </button>
           </div>
         </div>
       </td>
@@ -8061,6 +8122,50 @@ async function cancelSalesAddon(btn) {
     renderManageTabMode();
   } catch(e) {
     showInlineMsg('addon-cancel-msg', e.message, 'err');
+    btn.disabled = false; btn.textContent = 'Remove Add-On'; btn.dataset.confirming = '';
+  }
+}
+
+// ── Commissions add-on ────────────────────────────────────────────────────────
+function renderCommissionsAddonSection(acct) {
+  const hasAddon = acct.has_commissions_addon || _hasCommissionsAddon || _isAdmin;
+  document.getElementById('commissions-addon-upsell').style.display = hasAddon ? 'none' : '';
+  document.getElementById('commissions-addon-active').style.display = hasAddon ? ''     : 'none';
+}
+
+async function purchaseCommissionsAddon(btn) {
+  btn.disabled = true; btn.textContent = 'Redirecting…';
+  try {
+    const r = await fetch('/api/commissions-checkout', { method: 'POST', headers: authHeaders() });
+    const d = await r.json();
+    if (d.url) window.location.href = d.url;
+    else { showInlineMsg('commissions-addon-upsell-msg', d.error || 'Error', 'err'); btn.disabled = false; btn.textContent = 'Add to Plan'; }
+  } catch(e) { showInlineMsg('commissions-addon-upsell-msg', e.message, 'err'); btn.disabled = false; btn.textContent = 'Add to Plan'; }
+}
+
+async function cancelCommissionsAddon(btn) {
+  if (btn.dataset.confirming !== 'yes') {
+    btn.dataset.confirming = 'yes';
+    btn.textContent = 'Confirm Remove — click again to cancel';
+    setTimeout(() => {
+      if (btn.dataset.confirming === 'yes') { btn.dataset.confirming = ''; btn.textContent = 'Remove Add-On'; }
+    }, 5000);
+    return;
+  }
+  btn.disabled = true; btn.textContent = 'Removing…';
+  try {
+    const r = await fetch('/api/commissions-checkout', { method: 'DELETE', headers: authHeaders() });
+    const d = await r.json();
+    if (!r.ok) {
+      showInlineMsg('commissions-addon-cancel-msg', d.error || 'Error removing add-on', 'err');
+      btn.disabled = false; btn.textContent = 'Remove Add-On'; btn.dataset.confirming = '';
+      return;
+    }
+    _hasCommissionsAddon = false;
+    await loadAccountTab();
+    showAccountSubTab('billing', document.querySelector('[data-pane=billing]'));
+  } catch(e) {
+    showInlineMsg('commissions-addon-cancel-msg', e.message, 'err');
     btn.disabled = false; btn.textContent = 'Remove Add-On'; btn.dataset.confirming = '';
   }
 }
