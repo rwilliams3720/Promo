@@ -3042,6 +3042,9 @@ function renderSalesTile() {
   panel.style.display = '';
 
   const useSalesLog = _hasSalesAddon || _isAdmin;
+  // Only drill into sales_log when a specific location is selected — "All Locations"
+  // must read from race_data so that uploaded sales (source='upload') are included.
+  const locationActive = useSalesLog && _salesTileLocation !== 'all';
 
   // Location filter only available when using sales_log data
   const locSel     = document.getElementById('sales-tile-loc-sel');
@@ -3062,11 +3065,9 @@ function renderSalesTile() {
 
   const agentMap = {};
 
-  if (useSalesLog) {
-    // Subscribed: aggregate from sales_log entries (supports location filter)
-    const entries = _salesTileLocation === 'all'
-      ? _salesTileEntries
-      : _salesTileEntries.filter(e => e.location === _salesTileLocation);
+  if (locationActive) {
+    // Location drill-down: aggregate manual/checklist entries for the selected location
+    const entries = _salesTileEntries.filter(e => e.location === _salesTileLocation);
     for (const e of entries) {
       if (!e.agent_id || SKIP.has(e.product)) continue;
       if (!agentMap[e.agent_id]) {
@@ -3085,7 +3086,7 @@ function renderSalesTile() {
       else { const ros = _agentRoster.find(r => r.agent_id === id); if (ros) ag.name = ros.name; }
     }
   } else {
-    // Upload-only (no add-on): read product totals directly from race_data
+    // Default: read product totals from race_data — includes all sources (upload, manual, checklist)
     for (const ag of (_raceData || [])) {
       if (!ag.agent_id) continue;
       const products = {};
