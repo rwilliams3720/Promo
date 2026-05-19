@@ -1088,6 +1088,7 @@
     <div style="display:flex;gap:0;border-bottom:1px solid var(--border2);margin-bottom:1.25rem;overflow-x:auto;">
       <button class="acct-stab active" id="analysis-stab-trends" onclick="showAnalysisSubTab('trends',this)" style="font-size:13px;">Team Trends</button>
       <button class="acct-stab" id="analysis-stab-members" onclick="showAnalysisSubTab('members',this)" style="font-size:13px;">Team Member Analysis</button>
+      <button class="acct-stab" id="analysis-stab-leadsources" onclick="showAnalysisSubTab('leadsources',this)" style="font-size:13px;">Lead Sources</button>
     </div>
 
     <!-- Sub-pane: Team Trends -->
@@ -1148,6 +1149,34 @@
           <div style="color:var(--muted);font-size:13px;">Click <strong>Analyze</strong> to generate individual insights.</div>
         </div>
         <div id="ma-analysis-msg" style="font-size:12px;margin-top:8px;display:none"></div>
+      </div>
+    </div>
+
+    <!-- Sub-pane: Lead Source Analysis -->
+    <div id="analysis-pane-leadsources" style="display:none">
+      <!-- Teaser — no sales addon -->
+      <div id="la-teaser" style="display:none">
+        <div class="panel" style="text-align:center;padding:2.5rem 1.5rem;">
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:1.6rem;letter-spacing:.04em;margin-bottom:.75rem;">Lead Source Analysis</div>
+          <p style="font-size:13px;color:var(--muted);max-width:460px;margin:0 auto 1.25rem;">Understand which lead channels produce the most volume, highest average premium, and best agent-source fit. Requires the Sales Tracking add-on with manual or checklist entries.</p>
+          <button class="btn btn-primary" onclick="goToAccountTab('billing')">Add Sales Tracking — $25/mo</button>
+        </div>
+      </div>
+      <!-- Content -->
+      <div id="la-content">
+        <div class="panel">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.2rem;">
+            <div class="panel-title" style="margin:0">Lead Source Analysis</div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <button class="btn btn-secondary" id="la-refresh-btn" onclick="runLeadAnalysis()">Analyze</button>
+            </div>
+          </div>
+          <div id="la-analysis-body">
+            <div style="color:var(--muted);font-size:13px;">Click <strong>Analyze</strong> to generate lead source insights from the last 90 days.</div>
+          </div>
+          <div id="la-analysis-msg" style="font-size:12px;margin-top:8px;display:none"></div>
+        </div>
+        <div id="la-source-table" style="margin-top:1rem;display:none"></div>
       </div>
     </div>
   </div>
@@ -2235,6 +2264,8 @@ let _hasMemberAnalysis    = false;
 let _memberAnalysisCount  = 0;
 let _memberAnalysisAgents = [];
 let _memberAnalysisAt     = null;
+let _leadAnalysisAt       = null;
+let _leadAnalysisLoading  = false;
 let _memberAnalysisLoading = false;
 let _memberHoursData      = [];   // periods array from accounts.member_hours_data
 let _maHoursFileRows      = [];   // raw parsed rows from dropped file
@@ -2396,6 +2427,7 @@ async function checkAccountAndShow(session) {
       _columnMap      = acct.sales_column_map || {};
       _analysisAt     = acct.ai_analysis_at   || null;
       _hasSalesAddon  = acct.has_sales_addon  || false;
+      _leadAnalysisAt       = acct.lead_analysis_at      || null;
       _memberAnalysisAgents = acct.member_analysis_agents || [];
       _memberAnalysisAt     = acct.member_analysis_at    || null;
       _hasMemberAnalysis    = acct.has_member_analysis   || false;
@@ -2425,7 +2457,7 @@ async function checkAccountAndShow(session) {
         _dataUserId       = _ownerUserId;
         const { data: ownerAcct } = await _supabase
           .from('accounts')
-          .select('company_name, plan, status, trial_ends_at, has_sales_addon, has_commissions_addon, sales_entry_mode, is_admin, self_report_config, ai_analysis_at, has_member_analysis, member_analysis_agents, member_analysis_at, member_analysis_count, member_hours_data')
+          .select('company_name, plan, status, trial_ends_at, has_sales_addon, has_commissions_addon, sales_entry_mode, is_admin, self_report_config, ai_analysis_at, lead_analysis_at, has_member_analysis, member_analysis_agents, member_analysis_at, member_analysis_count, member_hours_data')
           .eq('user_id', _ownerUserId)
           .single();
         if (ownerAcct) {
@@ -2437,6 +2469,7 @@ async function checkAccountAndShow(session) {
           _salesEntryMode         = ownerAcct.sales_entry_mode       || 'upload';
           _selfReportConfig       = ownerAcct.self_report_config     || {};
           _analysisAt             = ownerAcct.ai_analysis_at         || null;
+          _leadAnalysisAt         = ownerAcct.lead_analysis_at       || null;
           _hasMemberAnalysis      = ownerAcct.has_member_analysis    || false;
           _memberAnalysisAgents   = ownerAcct.member_analysis_agents || [];
           _memberAnalysisAt       = ownerAcct.member_analysis_at     || null;
@@ -3734,7 +3767,8 @@ function renderVmHeatmap() {
 // ── AI ANALYSIS ──────────────────────────────────────────────────────────────
 let _chartCalls = null, _chartTalk = null, _chartVm = null;
 let _analysisLoading = false;
-const ANALYSIS_COOLDOWN_MS = 5 * 24 * 60 * 60 * 1000; // 5 days
+const ANALYSIS_COOLDOWN_MS      = 5 * 24 * 60 * 60 * 1000; // 5 days
+const LEAD_ANALYSIS_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 
 function analysisRemainingMs() {
   if (!_analysisAt) return 0;
@@ -6514,7 +6548,7 @@ function srSalesAddRow() {
         <input id="${rowId}-prem" type="number" step="0.01" style="${si}"></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:.5rem;align-items:end;">
-      <div><label style="font-size:11px;color:var(--muted);">LEAD SOURCE${req('lead_source')}</label>
+      <div><label style="font-size:11px;color:var(--muted);">LEAD SOURCE <span style="color:var(--danger)">*</span></label>
         <select id="${rowId}-source" style="${si}">${srcOpts}</select></div>
       <div><label style="font-size:11px;color:var(--muted);">PERIOD${req('period')}</label>
         <select id="${rowId}-period" style="${si}"><option value="">—</option><option value="6">6</option><option value="12">12</option></select></div>
@@ -6560,7 +6594,7 @@ async function srSalesSubmitAll(btn) {
     if (cfg.customer_name && !customer) { msgs.push(`Row ${i+1}: customer name required`); return; }
     if (cfg.written_premium && !prem) { msgs.push(`Row ${i+1}: premium required`); return; }
     if (cfg.subcategory && !subcategory) { msgs.push(`Row ${i+1}: subcategory required`); return; }
-    if (cfg.lead_source && !leadSource) { msgs.push(`Row ${i+1}: lead source required`); return; }
+    if (!leadSource) { msgs.push(`Row ${i+1}: lead source required`); return; }
     if (cfg.location && !location) { msgs.push(`Row ${i+1}: location required`); return; }
     if (cfg.period && !period) { msgs.push(`Row ${i+1}: period required`); return; }
 
@@ -8140,9 +8174,9 @@ function manualAddRow(opts = {}) {
           <option value="">—</option><option value="6">6</option><option value="12">12</option>
         </select>
       </div>
-      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">LEAD SOURCE</label>
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">LEAD SOURCE <span style="color:var(--danger)">*</span></label>
         <select class="msr-source" style="${msrSelectStyle()}">
-          <option value="">—</option>
+          <option value="">— required —</option>
           ${getLeadSources().map(s => `<option value="${escHtml(s)}">${escHtml(s)}</option>`).join('')}
         </select>
       </div>
@@ -8226,10 +8260,11 @@ async function manualSubmitAll(btn) {
   msg.style.display = 'none';
   let saved = 0, errors = 0;
   for (const row of rows) {
-    const product  = row.querySelector('.msr-product')?.value;
-    const subcatRaw= row.querySelector('.msr-subcat')?.value || '';
-    const saleDate = row.querySelector('.msr-date')?.value;
-    if (!product || !saleDate) { errors++; continue; }
+    const product    = row.querySelector('.msr-product')?.value;
+    const subcatRaw  = row.querySelector('.msr-subcat')?.value || '';
+    const saleDate   = row.querySelector('.msr-date')?.value;
+    const leadSource = row.querySelector('.msr-source')?.value;
+    if (!product || !saleDate || !leadSource) { errors++; continue; }
     const subcategory = subcatRaw.includes('|') ? subcatRaw.split('|')[1] : '';
     const body = {
       agentId:       row.querySelector('.msr-agent')?.value      || null,
@@ -8256,7 +8291,7 @@ async function manualSubmitAll(btn) {
   btn.disabled = false;
   msg.style.display = 'block';
   if (saved)   { msg.style.color = 'var(--accent2)'; msg.textContent = `${saved} entr${saved===1?'y':'ies'} saved.`; }
-  if (errors)  { msg.style.color = 'var(--danger)';  msg.textContent += ` ${errors} failed (product and date required).`; }
+  if (errors)  { msg.style.color = 'var(--danger)';  msg.textContent += ` ${errors} failed (product, date, and lead source required).`; }
   if (saved)   { loadRaceData().catch(() => {}); }
 }
 
@@ -9435,9 +9470,9 @@ function clAddSaleRow() {
           <option value="">—</option><option value="6">6</option><option value="12">12</option>
         </select>
       </div>
-      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">LEAD SOURCE</label>
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">LEAD SOURCE <span style="color:var(--danger)">*</span></label>
         <select class="clrow-source" style="${msrSelectStyle()}">
-          <option value="">—</option>
+          <option value="">— required —</option>
           ${(_clLeadSources.length ? _clLeadSources : LEAD_SOURCES).map(s => `<option value="${escHtml(s)}">${escHtml(s)}</option>`).join('')}
         </select>
       </div>
@@ -10229,10 +10264,140 @@ async function saveMemberAnalysisAgents(btn) {
 
 // ── Member Analysis — analysis pane ──────────────────────────────────────────
 function showAnalysisSubTab(name, btn) {
-  document.getElementById('analysis-pane-trends').style.display  = name === 'trends'  ? '' : 'none';
-  document.getElementById('analysis-pane-members').style.display = name === 'members' ? '' : 'none';
+  document.getElementById('analysis-pane-trends').style.display      = name === 'trends'       ? '' : 'none';
+  document.getElementById('analysis-pane-members').style.display     = name === 'members'      ? '' : 'none';
+  document.getElementById('analysis-pane-leadsources').style.display = name === 'leadsources'  ? '' : 'none';
   document.querySelectorAll('#tab-analysis .acct-stab').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
+  if (name === 'leadsources') {
+    const hasAddon = _hasSalesAddon || _isAdmin;
+    document.getElementById('la-teaser').style.display  = hasAddon ? 'none' : '';
+    document.getElementById('la-content').style.display = hasAddon ? ''     : 'none';
+    if (hasAddon) { updateLeadAnalysisBtn(); displayCachedLeadAnalysis(); }
+  }
+}
+
+// ── Lead Source Analysis ──────────────────────────────────────────────────────
+
+function leadAnalysisRemainingMs() {
+  if (!_leadAnalysisAt) return 0;
+  return Math.max(0, new Date(_leadAnalysisAt).getTime() + LEAD_ANALYSIS_COOLDOWN_MS - Date.now());
+}
+
+function updateLeadAnalysisBtn() {
+  const btn = document.getElementById('la-refresh-btn');
+  if (!btn) return;
+  const remaining = leadAnalysisRemainingMs();
+  if (remaining > 0) {
+    const days  = Math.floor(remaining / 86400000);
+    const hrs   = Math.floor((remaining % 86400000) / 3600000);
+    const label = days > 0 ? `${days}d ${hrs}h` : `${hrs}h`;
+    btn.disabled = true;
+    btn.textContent = `Analyze (${label})`;
+    setTimeout(updateLeadAnalysisBtn, Math.min(remaining, 5 * 60 * 1000));
+  } else {
+    btn.disabled = false;
+    btn.textContent = 'Analyze';
+  }
+}
+
+function renderLeadSourceTable(chartData) {
+  const el = document.getElementById('la-source-table');
+  if (!el || !chartData?.sources?.length) { if (el) el.style.display = 'none'; return; }
+  const rows = chartData.sources.map(s => {
+    const trendArrow = s.trend[2] > s.trend[1] ? '↑' : s.trend[2] < s.trend[1] ? '↓' : '→';
+    const trendColor = s.trend[2] > s.trend[1] ? 'var(--accent2)' : s.trend[2] < s.trend[1] ? 'var(--danger)' : 'var(--muted)';
+    const premCell   = s.avgPremium > 0 ? `$${s.avgPremium.toLocaleString()}` : '—';
+    return `<tr>
+      <td style="padding:6px 8px;font-size:13px;">${escHtml(s.source)}</td>
+      <td style="padding:6px 8px;text-align:center;font-family:'DM Mono',monospace;font-size:12px;">${s.count}</td>
+      <td style="padding:6px 8px;text-align:center;font-size:12px;color:var(--muted);">${s.pct}%</td>
+      <td style="padding:6px 8px;text-align:center;font-family:'DM Mono',monospace;font-size:12px;">${premCell}</td>
+      <td style="padding:6px 8px;text-align:center;font-size:13px;color:${trendColor};">${trendArrow}</td>
+      <td style="padding:6px 8px;font-size:12px;color:var(--muted);">${escHtml(s.topProduct)}</td>
+    </tr>`;
+  }).join('');
+  el.style.display = '';
+  el.innerHTML = `<div class="panel">
+    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem;">Source Breakdown — Last 90 Days</div>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;">
+        <thead><tr style="border-bottom:1px solid var(--border);">
+          <th style="padding:5px 8px;text-align:left;font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;">Source</th>
+          <th style="padding:5px 8px;text-align:center;font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;">Sales</th>
+          <th style="padding:5px 8px;text-align:center;font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;">% Mix</th>
+          <th style="padding:5px 8px;text-align:center;font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;">Avg Prem</th>
+          <th style="padding:5px 8px;text-align:center;font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;">Trend</th>
+          <th style="padding:5px 8px;text-align:left;font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;">Top Product</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:.5rem;">Trend arrow compares most recent 30 days vs prior 30 days.</div>
+  </div>`;
+}
+
+function displayCachedLeadAnalysis() {
+  if (!_leadAnalysisAt) return;
+  const cached = _lsGet('br-lead-analysis-' + _userId);
+  if (cached) {
+    try {
+      const data = JSON.parse(cached);
+      if (data.userId !== _userId) { _lsRemove('br-lead-analysis-' + _userId); }
+      else { _applyLeadAnalysis(data); return; }
+    } catch(e) { /* fall through */ }
+  }
+  fetch('/api/lead-analysis', { headers: authHeaders() })
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (!data?.insights) return;
+      _lsSet('br-lead-analysis-' + _userId, JSON.stringify({ userId: _userId, ...data }));
+      _applyLeadAnalysis(data);
+    }).catch(() => {});
+}
+
+function _applyLeadAnalysis(data) {
+  const body = document.getElementById('la-analysis-body');
+  const msg  = document.getElementById('la-analysis-msg');
+  if (body && data.insights) {
+    body.innerHTML = data.insights.split(/\n\n+/).filter(Boolean).map(p => `<p style="margin-bottom:.85rem;">${p.trim()}</p>`).join('');
+  }
+  if (data.chartData) renderLeadSourceTable(data.chartData);
+  const ts = data.cachedAt || _leadAnalysisAt;
+  if (msg && ts) {
+    msg.style.display = 'block';
+    msg.style.color   = 'var(--muted)';
+    msg.textContent   = `Generated ${new Date(ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
+  }
+}
+
+async function runLeadAnalysis() {
+  if (_leadAnalysisLoading) return;
+  if (leadAnalysisRemainingMs() > 0) return;
+  _leadAnalysisLoading = true;
+  const btn  = document.getElementById('la-refresh-btn');
+  const body = document.getElementById('la-analysis-body');
+  const msg  = document.getElementById('la-analysis-msg');
+  if (btn)  { btn.disabled = true; btn.textContent = 'Analyzing…'; }
+  if (body) body.innerHTML = '<div style="color:var(--muted);font-size:13px;">Analyzing lead sources…</div>';
+  if (msg)  msg.style.display = 'none';
+  document.getElementById('la-source-table').style.display = 'none';
+  try {
+    const r    = await fetch('/api/lead-analysis', { headers: authHeaders() });
+    const data = await r.json();
+    if (!r.ok) {
+      if (body) body.innerHTML = `<div style="color:var(--danger);font-size:13px;">${data.error || 'Error loading analysis.'}</div>`;
+      return;
+    }
+    _leadAnalysisAt = data.cachedAt || new Date().toISOString();
+    _lsSet('br-lead-analysis-' + _userId, JSON.stringify({ userId: _userId, ...data }));
+    _applyLeadAnalysis({ ...data, cachedAt: _leadAnalysisAt });
+  } catch(e) {
+    if (body) body.innerHTML = `<div style="color:var(--danger);font-size:13px;">${e.message}</div>`;
+  } finally {
+    _leadAnalysisLoading = false;
+    updateLeadAnalysisBtn();
+  }
 }
 
 function maAnalysisRemainingMs() {

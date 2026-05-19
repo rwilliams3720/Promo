@@ -166,6 +166,7 @@ export default async function handler(req, res) {
     }
 
     if (!product || !saleDate) return res.status(400).json({ error: 'product and saleDate required' });
+    if (!leadSource) return res.status(400).json({ error: 'lead source required' });
 
     const privName   = privacyName(customerName || '');
     const resolvedIssuedDate = autoIssued ? saleDate : (issuedDate || null);

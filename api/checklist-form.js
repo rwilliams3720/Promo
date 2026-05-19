@@ -212,6 +212,8 @@ export default async function handler(req, res) {
 
     // Write sales_log rows
     if (sales.length > 0) {
+      const missingSrc = sales.find(s => !s.leadSource);
+      if (missingSrc) return res.status(400).json({ error: 'Lead source required for all sales rows' });
       const logInserts = sales.map(s => ({
         user_id:        userId,
         hash:           sha256Short([salespersonId || '', s.product, s.subcategory || '', subDate, s.writtenPremium || ''].join('|') + Date.now() + Math.random()),
