@@ -1165,7 +1165,7 @@
             <button class="btn btn-secondary" id="ma-refresh-btn" onclick="runMemberAnalysis()">Analyze</button>
           </div>
         </div>
-        <div id="ma-analysis-body">
+        <div id="ma-analysis-body" style="max-height:70vh;overflow-y:auto;padding-right:2px;">
           <div style="color:var(--muted);font-size:13px;">Click <strong>Analyze</strong> to generate individual insights.</div>
         </div>
         <div id="ma-analysis-msg" style="font-size:12px;margin-top:8px;display:none"></div>
@@ -10801,15 +10801,20 @@ function renderMemberAnalysisAgentPicker() {
 
   if (desc) desc.textContent = `Select up to ${isAdmin ? 'unlimited' : count} agent${count !== 1 ? 's' : ''} for individual coaching analysis${count > 0 ? ` (${count} seat${count !== 1 ? 's' : ''} purchased)` : ''}.`;
 
-  // Source: agent_roster if has_sales_addon, else race_data
+  // Source: agent_roster (active only) if has_sales_addon, else race_data
   let agents = [];
   if (_hasSalesAddon || _isAdmin) {
-    agents = _agentRoster.filter(a => a.agent_id && a.name).map(a => ({ id: a.agent_id, name: a.name }));
+    agents = _agentRoster.filter(a => a.agent_id && a.name && a.active !== false).map(a => ({ id: a.agent_id, name: a.name }));
   } else {
     agents = (_raceData || []).filter(a => a.agent_id && a.name).map(a => ({ id: a.agent_id, name: a.name }));
   }
 
-  const selectedIds = new Set((_memberAnalysisAgents || []).map(a => a.agent_id || a));
+  const activeIdSet    = new Set(agents.map(a => a.id));
+  const selectedIds    = new Set((_memberAnalysisAgents || []).map(a => a.agent_id || a));
+  const inactiveInSel  = (_memberAnalysisAgents || []).filter(a => {
+    const id = a.agent_id || a;
+    return selectedIds.has(id) && !activeIdSet.has(id);
+  });
 
   container.innerHTML = agents.map(ag => {
     const checked = selectedIds.has(ag.id) ? 'checked' : '';
@@ -10822,6 +10827,23 @@ function renderMemberAnalysisAgentPicker() {
 
   if (!agents.length) {
     container.innerHTML = '<div style="font-size:13px;color:var(--muted);">No agents found. Add agents to the roster first.</div>';
+  }
+
+  // Inactive-in-selection warning
+  let inactiveEl = document.getElementById('ma-inactive-warn');
+  if (!inactiveEl) {
+    inactiveEl = document.createElement('div');
+    inactiveEl.id = 'ma-inactive-warn';
+    container.parentNode.insertBefore(inactiveEl, container);
+  }
+  if (inactiveInSel.length) {
+    const names = inactiveInSel.map(a => escHtml(a.name || a.agent_id || a)).join(', ');
+    inactiveEl.innerHTML = `<div style="margin-bottom:.6rem;padding:.65rem .9rem;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);border-radius:8px;font-size:13px;color:var(--warn);">
+      <strong>${inactiveInSel.length} agent${inactiveInSel.length !== 1 ? 's' : ''} no longer active:</strong> ${names}.
+      <button onclick="removeInactiveMaAgents(this)" style="margin-left:10px;font-size:12px;padding:2px 10px;background:rgba(251,191,36,.15);border:1px solid rgba(251,191,36,.4);color:var(--warn);border-radius:5px;cursor:pointer;">Remove from selection</button>
+    </div>`;
+  } else {
+    inactiveEl.innerHTML = '';
   }
 
   // Lock status row
@@ -10895,6 +10917,39 @@ async function saveMemberAnalysisAgents(btn) {
     }
   } catch(e) { showInlineMsg('ma-agents-msg', e.message, 'err'); }
   btn.disabled = false; btn.textContent = 'Save Selection';
+}
+
+async function removeInactiveMaAgents(btn) {
+  // Build active agent id set
+  const activeIds = new Set(
+    (_hasSalesAddon || _isAdmin)
+      ? _agentRoster.filter(a => a.active !== false).map(a => a.agent_id)
+      : (_raceData || []).map(a => a.agent_id)
+  );
+  const filtered = (_memberAnalysisAgents || []).filter(a => activeIds.has(a.agent_id || a));
+  if (filtered.length === _memberAnalysisAgents.length) return; // nothing to do
+
+  btn.disabled = true; btn.textContent = 'Removing…';
+  try {
+    const r = await fetch('/api/member-analysis', {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agents: filtered, removeInactiveOnly: true }),
+    });
+    const d = await r.json();
+    if (r.ok) {
+      _memberAnalysisAgents = filtered;
+      // lock timestamp intentionally NOT updated — removal of inactive agents doesn't restart clock
+      showInlineMsg('ma-agents-msg', 'Inactive agents removed from selection.', 'ok');
+      renderMemberAnalysisAgentPicker();
+    } else {
+      btn.disabled = false; btn.textContent = 'Remove from selection';
+      showInlineMsg('ma-agents-msg', d.error || 'Remove failed', 'err');
+    }
+  } catch(e) {
+    btn.disabled = false; btn.textContent = 'Remove from selection';
+    showInlineMsg('ma-agents-msg', e.message, 'err');
+  }
 }
 
 // ── Member Analysis — analysis pane ──────────────────────────────────────────

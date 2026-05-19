@@ -125,11 +125,27 @@ export default async function handler(req, res) {
 
   // ── PATCH: save selected agents ───────────────────────────────────────────
   if (req.method === 'PATCH') {
-    const { agents } = req.body || {};
+    const { agents, removeInactiveOnly } = req.body || {};
     if (!Array.isArray(agents)) return res.status(400).json({ error: 'agents array required' });
 
-    // 30-day lock: prevent agent switching within the lock window
     const MA_LOCK_MS = 30 * 24 * 60 * 60 * 1000;
+
+    if (removeInactiveOnly && !acct.is_admin) {
+      // Allow removing inactive agents without resetting the lock clock.
+      // Verify no new agents are being added — only removals from the current saved list.
+      const currentIds = new Set((acct.member_analysis_agents || []).map(a => a.agent_id || a));
+      const hasAdditions = agents.some(a => !currentIds.has(a.agent_id || a));
+      if (hasAdditions) return res.status(400).json({ error: 'removeInactiveOnly cannot add new agents' });
+
+      const { error } = await supabase
+        .from('accounts')
+        .update({ member_analysis_agents: agents })
+        .eq('user_id', dataUserId);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ ok: true });
+    }
+
+    // 30-day lock: prevent agent switching within the lock window
     if (!acct.is_admin && acct.member_analysis_agents_set_at) {
       const lockedUntil = new Date(acct.member_analysis_agents_set_at).getTime() + MA_LOCK_MS;
       if (Date.now() < lockedUntil) {
