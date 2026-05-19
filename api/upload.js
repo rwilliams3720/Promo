@@ -376,6 +376,17 @@ async function processSalesUpload(rows, userId, columnMap) {
     }).eq('user_id', userId).eq('agent_id', id);
   }
 
+  // Zero out sales for any race_data agent that no longer has sales in any month
+  const { data: allRaceAgents } = await supabase.from('race_data').select('agent_id').eq('user_id', userId);
+  for (const row of (allRaceAgents || [])) {
+    if (!agentTotals[row.agent_id]) {
+      await supabase.from('race_data').update({
+        wl: 0, ul: 0, term: 0, health: 0, auto: 0, fire: 0,
+        last_updated: now,
+      }).eq('user_id', userId).eq('agent_id', row.agent_id);
+    }
+  }
+
   triggerDailyReport(userId);
   return {
     success: true,

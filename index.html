@@ -681,7 +681,7 @@
       <div class="panel">
         <div class="panel-title">Race Controls</div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-          <button class="btn btn-secondary" onclick="loadRaceData()">Refresh Data</button>
+          <button id="btn-refresh-data" class="btn btn-secondary" onclick="refreshRaceData(this)">Refresh Data</button>
           <button class="btn btn-danger" onclick="confirmArchive()">Archive Month &amp; Reset</button>
         </div>
       </div>
@@ -783,6 +783,11 @@
             <option value="all">All Locations</option>
           </select>
           <label style="font-size:12px;color:var(--text);display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;user-select:none;"><input type="checkbox" id="sl-all-year" onchange="onSalesLogAllYearChange()"> All Year</label>
+          <select id="sl-issued-filter" onchange="onSalesLogIssuedFilterChange()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;">
+            <option value="all">All Status</option>
+            <option value="issued">Issued</option>
+            <option value="unissued">Not Issued</option>
+          </select>
           <label style="font-size:12px;color:var(--text);display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;user-select:none;"><input type="checkbox" id="sl-show-unissued" onchange="onSalesLogFilterChange()"> Show unissued from other months</label>
           <label style="font-size:12px;color:var(--text);display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;user-select:none;"><input type="checkbox" id="sl-show-hidden" onchange="onSalesLogFilterChange()"> Show hidden</label>
           <button class="btn btn-secondary" style="margin-left:auto;padding:4px 12px;font-size:12px;white-space:nowrap;" onclick="downloadSalesLogXlsx()">↓ Download .xlsx</button>
@@ -2146,14 +2151,14 @@ async function checkAccountAndShow(session) {
         _dataUserId       = _ownerUserId;
         const { data: ownerAcct } = await _supabase
           .from('accounts')
-          .select('company_name, plan, status, trial_ends_at, has_sales_addon, has_commissions_addon, sales_entry_mode')
+          .select('company_name, plan, status, trial_ends_at, has_sales_addon, has_commissions_addon, sales_entry_mode, is_admin')
           .eq('user_id', _ownerUserId)
           .single();
         if (ownerAcct) {
           _ownerCompany        = ownerAcct.company_name        || '';
           _currentPlan         = ownerAcct.plan                || 'basic';
           _acctStatus          = ownerAcct.status              || 'trial';
-          _hasSalesAddon       = ownerAcct.has_sales_addon     || false;
+          _hasSalesAddon       = ownerAcct.has_sales_addon || ownerAcct.is_admin || false;
           _hasCommissionsAddon = ownerAcct.has_commissions_addon || false;
           _salesEntryMode      = ownerAcct.sales_entry_mode    || 'upload';
           if (_acctStatus === 'trial' && ownerAcct.trial_ends_at && new Date(ownerAcct.trial_ends_at) < new Date()) {
@@ -2482,6 +2487,14 @@ function showTab(name, btn) {
 }
 
 // ── LOAD RACE DATA ────────────────────────────────────────────────────────────
+async function refreshRaceData(btn) {
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Refreshing…';
+  try { await loadRaceData(); btn.textContent = '✓ Refreshed'; setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 2000); }
+  catch(e) { btn.textContent = orig; btn.disabled = false; }
+}
+
 async function loadRaceData() {
   if (!_dataUserId) return;
 
@@ -2729,9 +2742,10 @@ async function loadSalesTileData() {
   const y   = now.getFullYear();
   try {
     const r = await fetch(`/api/sales?month=${m}&year=${y}`, { headers: authHeaders() });
-    if (!r.ok) return;
-    const d = await r.json();
-    _salesTileEntries = d.entries || [];
+    if (r.ok) {
+      const d = await r.json();
+      _salesTileEntries = d.entries || [];
+    }
   } catch(_) { /* silent */ }
   renderSalesTile();
 }
@@ -7018,10 +7032,11 @@ async function deleteSalesLogRow(h, btn) {
     else { const d = await r.json(); showInlineMsg('sl-msg-' + h, d.error || 'Delete failed', 'err'); btn.disabled = false; }
   } catch(err) { btn.disabled = false; }
 }
-let _salesLogEntries = [];
-let _salesLogMonth   = new Date().getMonth() + 1;
-let _salesLogYear    = new Date().getFullYear();
-let _salesLogAllYear = false;
+let _salesLogEntries      = [];
+let _salesLogMonth        = new Date().getMonth() + 1;
+let _salesLogYear         = new Date().getFullYear();
+let _salesLogAllYear      = false;
+let _salesLogIssuedFilter = 'all';
 let _spEntries   = [];
 let _spMetric    = 'count';
 let _spDateMode  = 'month';
@@ -7088,6 +7103,11 @@ async function loadSalesLog() {
   } catch(err) { list.innerHTML = `<span style="color:var(--danger);font-size:13px;">Error: ${err.message}</span>`; }
 }
 function filterSalesLog() { renderSalesLog(); }
+
+function onSalesLogIssuedFilterChange() {
+  _salesLogIssuedFilter = document.getElementById('sl-issued-filter')?.value || 'all';
+  renderSalesLog();
+}
 
 function _populateSlLocationFilter() {
   const sel = document.getElementById('sl-location-filter');
@@ -7406,6 +7426,11 @@ function _filteredSalesEntries() {
   let entries = _salesLogEntries;
   if (_salesLogLocationFilter && _salesLogLocationFilter !== 'all') {
     entries = entries.filter(e => (e.location || '') === _salesLogLocationFilter);
+  }
+  if (_salesLogIssuedFilter === 'issued') {
+    entries = entries.filter(e => !!e.issued_date);
+  } else if (_salesLogIssuedFilter === 'unissued') {
+    entries = entries.filter(e => !e.issued_date);
   }
   if (!q) return entries;
   return entries.filter(e => {
