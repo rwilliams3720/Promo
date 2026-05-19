@@ -1128,6 +1128,15 @@
     <!-- Sub-pane: Team Member Analysis -->
     <div id="analysis-pane-members" style="display:none">
       <div id="ma-hours-label-members" style="font-size:12px;color:var(--muted);margin-bottom:.5rem;display:none;"></div>
+      <div id="ma-hours-mismatch-warn" style="display:none;margin-bottom:.75rem;padding:.65rem .9rem;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);border-radius:8px;font-size:13px;color:var(--warn);">
+        <strong>Hours period doesn't match current race month.</strong>
+        <span id="ma-hours-mismatch-detail" style="color:var(--muted);margin-left:4px;"></span>
+        <div style="display:flex;gap:8px;margin-top:.6rem;">
+          <button class="btn btn-secondary" style="font-size:12px;padding:4px 12px;" onclick="maHoursMismatchUpload()">Upload Hours</button>
+          <button class="btn btn-secondary" style="font-size:12px;padding:4px 12px;" onclick="runMemberAnalysis(true)">Analyze Anyway</button>
+          <button style="background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;padding:4px;" onclick="document.getElementById('ma-hours-mismatch-warn').style.display='none'">Dismiss</button>
+        </div>
+      </div>
       <div class="panel" id="member-analysis-panel">
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.2rem;">
           <div class="panel-title" style="margin:0">Individual Agent Analysis</div>
@@ -10282,7 +10291,12 @@ function displayCachedMemberAnalysis() {
     .catch(() => {});
 }
 
-async function runMemberAnalysis() {
+function maHoursMismatchUpload() {
+  document.getElementById('ma-hours-mismatch-warn').style.display = 'none';
+  goToAccountTab('sales');
+}
+
+async function runMemberAnalysis(bypassHoursCheck) {
   if (_memberAnalysisLoading) return;
   if (maAnalysisRemainingMs() > 0) return;
   if (!(_hasMemberAnalysis || _isAdmin)) return;
@@ -10291,6 +10305,30 @@ async function runMemberAnalysis() {
     if (body) body.innerHTML = '<div style="color:var(--danger);font-size:13px;">No agents selected. Go to Account → Sales → Team Member Analysis to choose agents.</div>';
     return;
   }
+
+  // Hours mismatch check — warn if uploaded period doesn't match current race month
+  if (!bypassHoursCheck) {
+    const raceMonth = (document.getElementById('header-month')?.textContent || '').trim();
+    if (raceMonth && raceMonth !== 'No race data uploaded' && raceMonth !== 'Loading…') {
+      const periods = (_memberHoursData || []).map(p => (p.period || '').trim().toLowerCase());
+      const raceMonthLower = raceMonth.toLowerCase();
+      const matched = periods.some(p => p === raceMonthLower);
+      if (!matched) {
+        const warnEl   = document.getElementById('ma-hours-mismatch-warn');
+        const detailEl = document.getElementById('ma-hours-mismatch-detail');
+        if (detailEl) {
+          const latest = (_memberHoursData || []).sort((a,b) => new Date(b.uploaded_at||0) - new Date(a.uploaded_at||0))[0];
+          detailEl.textContent = latest
+            ? `Current race: "${raceMonth}" — Hours on file: "${latest.period}"`
+            : `Current race: "${raceMonth}" — No hours uploaded`;
+        }
+        if (warnEl) warnEl.style.display = '';
+        return;
+      }
+    }
+    document.getElementById('ma-hours-mismatch-warn').style.display = 'none';
+  }
+
   _memberAnalysisLoading = true;
   const btn  = document.getElementById('ma-refresh-btn');
   const body = document.getElementById('ma-analysis-body');
