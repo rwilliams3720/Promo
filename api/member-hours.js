@@ -48,11 +48,20 @@ export default async function handler(req, res) {
 
     const cleaned = rows
       .map(r => ({
-        agent_name: (r.agent_name || '').trim(),
-        agent_id:   r.agent_id || null,
-        hours:      parseFloat(r.hours) || 0,
+        agent_name:   (r.agent_name || '').trim(),
+        agent_id:     r.agent_id || null,
+        hours:        parseFloat(r.hours) || 0,
+        compensation: r.compensation != null ? (parseFloat(r.compensation) || 0) : null,
       }))
-      .filter(r => r.agent_name && r.hours > 0);
+      .map(r => {
+        // Strip null compensation to keep storage clean
+        if (r.compensation === null || r.compensation === 0) {
+          const { compensation, ...rest } = r;
+          return rest;
+        }
+        return r;
+      })
+      .filter(r => r.agent_name && (r.hours > 0 || (r.compensation != null && r.compensation > 0)));
 
     if (!cleaned.length) return res.status(400).json({ error: 'No valid rows after filtering' });
 

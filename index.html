@@ -1058,16 +1058,8 @@
           <div class="panel" style="margin-top:1rem;">
             <div class="panel-title" style="margin-bottom:.75rem;">What-If Calculator</div>
             <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Estimate your commission on a hypothetical sale.</p>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem;">
-              <div>
-                <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">PRODUCT</label>
-                <select id="wi-product" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;"></select>
-              </div>
-              <div>
-                <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">WRITTEN PREMIUM</label>
-                <input id="wi-premium" type="number" min="0" step="0.01" placeholder="0.00" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;box-sizing:border-box;">
-              </div>
-            </div>
+            <div id="wi-rows-container" style="margin-bottom:.75rem;"></div>
+            <button class="btn btn-secondary" onclick="wiAddRow()" style="font-size:12px;padding:4px 12px;margin-bottom:.75rem;">+ Add Product</button>
             <div style="margin-bottom:.75rem;">
               <label style="font-size:13px;display:flex;align-items:center;gap:7px;cursor:pointer;">
                 <input type="checkbox" id="wi-split" onchange="wiToggleSplit()" style="width:15px;height:15px;accent-color:var(--accent);cursor:pointer;">
@@ -1079,7 +1071,7 @@
               </div>
             </div>
             <button class="btn btn-secondary" onclick="calcWhatIf()">Calculate</button>
-            <div id="wi-result" style="font-size:18px;font-weight:700;color:var(--accent2);margin-top:.75rem;display:none;"></div>
+            <div id="wi-result" style="font-size:15px;font-weight:700;color:var(--accent2);margin-top:.75rem;display:none;"></div>
           </div>
         </div>
       </div>
@@ -1397,8 +1389,8 @@
 
           <!-- Team Member Hours Uploader -->
           <div class="acct-section" id="ma-hours-section" style="display:none">
-            <h3>Team Member Hours</h3>
-            <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Upload an XLSX or CSV with agent hours by period. Used for efficiency calculations in Team Member Analysis. Uploading a period replaces any prior data for that same period.</p>
+            <h3>Team Member Hours &amp; Compensation</h3>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Upload an XLSX or CSV with agent hours and optional compensation by period. Used for efficiency calculations in Team Member Analysis. Salary employees with no hours can still provide compensation for cost-per-policy analysis. Uploading a period replaces any prior data for that same period.</p>
 
             <div id="ma-hours-drop" style="border:2px dashed var(--border2);border-radius:8px;padding:1.5rem 1rem;text-align:center;cursor:pointer;margin-bottom:.75rem;transition:border-color .15s;"
                  ondragover="event.preventDefault();document.getElementById('ma-hours-drop').style.borderColor='var(--accent)'"
@@ -1413,7 +1405,7 @@
             <!-- Column mapper — shown after file is parsed -->
             <div id="ma-hours-mapper" style="display:none;margin-bottom:.75rem;padding:.75rem;background:var(--deep);border:1px solid var(--border2);border-radius:8px;">
               <div style="font-size:13px;font-weight:600;margin-bottom:.6rem;">Map Columns</div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem;">
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;margin-bottom:.75rem;">
                 <div>
                   <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:.4px;">Agent Name Column</label>
                   <select id="ma-hours-col-name" style="width:100%;padding:6px 8px;background:var(--card2);border:1px solid var(--border2);color:var(--text);border-radius:6px;font-size:13px;"></select>
@@ -1421,6 +1413,10 @@
                 <div>
                   <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:.4px;">Hours Column</label>
                   <select id="ma-hours-col-hours" style="width:100%;padding:6px 8px;background:var(--card2);border:1px solid var(--border2);color:var(--text);border-radius:6px;font-size:13px;"></select>
+                </div>
+                <div>
+                  <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:.4px;">Compensation Column <span style="font-size:10px;text-transform:none;font-weight:400;opacity:.7;">(optional)</span></label>
+                  <select id="ma-hours-col-comp" style="width:100%;padding:6px 8px;background:var(--card2);border:1px solid var(--border2);color:var(--text);border-radius:6px;font-size:13px;"></select>
                 </div>
               </div>
               <button class="btn btn-secondary" style="font-size:12px;" onclick="maHoursApplyMapping()">Apply Mapping →</button>
@@ -1811,38 +1807,6 @@
                   <span id="bonus-type-add-msg" style="font-size:12px;display:none;"></span>
                 </div>
               </div>
-            </div>
-
-            <!-- Activity Log -->
-            <div class="acct-section">
-              <h3>Activity Log</h3>
-              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:.75rem;">
-                <select id="bonus-log-month" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;"></select>
-                <select id="bonus-log-year" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;"></select>
-                <button class="btn btn-secondary" style="font-size:12px;padding:4px 12px;" onclick="loadBonusLog()">Load</button>
-                <button class="btn btn-primary" style="font-size:12px;padding:4px 12px;" onclick="showBonusEntryForm()">+ Log Activity</button>
-              </div>
-              <div id="bonus-entry-form" style="display:none;background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.65rem .75rem;margin-bottom:.75rem;">
-                <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem;">Log Activity</div>
-                <div style="display:grid;grid-template-columns:1fr 1fr 130px 70px;gap:.5rem;margin-bottom:.5rem;align-items:end;">
-                  <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Agent</label>
-                    <select id="bonus-entry-agent" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;outline:none;"></select></div>
-                  <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Activity Type</label>
-                    <select id="bonus-entry-type" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;outline:none;"></select></div>
-                  <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Date</label>
-                    <input id="bonus-entry-date" type="text" placeholder="YYYY-MM-DD" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;outline:none;"></div>
-                  <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Count</label>
-                    <input id="bonus-entry-count" type="number" min="1" value="1" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;outline:none;"></div>
-                </div>
-                <div style="margin-bottom:.5rem;"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Notes (optional)</label>
-                  <input id="bonus-entry-notes" type="text" placeholder="Optional notes" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;outline:none;"></div>
-                <div style="display:flex;gap:8px;align-items:center;">
-                  <button class="btn btn-primary" style="font-size:12px;padding:5px 14px;" onclick="saveBonusEntry(this)">Save</button>
-                  <button class="btn btn-secondary" style="font-size:12px;padding:4px 10px;" onclick="document.getElementById('bonus-entry-form').style.display='none'">Cancel</button>
-                  <span id="bonus-entry-msg" style="font-size:12px;display:none;"></span>
-                </div>
-              </div>
-              <div id="bonus-log-content" style="font-size:13px;color:var(--muted);">Select a month and click Load.</div>
             </div>
 
           </div><!-- /sales-sub-bonus -->
@@ -6011,20 +5975,6 @@ const BONUS_CAT_LABELS = { appointment:'Appt', review:'Review', call:'Call', cus
 const BONUS_CAT_COLORS = { appointment:'rgba(0,212,255,.15)', review:'rgba(0,229,180,.15)', call:'rgba(255,165,0,.15)', custom:'rgba(123,97,255,.15)' };
 
 function initBonusSubTab() {
-  // Populate month/year pickers
-  const mSel = document.getElementById('bonus-log-month');
-  const ySel = document.getElementById('bonus-log-year');
-  if (mSel && !mSel.options.length) {
-    ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].forEach((m,i) => {
-      const o = document.createElement('option'); o.value = i+1; o.textContent = m; mSel.appendChild(o);
-    });
-  }
-  if (ySel && !ySel.options.length) {
-    const y = new Date().getFullYear();
-    for (let i = y-1; i <= y+1; i++) { const o = document.createElement('option'); o.value = i; o.textContent = i; ySel.appendChild(o); }
-  }
-  if (mSel) mSel.value = _bonusLogMonth;
-  if (ySel) ySel.value = _bonusLogYear;
   loadBonusActivityTypes();
 }
 
@@ -6184,131 +6134,6 @@ async function deleteBonusActivityType(id, btn) {
   try {
     const r = await fetch(`/api/bonus-activities?resource=types&id=${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders() });
     if (r.ok) { _activityTypes = _activityTypes.filter(t => t.id !== id); renderBonusActivityTypes(); }
-  } finally { btn.disabled = false; }
-}
-
-function showBonusEntryForm() {
-  const manualTypes = _activityTypes.filter(t => t.source === 'manual' && t.active !== false);
-  if (!manualTypes.length) { alert('No manual activity types defined. Add a Manual Entry type first.'); return; }
-  const agentSel = document.getElementById('bonus-entry-agent');
-  const typeSel  = document.getElementById('bonus-entry-type');
-  if (agentSel) {
-    agentSel.innerHTML = '<option value="">— Select agent —</option>' +
-      _agentRoster.filter(a => a.active !== false).map(a => `<option value="${escHtml(a.agent_id)}">${escHtml(a.name)}</option>`).join('');
-  }
-  if (typeSel) {
-    typeSel.innerHTML = manualTypes.map(t => `<option value="${escHtml(t.id)}">${escHtml(t.name)}${t.subcategory?' · '+escHtml(t.subcategory):''}</option>`).join('');
-  }
-  const dateEl = document.getElementById('bonus-entry-date');
-  if (dateEl && !dateEl.value) {
-    const now = new Date();
-    dateEl.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-  }
-  const form = document.getElementById('bonus-entry-form');
-  if (form) form.style.display = '';
-}
-
-async function saveBonusEntry(btn) {
-  const activity_type_id = document.getElementById('bonus-entry-type')?.value;
-  const agent_id         = document.getElementById('bonus-entry-agent')?.value;
-  const activity_date    = (document.getElementById('bonus-entry-date')?.value || '').trim();
-  const count            = parseInt(document.getElementById('bonus-entry-count')?.value) || 1;
-  const notes            = (document.getElementById('bonus-entry-notes')?.value || '').trim() || null;
-  if (!activity_type_id || !agent_id || !activity_date) return showInlineMsg('bonus-entry-msg', 'Agent, type, and date required', 'err');
-  btn.disabled = true;
-  try {
-    const r = await fetch('/api/bonus-activities', {
-      method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'add_entry', activity_type_id, agent_id, activity_date, count, notes }),
-    });
-    if (!r.ok) { const d = await r.json(); showInlineMsg('bonus-entry-msg', d.error || 'Failed', 'err'); return; }
-    document.getElementById('bonus-entry-form').style.display = 'none';
-    document.getElementById('bonus-entry-notes').value = '';
-    loadBonusLog();
-  } finally { btn.disabled = false; }
-}
-
-async function loadBonusLog() {
-  _bonusLogMonth = parseInt(document.getElementById('bonus-log-month')?.value) || _bonusLogMonth;
-  _bonusLogYear  = parseInt(document.getElementById('bonus-log-year')?.value)  || _bonusLogYear;
-  const el = document.getElementById('bonus-log-content');
-  if (el) el.innerHTML = '<span style="color:var(--muted);">Loading…</span>';
-  try {
-    const r = await fetch(`/api/bonus-activities?month=${_bonusLogMonth}&year=${_bonusLogYear}`, { headers: authHeaders() });
-    if (!r.ok) { if (el) el.innerHTML = '<span style="color:var(--danger);">Error loading log.</span>'; return; }
-    const d = await r.json();
-    _bonusLogEntries    = d.entries    || [];
-    _bonusLogCallTotals = d.callTotals || [];
-    renderBonusLog();
-  } catch(e) { if (el) el.innerHTML = '<span style="color:var(--danger);">Error loading log.</span>'; }
-}
-
-function renderBonusLog() {
-  const el = document.getElementById('bonus-log-content');
-  if (!el) return;
-  const activeTypes = _activityTypes.filter(t => t.active !== false);
-  if (!activeTypes.length) { el.innerHTML = '<span style="color:var(--muted);">No activity types defined.</span>'; return; }
-  const hasData = _bonusLogEntries.length || _bonusLogCallTotals.length;
-  if (!hasData) { el.innerHTML = '<span style="color:var(--muted);">No activities logged for this month.</span>'; return; }
-
-  const getAgentName = id => _agentRoster.find(a => a.agent_id === id)?.name || id;
-
-  el.innerHTML = activeTypes.map(t => {
-    const catBg = BONUS_CAT_COLORS[t.category] || BONUS_CAT_COLORS.custom;
-    const catLb = BONUS_CAT_LABELS[t.category] || t.category;
-
-    if (t.source === 'call_log') {
-      const rows = _bonusLogCallTotals.filter(x => x.activity_type_id === t.id);
-      if (!rows.length) return '';
-      const total = rows.reduce((s,r)=>s+r.count,0);
-      return `<div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.65rem .75rem;margin-bottom:.5rem;">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:.4rem;">
-          <span style="font-size:11px;background:${catBg};border-radius:4px;padding:1px 7px;">${escHtml(catLb)}</span>
-          <strong style="font-size:13px;">${escHtml(t.name)}${t.subcategory?` <span style="font-weight:400;color:var(--muted);">· ${escHtml(t.subcategory)}</span>`:''}</strong>
-          <span style="font-size:10px;background:rgba(255,165,0,.15);border:1px solid rgba(255,165,0,.3);border-radius:4px;padding:1px 6px;">Auto · Call Log</span>
-          <span style="margin-left:auto;font-size:12px;color:var(--muted);">Total: <strong style="color:var(--text);">${total}</strong></span>
-        </div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;">
-          ${rows.map(r=>`<span style="font-size:12px;background:rgba(255,255,255,.04);border:1px solid var(--border2);border-radius:6px;padding:3px 10px;">${escHtml(getAgentName(r.agent_id))} <strong>${r.count}</strong></span>`).join('')}
-        </div>
-      </div>`;
-    }
-
-    // Manual type
-    const entries = _bonusLogEntries.filter(x => x.activity_type_id === t.id);
-    if (!entries.length) return '';
-    const total = entries.reduce((s,e)=>s+e.count,0);
-    return `<div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.65rem .75rem;margin-bottom:.5rem;">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:.4rem;">
-        <span style="font-size:11px;background:${catBg};border-radius:4px;padding:1px 7px;">${escHtml(catLb)}</span>
-        <strong style="font-size:13px;">${escHtml(t.name)}${t.subcategory?` <span style="font-weight:400;color:var(--muted);">· ${escHtml(t.subcategory)}</span>`:''}</strong>
-        <span style="margin-left:auto;font-size:12px;color:var(--muted);">Total: <strong style="color:var(--text);">${total}</strong></span>
-      </div>
-      <table style="width:100%;border-collapse:collapse;font-size:12px;">
-        <thead><tr style="color:var(--muted);text-align:left;">
-          <th style="padding:3px 8px 3px 0;font-weight:600;">Agent</th>
-          <th style="padding:3px 8px 3px 0;">Date</th>
-          <th style="padding:3px 8px 3px 0;">Count</th>
-          <th style="padding:3px 8px 3px 0;">Notes</th>
-          <th></th>
-        </tr></thead>
-        <tbody>${entries.map(e=>`<tr style="border-top:1px solid var(--border2);">
-          <td style="padding:4px 8px 4px 0;">${escHtml(getAgentName(e.agent_id))}</td>
-          <td style="padding:4px 8px 4px 0;">${escHtml(e.activity_date||'')}</td>
-          <td style="padding:4px 8px 4px 0;"><strong>${e.count}</strong></td>
-          <td style="padding:4px 8px 4px 0;color:var(--muted);">${escHtml(e.notes||'')}</td>
-          <td style="padding:4px 0;text-align:right;"><button onclick="deleteBonusEntry('${escHtml(e.id)}',this)" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;opacity:.6;" title="Delete">✕</button></td>
-        </tr>`).join('')}</tbody>
-      </table>
-    </div>`;
-  }).filter(Boolean).join('') || '<span style="color:var(--muted);">No activities logged for this month.</span>';
-}
-
-async function deleteBonusEntry(id, btn) {
-  btn.disabled = true;
-  try {
-    const r = await fetch(`/api/bonus-activities?resource=entries&id=${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders() });
-    if (r.ok) { _bonusLogEntries = _bonusLogEntries.filter(e => e.id !== id); renderBonusLog(); }
   } finally { btn.disabled = false; }
 }
 
@@ -7216,6 +7041,47 @@ async function saveCommissionPayment(agentId, month, btn) {
 
 // ── WHAT-IF CALCULATOR ─────────────────────────────────────────────────────────
 
+function wiAddRow() {
+  const container = document.getElementById('wi-rows-container');
+  if (!container) return;
+  const rowId = 'wi-row-' + Date.now();
+  const opts = csProducts().map(p => `<option value="${escHtml(p.key)}">${escHtml(p.label)}</option>`).join('');
+  const div = document.createElement('div');
+  div.id = rowId;
+  div.className = 'wi-product-row';
+  div.style.cssText = 'display:grid;grid-template-columns:1fr 70px 1fr auto;gap:.5rem;margin-bottom:.5rem;align-items:end;';
+  div.innerHTML = `
+    <div>
+      <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:2px;text-transform:uppercase;letter-spacing:.04em;">Product</label>
+      <select class="wi-row-product" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;">${opts}</select>
+    </div>
+    <div>
+      <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:2px;text-transform:uppercase;letter-spacing:.04em;">Qty</label>
+      <input type="number" class="wi-row-qty" min="1" value="1" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 6px;font-size:13px;outline:none;box-sizing:border-box;">
+    </div>
+    <div>
+      <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:2px;text-transform:uppercase;letter-spacing:.04em;">Premium ea</label>
+      <input type="number" class="wi-row-premium" min="0" step="0.01" placeholder="0.00" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;box-sizing:border-box;">
+    </div>
+    <button onclick="wiRemoveRow('${rowId}')" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;padding:0 4px;line-height:1;" title="Remove">×</button>`;
+  container.appendChild(div);
+  _wiSyncRemoveButtons();
+}
+
+function wiRemoveRow(rowId) {
+  const el = document.getElementById(rowId);
+  if (el) el.remove();
+  _wiSyncRemoveButtons();
+}
+
+function _wiSyncRemoveButtons() {
+  const rows = document.querySelectorAll('.wi-product-row');
+  rows.forEach(r => {
+    const btn = r.querySelector('button');
+    if (btn) btn.style.visibility = rows.length > 1 ? '' : 'hidden';
+  });
+}
+
 function wiToggleSplit() {
   const show = document.getElementById('wi-split')?.checked;
   const row  = document.getElementById('wi-split-row');
@@ -7223,23 +7089,18 @@ function wiToggleSplit() {
 }
 
 function populateWhatIfProducts() {
-  const sel = document.getElementById('wi-product');
-  if (!sel) return;
-  sel.innerHTML = csProducts().map(p => `<option value="${escHtml(p.key)}">${escHtml(p.label)}</option>`).join('');
+  const container = document.getElementById('wi-rows-container');
+  if (!container) return;
+  if (!container.children.length) wiAddRow();
 }
 
 function calcWhatIf() {
-  const product = document.getElementById('wi-product')?.value;
-  const premium = parseFloat(document.getElementById('wi-premium')?.value) || 0;
-  const isSplit = document.getElementById('wi-split')?.checked || false;
+  const isSplit  = document.getElementById('wi-split')?.checked || false;
   const ratioPct = parseFloat(document.getElementById('wi-ratio')?.value) || 50;
-  const ratio   = isSplit ? ratioPct / 100 : 1;
-  const share   = premium * ratio;
+  const ratio    = isSplit ? ratioPct / 100 : 1;
   const resultEl = document.getElementById('wi-result');
   if (!resultEl) return;
 
-  // Find a structure from _commissionStructures to use (first one found if any; agent selection not available in member view easily)
-  // For more accuracy, use the first structure assigned to any roster agent as a proxy
   let structure = null;
   if (_commissionStructures.length > 0) structure = _commissionStructures[0];
 
@@ -7250,17 +7111,58 @@ function calcWhatIf() {
     return;
   }
 
-  const rateConfig = structure.rates?.[product];
-  let commission = 0;
-  if (rateConfig && rateConfig.type && rateConfig.type !== 'none') {
-    if (rateConfig.type === 'percent') commission = share * (rateConfig.rate / 100);
-    else commission = rateConfig.rate || 0;
+  const rows = document.querySelectorAll('.wi-product-row');
+  if (!rows.length) {
+    resultEl.style.display = '';
+    resultEl.style.color = 'var(--muted)';
+    resultEl.innerHTML = 'Add at least one product row.';
+    return;
   }
 
+  // Aggregate total premium per product across all rows
+  const premByProduct = {};
+  const qtyByProduct  = {};
+  rows.forEach(row => {
+    const product = row.querySelector('.wi-row-product')?.value;
+    const qty     = Math.max(1, parseFloat(row.querySelector('.wi-row-qty')?.value) || 1);
+    const premEa  = parseFloat(row.querySelector('.wi-row-premium')?.value) || 0;
+    if (product) {
+      premByProduct[product] = (premByProduct[product] || 0) + qty * premEa;
+      qtyByProduct[product]  = (qtyByProduct[product]  || 0) + qty;
+    }
+  });
+
+  const fmt = n => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  let grandTotal = 0;
+  const breakdown = [];
+
+  for (const [product, totalPrem] of Object.entries(premByProduct)) {
+    const share      = totalPrem * ratio;
+    const rateConfig = structure.rates?.[product];
+    let commission   = 0;
+    if (rateConfig && rateConfig.type && rateConfig.type !== 'none') {
+      if (rateConfig.type === 'percent') commission = share * (rateConfig.rate / 100);
+      else commission = (rateConfig.rate || 0) * (qtyByProduct[product] || 1);
+    }
+    grandTotal += commission;
+    breakdown.push({ product, totalPrem, share, commission });
+  }
+
+  const splitNote    = isSplit ? ` <span style="font-size:12px;color:var(--muted);font-weight:400;">(${ratioPct}% share)</span>` : '';
+  const breakdownHtml = breakdown.map(b => {
+    const productLabel = csProducts().find(p => p.key === b.product)?.label || b.product;
+    const shareStr     = isSplit ? ` → $${fmt(b.share)} share` : '';
+    return `<div style="font-size:12px;color:var(--muted);font-weight:400;margin-top:2px;">
+      ${escHtml(productLabel)}: $${fmt(b.totalPrem)} prem${shareStr} → <span style="color:var(--accent2);">$${fmt(b.commission)}</span></div>`;
+  }).join('');
+
   resultEl.style.display = '';
-  resultEl.style.color = 'var(--accent2)';
-  resultEl.innerHTML = `Estimated commission: <strong>$${commission.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</strong>
-    <div style="font-size:12px;color:var(--muted);font-weight:400;margin-top:4px;">Based on "${escHtml(structure.name)}" · ${escHtml(product)} · $${share.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} share</div>`;
+  resultEl.style.color   = 'var(--accent2)';
+  resultEl.innerHTML = `Estimated: <strong>$${fmt(grandTotal)}</strong>${splitNote}
+    <div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border2);">
+      ${breakdownHtml}
+      <div style="font-size:11px;color:var(--muted);margin-top:5px;">Based on "${escHtml(structure.name)}"</div>
+    </div>`;
 }
 
 async function addAgentToRoster(btn) {
@@ -10515,16 +10417,20 @@ function maHoursParseFile(file) {
 
       const sel1 = document.getElementById('ma-hours-col-name');
       const sel2 = document.getElementById('ma-hours-col-hours');
+      const sel3 = document.getElementById('ma-hours-col-comp');
       if (!sel1 || !sel2) return;
       const opts = _maHoursHeaders.map((h, i) => `<option value="${i}">${escHtml(h) || `Column ${i+1}`}</option>`).join('');
       sel1.innerHTML = opts;
       sel2.innerHTML = opts;
+      if (sel3) sel3.innerHTML = `<option value="">— None —</option>` + opts;
 
-      // Auto-guess columns: look for "name" and "hours" keywords
+      // Auto-guess columns: look for "name", "hours", and "comp/salary/wage/pay" keywords
       const guessName  = _maHoursHeaders.findIndex(h => /name|agent/i.test(h));
       const guessHours = _maHoursHeaders.findIndex(h => /hour/i.test(h));
+      const guessComp  = _maHoursHeaders.findIndex(h => /comp|salary|wage|pay/i.test(h));
       if (guessName  >= 0) sel1.value = guessName;
       if (guessHours >= 0) sel2.value = guessHours;
+      if (sel3 && guessComp >= 0) sel3.value = guessComp;
 
       document.getElementById('ma-hours-mapper').style.display = '';
       document.getElementById('ma-hours-match').style.display   = 'none';
@@ -10539,14 +10445,20 @@ function maHoursParseFile(file) {
 function maHoursApplyMapping() {
   const nameColIdx  = parseInt(document.getElementById('ma-hours-col-name')?.value  ?? '0');
   const hoursColIdx = parseInt(document.getElementById('ma-hours-col-hours')?.value ?? '1');
+  const compColRaw  = document.getElementById('ma-hours-col-comp')?.value;
+  const compColIdx  = (compColRaw !== '' && compColRaw != null) ? parseInt(compColRaw) : -1;
+  const hasComp     = compColIdx >= 0;
 
-  // Collect unique agent names from file
-  const nameMap = {}; // rawName → first occurrence row
+  // Collect unique agent names, summing hours and compensation
+  const nameMap = {}; // rawName → { hours, comp }
   for (const row of _maHoursFileRows) {
     const rawName = String(row[nameColIdx] || '').trim();
     if (!rawName) continue;
-    if (!nameMap[rawName]) nameMap[rawName] = parseFloat(row[hoursColIdx]) || 0;
-    else nameMap[rawName] += parseFloat(row[hoursColIdx]) || 0;
+    const hrs  = parseFloat(row[hoursColIdx]) || 0;
+    const comp = hasComp ? (parseFloat(row[compColIdx]) || 0) : 0;
+    if (!nameMap[rawName]) nameMap[rawName] = { hours: 0, comp: 0 };
+    nameMap[rawName].hours += hrs;
+    nameMap[rawName].comp  += comp;
   }
 
   const uniqueNames = Object.keys(nameMap);
@@ -10556,28 +10468,33 @@ function maHoursApplyMapping() {
   const rosterAgents = (_agentRoster || []).filter(a => a.agent_id && a.name);
   const rosterOpts = [`<option value="">— Not matched —</option>`, ...rosterAgents.map(a => `<option value="${escHtml(a.agent_id)}">${escHtml(a.name)}</option>`)].join('');
 
+  const colTemplate = hasComp ? '1fr 1fr auto auto' : '1fr 1fr auto';
   const tableHtml = uniqueNames.map(name => {
-    const hrs = nameMap[name];
-    // Try to auto-match by name similarity (exact match first, then starts-with)
-    const exactMatch = rosterAgents.find(a => a.name.toLowerCase() === name.toLowerCase());
+    const { hours: hrs, comp } = nameMap[name];
+    const exactMatch   = rosterAgents.find(a => a.name.toLowerCase() === name.toLowerCase());
     const partialMatch = !exactMatch && rosterAgents.find(a =>
       a.name.toLowerCase().includes(name.toLowerCase()) || name.toLowerCase().includes(a.name.toLowerCase()));
-    const autoVal = exactMatch?.agent_id || partialMatch?.agent_id || '';
-    const sel = `<select data-raw="${escHtml(name)}" style="width:100%;padding:4px 6px;background:var(--card2);border:1px solid var(--border2);color:var(--text);border-radius:5px;font-size:12px;">${rosterOpts}</select>`;
-    const selHtml = sel.replace(`value="${escHtml(autoVal)}"`, `value="${escHtml(autoVal)}" selected`);
-    return `<div style="display:grid;grid-template-columns:1fr 1fr auto;gap:.5rem;align-items:center;padding:5px 0;border-bottom:1px solid var(--border2);">
+    const autoVal  = exactMatch?.agent_id || partialMatch?.agent_id || '';
+    const sel      = `<select data-raw="${escHtml(name)}" data-hours="${hrs}" data-comp="${comp}" style="width:100%;padding:4px 6px;background:var(--card2);border:1px solid var(--border2);color:var(--text);border-radius:5px;font-size:12px;">${rosterOpts}</select>`;
+    const selHtml  = sel.replace(`value="${escHtml(autoVal)}"`, `value="${escHtml(autoVal)}" selected`);
+    const compCell = hasComp
+      ? `<span style="font-size:12px;color:var(--muted);white-space:nowrap;">${comp > 0 ? '$' + Math.round(comp).toLocaleString() : '—'}</span>`
+      : '';
+    return `<div style="display:grid;grid-template-columns:${colTemplate};gap:.5rem;align-items:center;padding:5px 0;border-bottom:1px solid var(--border2);">
       <span style="font-size:13px;">${escHtml(name)}</span>
       ${selHtml}
       <span style="font-size:12px;color:var(--muted);white-space:nowrap;">${hrs} hrs</span>
+      ${compCell}
     </div>`;
   }).join('');
 
   const matchTable = document.getElementById('ma-hours-match-table');
   if (matchTable) matchTable.innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:.5rem;padding:4px 0;border-bottom:1px solid var(--border2);margin-bottom:4px;">
+    <div style="display:grid;grid-template-columns:${colTemplate};gap:.5rem;padding:4px 0;border-bottom:1px solid var(--border2);margin-bottom:4px;">
       <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;">File Name</span>
       <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;">Roster Agent</span>
       <span style="font-size:11px;color:var(--muted);">Hours</span>
+      ${hasComp ? '<span style="font-size:11px;color:var(--muted);">Compensation</span>' : ''}
     </div>${tableHtml}`;
 
   document.getElementById('ma-hours-match').style.display    = '';
@@ -10596,15 +10513,19 @@ async function maHoursSave(btn) {
   const selects = document.querySelectorAll('#ma-hours-match-table select[data-raw]');
   const rows = [];
   selects.forEach(sel => {
-    const agentId  = sel.value;
+    const agentId   = sel.value;
     const agentName = sel.dataset.raw || '';
-    const hrsEl    = sel.parentElement?.querySelector('span:last-child');
-    const hours    = parseFloat(hrsEl?.textContent) || 0;
-    if (agentId && hours > 0) rows.push({ agent_name: agentName, agent_id: agentId, hours });
+    const hours     = parseFloat(sel.dataset.hours) || 0;
+    const comp      = parseFloat(sel.dataset.comp)  || 0;
+    if (agentId && (hours > 0 || comp > 0)) {
+      const row = { agent_name: agentName, agent_id: agentId, hours };
+      if (comp > 0) row.compensation = comp;
+      rows.push(row);
+    }
   });
 
   if (!rows.length) {
-    showInlineMsg('ma-hours-msg', 'No matched agents with hours > 0.', 'err');
+    showInlineMsg('ma-hours-msg', 'No matched agents with hours or compensation data.', 'err');
     return;
   }
 
@@ -10632,7 +10553,7 @@ async function maHoursSave(btn) {
     document.getElementById('ma-hours-drop-name').textContent   = '';
     if (periodInput) periodInput.value = '';
     _maHoursFileRows = []; _maHoursHeaders = [];
-    showInlineMsg('ma-hours-msg', `Hours saved for "${period}". Re-run analysis to include efficiency data.`, 'ok');
+    showInlineMsg('ma-hours-msg', `Data saved for "${period}". Re-run analysis to include efficiency data.`, 'ok');
   } catch(e) {
     showInlineMsg('ma-hours-msg', e.message, 'err');
   } finally {
@@ -10651,12 +10572,14 @@ function renderMaHoursPeriods() {
   container.innerHTML = `
     <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:.4rem;">Uploaded Periods</div>
     ${sorted.map(p => {
-      const agentCount = p.rows?.length || 0;
-      const uploaded   = p.uploaded_at ? new Date(p.uploaded_at).toLocaleDateString() : '';
+      const agentCount  = p.rows?.length || 0;
+      const uploaded    = p.uploaded_at ? new Date(p.uploaded_at).toLocaleDateString() : '';
+      const hasCompData = p.rows?.some(r => r.compensation > 0);
+      const compNote    = hasCompData ? ' · comp' : '';
       return `<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:var(--card2);border:1px solid var(--border2);border-radius:7px;margin-bottom:5px;">
         <div>
           <span style="font-size:13px;font-weight:600;">${escHtml(p.period)}</span>
-          <span style="font-size:11px;color:var(--muted);margin-left:.5rem;">${agentCount} agent${agentCount!==1?'s':''} · uploaded ${uploaded}</span>
+          <span style="font-size:11px;color:var(--muted);margin-left:.5rem;">${agentCount} agent${agentCount!==1?'s':''}${compNote} · uploaded ${uploaded}</span>
         </div>
         <button class="btn btn-secondary" style="font-size:11px;padding:3px 10px;color:var(--danger);border-color:var(--danger);" onclick="maHoursDeletePeriod('${escHtml(p.period)}',this)">Remove</button>
       </div>`;

@@ -282,13 +282,28 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
     }
   }
 
+  // compByAgent[agentId][normPeriodLabel] = compensation
+  const compByAgent = {};
+  for (const period of hoursPeriodsRaw) {
+    const normLabel = normPeriodLabel(period.period);
+    for (const row of (period.rows || [])) {
+      const aid  = row.agent_id;
+      const comp = row.compensation;
+      if (!aid || comp == null || comp === 0) continue;
+      if (!compByAgent[aid]) compByAgent[aid] = {};
+      compByAgent[aid][normLabel] = (compByAgent[aid][normLabel] || 0) + comp;
+    }
+  }
+  const hasCompData = Object.keys(compByAgent).length > 0;
+
   // Build per-agent data structures
   const agentData = {};
   for (const agentId of selectedIds) {
-    const rd   = raceMap[agentId];
-    const name = rd?.name || nameFromRaw[agentId] || rosterMap[agentId] || agentId;
-    const team = rd?.team || 'sales';
+    const rd      = raceMap[agentId];
+    const name    = rd?.name || nameFromRaw[agentId] || rosterMap[agentId] || agentId;
+    const team    = rd?.team || 'sales';
     const agHours = hoursByAgent[agentId] || {};
+    const agComp  = compByAgent[agentId]  || {};
 
     // Archived months sorted oldest→newest
     const histRows = (histWinsRes.data || [])
@@ -297,10 +312,11 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
       .sort((a, b) => monthCmp(a.normMonth, b.normMonth));
 
     const months = histRows.map(r => {
-      const policies = (r.wl||0)+(r.ul||0)+(r.term||0)+(r.health||0)+(r.auto||0)+(r.fire||0);
-      const score    = calcScore(r, scoring, r.missed||0, r.voicemail||0);
-      const premium  = premByAgentMonth[agentId]?.[r.normMonth] ?? null;
-      const hours    = agHours[r.normMonth] ?? null;
+      const policies     = (r.wl||0)+(r.ul||0)+(r.term||0)+(r.health||0)+(r.auto||0)+(r.fire||0);
+      const score        = calcScore(r, scoring, r.missed||0, r.voicemail||0);
+      const premium      = premByAgentMonth[agentId]?.[r.normMonth] ?? null;
+      const hours        = agHours[r.normMonth] ?? null;
+      const compensation = agComp[r.normMonth]  ?? null;
       return {
         month:   r.normMonth,
         placed:  r.placed  || 0,
@@ -310,13 +326,15 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
         score,
         premium,
         hours,
+        compensation,
         rank:    r.rank || null,
         byProduct: { wl:r.wl||0, ul:r.ul||0, term:r.term||0, health:r.health||0, auto:r.auto||0, fire:r.fire||0 },
       };
     });
 
-    // Current period hours: look up by curKey
+    // Current period hours/comp: look up by curKey
     const curHours = agHours[curKey] ?? null;
+    const curComp  = agComp[curKey]  ?? null;
 
     // Current period
     let current = null;
@@ -324,13 +342,14 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
       const curPol   = (rd.wl||0)+(rd.ul||0)+(rd.term||0)+(rd.health||0)+(rd.auto||0)+(rd.fire||0);
       const curScore = calcScore({ ...rd }, scoring, raceWideMissed, raceWideVm);
       current = {
-        placed:   rd.placed   || 0,
-        answered: rd.answered || 0,
-        talkMin:  Math.round(rd.talk_min || 0),
-        policies: curPol,
-        score:    curScore,
-        premium:  premByAgentMtd[agentId] ?? null,
-        hours:    curHours,
+        placed:       rd.placed   || 0,
+        answered:     rd.answered || 0,
+        talkMin:      Math.round(rd.talk_min || 0),
+        policies:     curPol,
+        score:        curScore,
+        premium:      premByAgentMtd[agentId] ?? null,
+        hours:        curHours,
+        compensation: curComp,
         daysElapsed,
         daysInMonth,
         byProduct: { wl:rd.wl||0, ul:rd.ul||0, term:rd.term||0, health:rd.health||0, auto:rd.auto||0, fire:rd.fire||0 },
@@ -341,11 +360,25 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
   }
 
   // Group rankings (current period only)
-  const activeIds = selectedIds.filter(id => agentData[id].current);
+  const activeIds  = selectedIds.filter(id => agentData[id].current);
   const scoreRanks = rankBy(activeIds, id => agentData[id].current?.score    || 0);
   const polRanks   = rankBy(activeIds, id => agentData[id].current?.policies || 0);
   const premRanks  = acct.has_sales_addon
     ? rankBy(activeIds, id => agentData[id].current?.premium || 0)
+    : null;
+
+  // Cost-per-policy ranking — lower is better, so negate for rankBy (higher score = better rank)
+  const cppEligible = hasCompData
+    ? activeIds.filter(id => {
+        const ag = agentData[id].current;
+        return ag?.compensation != null && ag.policies > 0;
+      })
+    : [];
+  const cppRanks = cppEligible.length > 1
+    ? rankBy(cppEligible, id => {
+        const ag = agentData[id].current;
+        return -(ag.compensation / ag.policies); // lower cost/policy = better (negate = higher rank score)
+      })
     : null;
 
   // Build per-agent prompt blocks
@@ -354,12 +387,15 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
     const scoreRank = scoreRanks[agentId];
     const polRank   = polRanks[agentId];
     const premRank  = premRanks?.[agentId];
+    const cppRank   = cppRanks?.[agentId];
     const n         = activeIds.length;
+    const nCpp      = cppEligible.length;
 
     const standingLine = [
       scoreRank ? `Score #${scoreRank}/${n}` : null,
       polRank   ? `Policies #${polRank}/${n}` : null,
       premRank  ? `Premium #${premRank}/${n}` : null,
+      cppRank   ? `Cost/Policy #${cppRank}/${nCpp}` : null,
     ].filter(Boolean).join(', ');
 
     const histLines = ag.months.slice(-6).map(m => {
@@ -370,6 +406,11 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
           effParts.push(`${(m.policies / m.hours).toFixed(2)}pol/hr`);
           if (m.premium != null) effParts.push(`$${Math.round(m.premium / m.hours)}/hr`);
         }
+      }
+      if (m.compensation != null) {
+        effParts.push(`$${Math.round(m.compensation)}comp`);
+        if (m.policies > 0) effParts.push(`$${Math.round(m.compensation / m.policies)}/pol-cost`);
+        if (m.hours > 0)    effParts.push(`$${Math.round(m.compensation / m.hours)}/hr-cost`);
       }
       const parts = [
         `${m.placed}p`, `${m.answered}a`, `${m.talkMin}min`, `${m.policies}pol`,
@@ -389,6 +430,11 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
         if (ag.current.premium != null) curEffParts.push(`$${Math.round(ag.current.premium / ag.current.hours)}/hr`);
       }
     }
+    if (ag.current?.compensation != null) {
+      curEffParts.push(`$${Math.round(ag.current.compensation)}comp`);
+      if (ag.current.policies > 0) curEffParts.push(`$${Math.round(ag.current.compensation / ag.current.policies)}/pol-cost`);
+      if (ag.current.hours > 0)    curEffParts.push(`$${Math.round(ag.current.compensation / ag.current.hours)}/hr-cost`);
+    }
 
     const curLine = ag.current ? [
       `${curKey} (day ${daysElapsed}/${daysInMonth}, ${pctElapsed}%):`,
@@ -400,21 +446,24 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
     ].filter(Boolean).join(' ') : 'No current period data';
 
     return `AGENT: ${ag.name} (${ag.team})${standingLine ? ` | Group standing: ${standingLine}` : ''}
-Archived history (oldest→newest, p=placed a=answered min=talk prem=written premium hrs=hours pol/hr=efficiency):
+Archived history (oldest→newest, p=placed a=answered min=talk prem=written premium hrs=hours pol/hr=efficiency comp=compensation /pol-cost=cost per policy /hr-cost=labor cost per hour):
 ${histLines || '  No archived months'}
 Current: ${curLine}`;
   }).join('\n\n');
 
-  const hasPremium  = !!acct.has_sales_addon;
-  const hasHours    = hoursPeriodsRaw.length > 0;
-  const groupSize   = selectedIds.length;
-  const hoursNote   = hasHours
-    ? `Hours data: available (${hoursPeriodsRaw.length} period${hoursPeriodsRaw.length !== 1 ? 's' : ''}). Agents without hours for a period are excluded from efficiency comparisons.`
-    : 'Hours data: not uploaded — skip efficiency metrics.';
+  const hasPremium = !!acct.has_sales_addon;
+  const hasHours   = hoursPeriodsRaw.length > 0;
+  const groupSize  = selectedIds.length;
+  const hoursNote  = hasHours
+    ? `Hours data: available (${hoursPeriodsRaw.length} period${hoursPeriodsRaw.length !== 1 ? 's' : ''}). Agents without hours for a period are excluded from hour-efficiency comparisons.`
+    : 'Hours data: not uploaded — skip hour-based efficiency metrics.';
+  const compNote   = hasCompData
+    ? 'Compensation data: available. comp=total paid that period, /pol-cost=cost per policy written (lower is more efficient), /hr-cost=labor cost per hour. Salary employees may have 0 hours but still have compensation — for them, cost per policy is the primary efficiency metric.'
+    : 'Compensation data: not uploaded.';
 
   const prompt = `You are a sales performance coach analyzing ${groupSize} individual team member${groupSize !== 1 ? 's' : ''} for ${acct.company_name || 'a team'}.
 
-Context: ${curKey} (day ${daysElapsed} of ${daysInMonth}, ${pctElapsed}% elapsed) | Group size: ${groupSize} | Premium data: ${hasPremium ? 'yes' : 'no'} | ${hoursNote}
+Context: ${curKey} (day ${daysElapsed} of ${daysInMonth}, ${pctElapsed}% elapsed) | Group size: ${groupSize} | Premium data: ${hasPremium ? 'yes' : 'no'} | ${hoursNote} | ${compNote}
 
 ${agentBlocks}
 
@@ -422,29 +471,31 @@ ${agentBlocks}
 
 For EACH agent above, write an analysis starting with the exact header "AGENT: [name]".
 
-Cover all four of these in 3–4 sentences per agent:
+Cover these points in 3–5 sentences per agent:
 1. Month-over-month trend — improving, declining, or plateauing? Name specific months and numbers.
 2. Strengths — where they lead in this group (calls, policies, talk time, premium, or efficiency if hours available).
 3. Gaps/concerns — the single biggest metric holding them back, with evidence from the data.
-4. Group standing — their rank vs peers in score, policies, premium (if available), and efficiency (if hours available). Be direct. If no hours for this agent, note that efficiency cannot be calculated.
+4. Group standing — their rank vs peers in score, policies, premium (if available), and efficiency (if hours available). Be direct.
+5. Cost efficiency — if compensation data is available for this agent, comment on cost per policy trend and rank. If the agent is salaried (0 hours but has compensation), focus on cost per policy as the key efficiency metric. Skip this point if no compensation data for this agent.
 
-Rules: plain text only, no markdown, no bullets. Use agent names and real numbers. Keep it tight — 3–4 sentences per agent. Separate agents with one blank line.`;
+Rules: plain text only, no markdown, no bullets. Use agent names and real numbers. Separate agents with one blank line.`;
 
   const message = await anthropic.messages.create({
     model:      'claude-haiku-4-5-20251001',
-    max_tokens: Math.min(350 * groupSize + 150, 2000),
+    max_tokens: Math.min(400 * groupSize + 200, 2400),
     messages:   [{ role: 'user', content: prompt }],
   });
 
-  const insights     = message.content[0]?.text || '';
-  const nameList     = selectedIds.map(id => agentData[id].name);
+  const insights      = message.content[0]?.text || '';
+  const nameList      = selectedIds.map(id => agentData[id].name);
   const agentSections = parseAgentSections(insights, nameList);
 
   // Attach rankings to agentData for the frontend
   for (const id of selectedIds) {
-    agentData[id].scoreRank = scoreRanks[id] ?? null;
-    agentData[id].polRank   = polRanks[id]   ?? null;
-    agentData[id].premRank  = premRanks?.[id] ?? null;
+    agentData[id].scoreRank = scoreRanks[id]   ?? null;
+    agentData[id].polRank   = polRanks[id]     ?? null;
+    agentData[id].premRank  = premRanks?.[id]  ?? null;
+    agentData[id].cppRank   = cppRanks?.[id]   ?? null;
   }
 
   return {
@@ -454,6 +505,7 @@ Rules: plain text only, no markdown, no bullets. Use agent names and real number
     groupSize,
     curKey,
     hoursLastPeriod,
+    hasCompData,
     generatedAt: new Date().toISOString(),
   };
 }
