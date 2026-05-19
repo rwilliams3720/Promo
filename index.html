@@ -5245,19 +5245,96 @@ function renderAgentRoster() {
   }
   const showStructure = _hasCommissionsAddon || _isAdmin;
   container.innerHTML = _agentRoster.map(a => {
-    const structureSelect = showStructure ? `
-      <select onchange="assignAgentStructure('${escHtml(a.agent_id)}', this.value)" title="Commission Structure" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:3px 6px;font-size:11px;outline:none;max-width:160px;">
-        <option value="">— No Structure —</option>
-        ${_commissionStructures.map(s => `<option value="${escHtml(s.id)}"${a.commission_structure_id === s.id ? ' selected' : ''}>${escHtml(s.name)}</option>`).join('')}
-      </select>` : '';
-    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap;">
-      <input type="checkbox" ${a.active !== false ? 'checked' : ''} onchange="toggleAgentRoster('${escHtml(a.id)}', this.checked)" title="Active in dropdowns">
-      <span style="font-size:13px;flex:1;">${escHtml(a.name)}</span>
-      <span style="font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;">${escHtml(a.agent_id)}</span>
-      ${structureSelect}
-      <button class="btn btn-secondary" style="padding:2px 8px;font-size:11px;" onclick="deleteAgentRoster('${escHtml(a.id)}', this)">✕</button>
+    const safeId = escHtml(a.agent_id);
+    const structSection = showStructure ? (() => {
+      const assignedIds = a.commission_structure_ids || (a.commission_structure_id ? [a.commission_structure_id] : []);
+      const assignedRows = assignedIds.map(sid => {
+        const s = _commissionStructures.find(x => x.id === sid);
+        if (!s) return '';
+        return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+          <span style="font-size:12px;flex:1;">${escHtml(s.name)}</span>
+          <button onclick="removeAgentStructure('${safeId}','${escHtml(sid)}',this)" style="background:none;border:1px solid var(--border2);color:var(--danger);border-radius:4px;padding:1px 6px;font-size:11px;cursor:pointer;">&#x2715;</button>
+        </div>`;
+      }).join('');
+      const availableToAdd = _commissionStructures.filter(s => !assignedIds.includes(s.id));
+      const addDropdown = availableToAdd.length
+        ? `<div style="display:flex;gap:6px;align-items:center;margin-top:4px;">
+             <select id="add-struct-${safeId}" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:3px 6px;font-size:11px;outline:none;flex:1;">
+               <option value="">+ Add structure...</option>
+               ${availableToAdd.map(s => `<option value="${escHtml(s.id)}">${escHtml(s.name)}</option>`).join('')}
+             </select>
+             <button onclick="addAgentStructure('${safeId}',this)" style="background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:3px 9px;font-size:11px;cursor:pointer;">Add</button>
+           </div>` : '';
+      const qualLabel = assignedIds.length > 1
+        ? `<label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px;margin-top:5px;cursor:pointer;">
+             <input type="checkbox" id="qual-${safeId}" ${a.commission_all_must_qualify ? 'checked' : ''} onchange="saveAgentQualifier('${escHtml(a.id)}',this.checked)">
+             All structures must qualify for any payout
+           </label>` : '';
+      return `<div style="margin-top:6px;padding:6px 8px;background:var(--deep);border-radius:6px;border:1px solid var(--border2);">
+        <div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Commission Structures</div>
+        ${assignedRows || '<div style="font-size:11px;color:var(--muted);">None assigned</div>'}
+        ${addDropdown}
+        ${qualLabel}
+      </div>`;
+    })() : '';
+    return `<div style="margin-bottom:.5rem;padding:.5rem;background:var(--card2);border:1px solid var(--border2);border-radius:8px;">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <input type="checkbox" ${a.active !== false ? 'checked' : ''} onchange="toggleAgentRoster('${escHtml(a.id)}', this.checked)" title="Active in dropdowns">
+        <span style="font-size:13px;font-weight:600;flex:1;">${escHtml(a.name)}</span>
+        <span style="font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;">${escHtml(a.agent_id)}</span>
+        <button class="btn btn-secondary" style="padding:2px 8px;font-size:11px;" onclick="deleteAgentRoster('${escHtml(a.id)}', this)">&#x2715;</button>
+      </div>
+      ${structSection}
     </div>`;
   }).join('');
+}
+
+async function addAgentStructure(agentId, btn) {
+  const sel = document.getElementById('add-struct-' + agentId);
+  const structId = sel?.value;
+  if (!structId) return;
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/agent-roster', {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'add_commission_structure', agent_id: agentId, commission_structure_id: structId }),
+    });
+    if (r.ok) {
+      const a = _agentRoster.find(x => x.agent_id === agentId);
+      if (a) {
+        if (!a.commission_structure_ids) a.commission_structure_ids = a.commission_structure_id ? [a.commission_structure_id] : [];
+        if (!a.commission_structure_ids.includes(structId)) a.commission_structure_ids.push(structId);
+      }
+      renderAgentRoster();
+    }
+  } finally { btn.disabled = false; }
+}
+
+async function removeAgentStructure(agentId, structId, btn) {
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/agent-roster', {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'remove_commission_structure', agent_id: agentId, commission_structure_id: structId }),
+    });
+    if (r.ok) {
+      const a = _agentRoster.find(x => x.agent_id === agentId);
+      if (a) a.commission_structure_ids = (a.commission_structure_ids || []).filter(id => id !== structId);
+      renderAgentRoster();
+    }
+  } finally { btn.disabled = false; }
+}
+
+async function saveAgentQualifier(agentRosterId, checked) {
+  const a = _agentRoster.find(x => x.id === agentRosterId);
+  if (a) a.commission_all_must_qualify = checked;
+  await fetch('/api/agent-roster', {
+    method: 'PATCH',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'update_qualifier', id: agentRosterId, commission_all_must_qualify: checked }),
+  });
 }
 
 async function assignAgentStructure(agentId, structureId) {
@@ -5790,7 +5867,12 @@ async function deleteCommissionStructure(id) {
   const r = await fetch(`/api/commission-structures?id=${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders() });
   if (!r.ok) { alert('Error deleting structure.'); return; }
   _commissionStructures = _commissionStructures.filter(s => s.id !== id);
-  for (const a of _agentRoster) { if (a.commission_structure_id === id) a.commission_structure_id = null; }
+  for (const a of _agentRoster) {
+    if (a.commission_structure_id === id) a.commission_structure_id = null;
+    if ((a.commission_structure_ids || []).includes(id)) {
+      a.commission_structure_ids = a.commission_structure_ids.filter(x => x !== id);
+    }
+  }
   renderCommissionStructuresList();
   renderAgentRoster();
 }
@@ -6879,7 +6961,69 @@ function renderCommissions() {
         </tr>
         <tr id="comm-breakdown-${escHtml(r.agent_id)}" style="display:none;">
           <td colspan="8" style="padding:4px 10px 16px 28px;">
-            ${r.breakdown.length ? `<table style="font-size:12px;border-collapse:collapse;margin-bottom:10px;">
+            ${r.structure_details ? (() => {
+              const fmt = n => '$' + (n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+              return r.structure_details.map(sd => {
+                const structStatus = sd.blocked_by_qualifier
+                  ? `<span style="font-size:10px;background:rgba(255,100,100,.15);color:#ff6b6b;border-radius:4px;padding:1px 6px;margin-left:6px;">Blocked - qualifier not met</span>`
+                  : sd.threshold_note
+                    ? `<span style="font-size:10px;background:rgba(255,179,0,.15);color:#ffb300;border-radius:4px;padding:1px 6px;margin-left:6px;" title="${escHtml(sd.threshold_note)}">&#x26A0; Min not met</span>`
+                    : `<span style="font-size:10px;background:rgba(0,229,180,.1);color:var(--accent2);border-radius:4px;padding:1px 6px;margin-left:6px;">&#x2713; Qualifies</span>`;
+                const breakdownTable = sd.breakdown.length ? `<table style="font-size:12px;border-collapse:collapse;margin-bottom:8px;width:100%;">
+                  <thead><tr style="border-bottom:1px solid var(--border2);">
+                    <th style="text-align:left;padding:3px 8px;color:var(--muted);">Product</th>
+                    <th style="text-align:right;padding:3px 8px;color:var(--muted);">Premium</th>
+                    <th style="text-align:right;padding:3px 8px;color:var(--muted);">Share</th>
+                    <th style="text-align:right;padding:3px 8px;color:var(--muted);">Commission</th>
+                  </tr></thead>
+                  <tbody>${sd.breakdown.map(b => `<tr>
+                    <td style="padding:3px 8px;">${escHtml(b.product)}${b.split ? ` <span style="font-size:10px;color:var(--muted);">(${b.role})</span>` : ''}</td>
+                    <td style="padding:3px 8px;text-align:right;">${fmt(b.premium)}</td>
+                    <td style="padding:3px 8px;text-align:right;">${fmt(b.share)}</td>
+                    <td style="padding:3px 8px;text-align:right;font-weight:600;">${fmt(b.commission)}</td>
+                  </tr>`).join('')}</tbody>
+                </table>` : '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">No qualifying sales for this structure.</div>';
+                const groupTable = sd.group_details ? (() => {
+                  const gdRows = sd.group_details.map(g => {
+                    const sc = g.passes ? 'var(--accent2)' : '#ff6b6b';
+                    return `<tr style="border-bottom:1px solid var(--border2);">
+                      <td style="padding:3px 8px;font-weight:600;">${escHtml(g.label)}</td>
+                      <td style="padding:3px 8px;text-align:right;">${g.count}</td>
+                      <td style="padding:3px 8px;text-align:right;">${fmt(g.earned)}</td>
+                      <td style="padding:3px 8px;text-align:right;color:var(--muted);">${g.floor ? '-'+fmt(g.floor)+' floor' : '&#x2014;'}</td>
+                      <td style="padding:3px 8px;text-align:right;color:var(--accent);">${g.esc_bonus ? '+'+fmt(g.esc_bonus)+' esc' : '&#x2014;'}</td>
+                      <td style="padding:3px 8px;text-align:right;font-weight:700;">${fmt(g.payout)}</td>
+                      <td style="padding:3px 8px;text-align:center;color:${sc};">${g.passes ? '&#x2713;' : '&#x2717;'}</td>
+                    </tr>`;
+                  }).join('');
+                  const uRow = (sd.ungrouped_earned != null && sd.ungrouped_earned !== 0)
+                    ? `<tr><td colspan="5" style="padding:3px 8px;color:var(--muted);">No-group products</td><td style="padding:3px 8px;text-align:right;font-weight:700;">${fmt(sd.ungrouped_earned)}</td><td></td></tr>` : '';
+                  return `<table style="font-size:11px;border-collapse:collapse;width:100%;max-width:500px;">
+                    <thead><tr style="border-bottom:1px solid var(--border2);">
+                      <th style="text-align:left;padding:3px 8px;color:var(--muted);">Group</th>
+                      <th style="text-align:right;padding:3px 8px;color:var(--muted);">Policies</th>
+                      <th style="text-align:right;padding:3px 8px;color:var(--muted);">Earned</th>
+                      <th style="text-align:right;padding:3px 8px;color:var(--muted);">Floor</th>
+                      <th style="text-align:right;padding:3px 8px;color:var(--muted);">Escalator</th>
+                      <th style="text-align:right;padding:3px 8px;color:var(--muted);">Payout</th>
+                      <th style="padding:3px 8px;"></th>
+                    </tr></thead>
+                    <tbody>${gdRows}${uRow}</tbody>
+                  </table>`;
+                })() : '';
+                return `<div style="margin-bottom:10px;padding:8px 10px;background:rgba(255,255,255,.02);border-radius:6px;border-left:2px solid var(--border);">
+                  <div style="display:flex;align-items:center;margin-bottom:8px;">
+                    <span style="font-size:12px;font-weight:700;color:var(--text);">${escHtml(sd.structure_name)}</span>
+                    ${structStatus}
+                    <span style="margin-left:auto;font-size:13px;font-weight:700;color:${sd.earned > 0 ? 'var(--accent2)' : 'var(--muted)'};">${fmt(sd.earned)}</span>
+                  </div>
+                  ${breakdownTable}
+                  ${groupTable}
+                </div>`;
+              }).join('');
+            })() : (() => {
+              const fmt = n => '$' + (n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+              return `${r.breakdown.length ? `<table style="font-size:12px;border-collapse:collapse;margin-bottom:10px;">
               <thead><tr style="border-bottom:1px solid var(--border2);">
                 <th style="text-align:left;padding:3px 8px;color:var(--muted);">Product</th>
                 <th style="text-align:right;padding:3px 8px;color:var(--muted);">Premium</th>
@@ -6894,16 +7038,15 @@ function renderCommissions() {
               </tr>`).join('')}</tbody>
             </table>` : '<span style="font-size:12px;color:var(--muted);">No sales this month.</span>'}
             ${r.group_details ? (() => {
-              const fmt = n => '$' + (n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
               const rows = r.group_details.map(g => {
                 const statusColor = g.passes ? 'var(--accent2)' : '#ff6b6b';
-                const statusIcon  = g.passes ? '✓' : '✗';
+                const statusIcon  = g.passes ? '&#x2713;' : '&#x2717;';
                 return `<tr style="border-bottom:1px solid var(--border2);">
                   <td style="padding:3px 8px;font-weight:600;">${escHtml(g.label)}</td>
                   <td style="padding:3px 8px;text-align:right;">${g.count}</td>
                   <td style="padding:3px 8px;text-align:right;">${fmt(g.earned)}</td>
-                  <td style="padding:3px 8px;text-align:right;color:var(--muted);">${g.floor ? '-'+fmt(g.floor)+' floor' : '—'}</td>
-                  <td style="padding:3px 8px;text-align:right;color:var(--accent);">${g.esc_bonus ? '+'+fmt(g.esc_bonus)+' esc' : '—'}</td>
+                  <td style="padding:3px 8px;text-align:right;color:var(--muted);">${g.floor ? '-'+fmt(g.floor)+' floor' : '&#x2014;'}</td>
+                  <td style="padding:3px 8px;text-align:right;color:var(--accent);">${g.esc_bonus ? '+'+fmt(g.esc_bonus)+' esc' : '&#x2014;'}</td>
                   <td style="padding:3px 8px;text-align:right;font-weight:700;">${fmt(g.payout)}</td>
                   <td style="padding:3px 8px;text-align:center;color:${statusColor};">${statusIcon}</td>
                 </tr>`;
@@ -6923,7 +7066,8 @@ function renderCommissions() {
                   </tr></thead>
                   <tbody>${rows}${ungroupedRow}</tbody>
                 </table>`;
-            })() : ''}
+            })() : ''}`;
+            })()}
             ${(r.chargebacks && r.chargebacks.length) ? (() => {
               const fmt = n => '$' + (n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
               return `<div style="margin-top:10px;padding:8px;background:rgba(255,107,107,.05);border:1px solid rgba(255,107,107,.15);border-radius:6px;">

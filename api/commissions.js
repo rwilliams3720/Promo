@@ -95,6 +95,156 @@ function buildThresholdNote(thresholds, groupStatus, groupCounts, groupEarned) {
   return parts.length ? parts.join(' | ') : 'Production minimums not met';
 }
 
+function calcStructurePayout(agentId, struct, sales, roster, isFinancialService, actCounts, fromDate, toDate) {
+  if (!struct) return { earned: 0, breakdown: [], threshold_note: null, group_details: null, ungrouped_earned: 0 };
+  const payOnIssue = struct.pay_on_issue || false;
+  const inMonth = d => d && d >= fromDate && d <= toDate;
+  const breakdown = [];
+
+  for (const sale of sales) {
+    if (sale.is_cancelled) continue; // cancelled handled separately as chargebacks
+    const premium = parseFloat(sale.written_premium) || 0;
+    const product = sale.product || 'other';
+    const isSplit = !!sale.split_sale;
+    const isFS = isFinancialService[sale.subcategory] || false;
+
+    if (sale.agent_id === agentId) {
+      const dateOk = payOnIssue ? inMonth(sale.issued_date) : inMonth(sale.sale_date);
+      if (dateOk) {
+        const defaultRatio = struct.default_split_ratio ?? 0.5;
+        const ratio = isSplit ? (sale.split_ratio ?? defaultRatio) : 1;
+        const share = premium * ratio;
+        const commission = applyRate(struct, product, sale.subcategory || null, share, premium, isFS);
+        breakdown.push({ hash: sale.hash, product, premium, share, commission, split: isSplit, role: 'primary' });
+      }
+    }
+
+    if (isSplit && sale.teammate) {
+      const tmName = (sale.teammate || '').toLowerCase().trim();
+      const tmAgent = roster.find(a => a.name.toLowerCase().trim() === tmName);
+      if (tmAgent && tmAgent.agent_id === agentId) {
+        const dateOk = payOnIssue ? inMonth(sale.issued_date) : inMonth(sale.sale_date);
+        if (dateOk) {
+          const defaultRatio = struct.default_split_ratio ?? 0.5;
+          const primaryRatio = sale.split_ratio ?? defaultRatio;
+          const tmShare = premium * (1 - primaryRatio);
+          const commission = applyRate(struct, product, sale.subcategory || null, tmShare, premium, isFS);
+          breakdown.push({ hash: sale.hash, product, premium, share: tmShare, commission, split: true, role: 'teammate' });
+        }
+      }
+    }
+  }
+
+  const thresholds = struct.thresholds || [];
+  if (!thresholds.length) {
+    const total = Math.round(breakdown.reduce((s, b) => s + b.commission, 0) * 100) / 100;
+    return { earned: total, breakdown, threshold_note: null, group_details: null, ungrouped_earned: total };
+  }
+
+  const productToGroup = {};
+  for (const grp of thresholds) {
+    for (const pk of (grp.products || [])) {
+      if (!productToGroup[pk]) productToGroup[pk] = grp.id;
+    }
+  }
+
+  const groupCounts = {}, groupEarned = {}, groupShares = {};
+  let ungrouped = 0;
+  for (const b of breakdown) {
+    const gId = productToGroup[b.product];
+    if (gId) {
+      if (b.role === 'primary') groupCounts[gId] = (groupCounts[gId] || 0) + 1;
+      groupEarned[gId] = (groupEarned[gId] || 0) + b.commission;
+      groupShares[gId] = (groupShares[gId] || 0) + b.share;
+    } else {
+      ungrouped += b.commission;
+    }
+  }
+
+  const groupStatus = {};
+  for (let pass = 0; pass <= thresholds.length; pass++) {
+    for (const grp of thresholds) {
+      if (groupStatus[grp.id] !== undefined) continue;
+      const requiresDone = (grp.requires || []).every(r => groupStatus[r] !== undefined);
+      if (!requiresDone) continue;
+      const countOk    = !grp.min_count || (groupCounts[grp.id] || 0) >= grp.min_count;
+      const requiresOk = (grp.requires || []).every(r => groupStatus[r]?.passes);
+      const agActs     = actCounts[agentId] || {};
+      const reqActsOk  = (grp.required_activities || []).every(ra =>
+        (agActs[ra.activity_type_id] || 0) >= (ra.min_count || 1)
+      );
+      if (!countOk || !requiresOk || !reqActsOk) {
+        groupStatus[grp.id] = { passes: false, payout: 0 };
+      } else {
+        const earned = groupEarned[grp.id] || 0;
+        const floor  = grp.min_commission || 0;
+        if (floor === 0) {
+          groupStatus[grp.id] = { passes: true, payout: earned };
+        } else if (earned > floor) {
+          groupStatus[grp.id] = { passes: true, payout: earned - floor };
+        } else {
+          groupStatus[grp.id] = { passes: false, payout: 0 };
+        }
+      }
+    }
+  }
+  for (const grp of thresholds) {
+    if (groupStatus[grp.id] === undefined) groupStatus[grp.id] = { passes: false, payout: 0 };
+  }
+
+  for (const grp of thresholds) {
+    if (!groupStatus[grp.id]?.passes) continue;
+    for (const esc of (grp.escalators || [])) {
+      const triggerCount = esc.trigger_group_id
+        ? (groupCounts[esc.trigger_group_id] || 0)
+        : esc.activity_type_id
+          ? ((actCounts[agentId] || {})[esc.activity_type_id] || 0)
+          : -1;
+      if (triggerCount < 0) continue;
+      const tier = (esc.tiers || []).find(tr =>
+        triggerCount >= (tr.min ?? 0) && (tr.max == null || triggerCount <= tr.max)
+      );
+      if (tier?.bonus_pct) {
+        groupStatus[grp.id].payout += (groupShares[grp.id] || 0) * (tier.bonus_pct / 100);
+      }
+    }
+  }
+
+  const groupPayout = thresholds.reduce((s, grp) => s + (groupStatus[grp.id]?.payout || 0), 0);
+  const totalEarned = Math.round((ungrouped + groupPayout) * 100) / 100;
+
+  const group_details = thresholds.map(grp => {
+    const basePayout = (() => {
+      const e = groupEarned[grp.id] || 0;
+      const f = grp.min_commission || 0;
+      if (!groupStatus[grp.id]?.passes) return 0;
+      return f === 0 ? e : Math.max(0, e - f);
+    })();
+    return {
+      label:     grp.label || grp.id,
+      count:     groupCounts[grp.id] || 0,
+      earned:    Math.round((groupEarned[grp.id] || 0) * 100) / 100,
+      shares:    Math.round((groupShares[grp.id] || 0) * 100) / 100,
+      floor:     grp.min_commission || 0,
+      passes:    groupStatus[grp.id]?.passes || false,
+      payout:    Math.round((groupStatus[grp.id]?.payout || 0) * 100) / 100,
+      esc_bonus: Math.round(((groupStatus[grp.id]?.payout || 0) - basePayout) * 100) / 100,
+    };
+  });
+
+  const anyFailed = thresholds.some(grp =>
+    !groupStatus[grp.id]?.passes && ((groupCounts[grp.id] || 0) > 0 || (groupEarned[grp.id] || 0) > 0)
+  );
+
+  return {
+    earned: totalEarned,
+    breakdown,
+    threshold_note: anyFailed ? buildThresholdNote(thresholds, groupStatus, groupCounts, groupEarned) : null,
+    group_details,
+    ungrouped_earned: Math.round(ungrouped * 100) / 100,
+  };
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -123,13 +273,13 @@ export default async function handler(req, res) {
 
     // Fetch all needed data in parallel
     // Sales: broad OR filter — sale_date OR issued_date within the month (for pay_on_issue support)
-    const [salesRes, rosterRes, structuresRes, subcatsRes] = await Promise.all([
+    const [salesRes, rosterRes, structuresRes, subcatsRes, agentStructsRes] = await Promise.all([
       supabase.from('sales_log')
         .select('hash, agent_id, product, subcategory, written_premium, split_sale, split_ratio, teammate, sale_date, issued_date, is_cancelled, chargeback_date')
         .eq('user_id', dataUserId)
         .or(`and(sale_date.gte.${fromDate},sale_date.lte.${toDate}),and(issued_date.gte.${fromDate},issued_date.lte.${toDate})`),
       supabase.from('agent_roster')
-        .select('agent_id, name, commission_structure_id')
+        .select('agent_id, name, commission_structure_id, commission_all_must_qualify')
         .eq('user_id', dataUserId),
       supabase.from('commission_structures')
         .select('id, name, default_split_ratio, pay_on_issue, thresholds, rates')
@@ -137,6 +287,10 @@ export default async function handler(req, res) {
       supabase.from('sales_subcategories')
         .select('label, is_financial_service')
         .eq('user_id', dataUserId),
+      supabase.from('agent_commission_structures')
+        .select('agent_id, commission_structure_id, sort_order')
+        .eq('user_id', dataUserId)
+        .order('sort_order'),
     ]);
 
     if (salesRes.error)      return res.status(500).json({ error: salesRes.error.message });
@@ -195,212 +349,56 @@ export default async function handler(req, res) {
     const isFinancialService = {};
     for (const s of subcats) isFinancialService[s.label] = s.is_financial_service || false;
 
-    // Accumulator: agentId → { earned, breakdown }
-    const accumulator = {};
-    const ensureAgent = (agentId) => {
-      if (!accumulator[agentId]) {
-        const agent = agentById[agentId];
-        accumulator[agentId] = {
-          agent_id: agentId,
-          name: agent?.name || agentId,
-          earned: 0,
-          breakdown: [],
-        };
-      }
-    };
-
-    const getStructure = (agentId) => {
-      const agent = agentById[agentId];
-      if (agent?.commission_structure_id) return structureById[agent.commission_structure_id] || null;
-      return null;
-    };
-
-    // Check whether a sale date falls in the target month
-    const inMonth = (dateStr) => dateStr && dateStr >= fromDate && dateStr <= toDate;
-
-    // Process each sale
-    for (const sale of sales) {
-      const premium   = parseFloat(sale.written_premium) || 0;
-      const product   = sale.product || 'other';
-      const isSplit   = !!sale.split_sale;
-      const primaryId = sale.agent_id;
-      const isFS      = isFinancialService[sale.subcategory] || false;
-
-      if (primaryId) {
-        const struct       = getStructure(primaryId);
-        const payOnIssue   = struct?.pay_on_issue || false;
-        const dateOk       = payOnIssue ? inMonth(sale.issued_date) : inMonth(sale.sale_date);
-        if (dateOk) {
-          const defaultRatio = struct?.default_split_ratio ?? 0.5;
-          const ratio        = isSplit ? (sale.split_ratio ?? defaultRatio) : 1;
-          const share        = premium * ratio;
-          const commission   = applyRate(struct, product, sale.subcategory || null, share, premium, isFS);
-
-          ensureAgent(primaryId);
-          accumulator[primaryId].earned += commission;
-          accumulator[primaryId].breakdown.push({
-            hash:       sale.hash,
-            product,
-            premium,
-            share,
-            commission,
-            split:      isSplit,
-            role:       'primary',
-          });
-        }
-      }
-
-      // Teammate (split sale only) — match by name against roster
-      if (isSplit && sale.teammate) {
-        const teammateName  = (sale.teammate || '').toLowerCase().trim();
-        const teammateAgent = roster.find(a => a.name.toLowerCase().trim() === teammateName);
-        if (teammateAgent) {
-          const tmId         = teammateAgent.agent_id;
-          const struct       = getStructure(tmId);
-          const payOnIssue   = struct?.pay_on_issue || false;
-          const dateOk       = payOnIssue ? inMonth(sale.issued_date) : inMonth(sale.sale_date);
-          if (dateOk) {
-            const defaultRatio = struct?.default_split_ratio ?? 0.5;
-            const primaryRatio = sale.split_ratio ?? defaultRatio;
-            const tmShare      = premium * (1 - primaryRatio);
-            const commission   = applyRate(struct, product, sale.subcategory || null, tmShare, premium, isFS);
-
-            ensureAgent(tmId);
-            accumulator[tmId].earned += commission;
-            accumulator[tmId].breakdown.push({
-              hash:       sale.hash,
-              product,
-              premium,
-              share:      tmShare,
-              commission,
-              split:      true,
-              role:       'teammate',
-            });
-          }
-        }
-      }
+    // Build per-agent structure list from junction table (falls back to single structure_id)
+    const agentStructRows = agentStructsRes.data || [];
+    const agentStructsByAgent = {};
+    for (const row of agentStructRows) {
+      if (!agentStructsByAgent[row.agent_id]) agentStructsByAgent[row.agent_id] = [];
+      agentStructsByAgent[row.agent_id].push(structureById[row.commission_structure_id]);
     }
 
-    // Apply production group thresholds per agent
+    const getStructureList = (agentId) => {
+      const multi = agentStructsByAgent[agentId];
+      if (multi?.length) return multi.filter(Boolean);
+      const single = structureById[agentById[agentId]?.commission_structure_id];
+      return single ? [single] : [];
+    };
+
+    // Per-agent multi-structure calculation
+    const agentResults = {};
     for (const agent of roster) {
-      const struct     = getStructure(agent.agent_id);
-      const thresholds = struct?.thresholds || [];
-      if (!thresholds.length) continue;
-      const acc = accumulator[agent.agent_id];
-      if (!acc) continue;
+      const structList = getStructureList(agent.agent_id);
+      const allMustQualify = agent.commission_all_must_qualify || false;
 
-      // Map each product to the first group that claims it
-      const productToGroup = {};
-      for (const grp of thresholds) {
-        for (const pk of (grp.products || [])) {
-          if (!productToGroup[pk]) productToGroup[pk] = grp.id;
-        }
+      const structureDetails = structList.map(struct => ({
+        structure_id:   struct.id,
+        structure_name: struct.name,
+        ...calcStructurePayout(agent.agent_id, struct, sales, roster, isFinancialService, actCounts, fromDate, toDate),
+      }));
+
+      if (allMustQualify && structureDetails.some(sd => sd.threshold_note)) {
+        for (const sd of structureDetails) { sd.earned = 0; sd.blocked_by_qualifier = true; }
       }
 
-      // Aggregate per-group: policy counts (primary only), earned commission, and premium shares
-      const groupCounts  = {};
-      const groupEarned  = {};
-      const groupShares  = {};  // sum of premium shares — used by escalators to apply bonus as rate points
-      let   ungrouped    = 0;
+      const totalEarned = Math.round(structureDetails.reduce((s, sd) => s + sd.earned, 0) * 100) / 100;
 
-      for (const b of acc.breakdown) {
-        const gId = productToGroup[b.product];
-        if (gId) {
-          if (b.role === 'primary') groupCounts[gId] = (groupCounts[gId] || 0) + 1;
-          groupEarned[gId] = (groupEarned[gId] || 0) + b.commission;
-          groupShares[gId] = (groupShares[gId] || 0) + b.share;
-        } else {
-          ungrouped += b.commission;
-        }
-      }
+      // Flatten breakdown for chargeback processing (all structures)
+      const allBreakdown = structureDetails.flatMap(sd => sd.breakdown);
 
-      // Topological group evaluation — multiple passes handle dependency chains
-      const groupStatus = {};  // id → {passes:bool, payout:number}
-      for (let pass = 0; pass <= thresholds.length; pass++) {
-        for (const grp of thresholds) {
-          if (groupStatus[grp.id] !== undefined) continue;
-          const requiresDone = (grp.requires || []).every(r => groupStatus[r] !== undefined);
-          if (!requiresDone) continue;
-
-          const countOk    = !grp.min_count || (groupCounts[grp.id] || 0) >= grp.min_count;
-          const requiresOk = (grp.requires || []).every(r => groupStatus[r]?.passes);
-          const agActs     = actCounts[acc.agent_id] || {};
-          const reqActsOk  = (grp.required_activities || []).every(ra =>
-            (agActs[ra.activity_type_id] || 0) >= (ra.min_count || 1)
-          );
-
-          if (!countOk || !requiresOk || !reqActsOk) {
-            groupStatus[grp.id] = { passes: false, payout: 0 };
-          } else {
-            const earned = groupEarned[grp.id] || 0;
-            const floor  = grp.min_commission || 0;
-            if (floor === 0) {
-              groupStatus[grp.id] = { passes: true, payout: earned };
-            } else if (earned > floor) {
-              groupStatus[grp.id] = { passes: true, payout: earned - floor };
-            } else {
-              groupStatus[grp.id] = { passes: false, payout: 0 };
-            }
-          }
-        }
-      }
-      // Default any unresolved (circular deps) to failed
-      for (const grp of thresholds) {
-        if (groupStatus[grp.id] === undefined) groupStatus[grp.id] = { passes: false, payout: 0 };
-      }
-
-      // Apply escalator bonuses — bonus_pct adds percentage points to the effective rate.
-      // Bonus = this group's premium shares × bonus_pct%, NOT commission × bonus_pct%.
-      // e.g. 12% rate → $1,000 commission on $8,333 share; +2% escalator → $8,333 × 2% = $167 bonus → $1,167 total (same as 14% rate).
-      for (const grp of thresholds) {
-        if (!groupStatus[grp.id]?.passes) continue;
-        for (const esc of (grp.escalators || [])) {
-          const triggerCount = esc.trigger_group_id
-            ? (groupCounts[esc.trigger_group_id] || 0)
-            : esc.activity_type_id
-              ? ((actCounts[acc.agent_id] || {})[esc.activity_type_id] || 0)
-              : -1;
-          if (triggerCount < 0) continue;
-          const tier = (esc.tiers || []).find(tr =>
-            triggerCount >= (tr.min ?? 0) &&
-            (tr.max == null || triggerCount <= tr.max)
-          );
-          if (tier && tier.bonus_pct) {
-            groupStatus[grp.id].payout += (groupShares[grp.id] || 0) * (tier.bonus_pct / 100);
-          }
-        }
-      }
-
-      const groupPayout = thresholds.reduce((s, grp) => s + (groupStatus[grp.id]?.payout || 0), 0);
-      acc.earned = Math.round((ungrouped + groupPayout) * 100) / 100;
-
-      // Store group-level details for breakdown display
-      acc.ungrouped_earned = Math.round(ungrouped * 100) / 100;
-      acc.group_details = thresholds.map(grp => {
-        const basePayoutBeforeEsc = (() => {
-          const e = groupEarned[grp.id] || 0;
-          const f = grp.min_commission || 0;
-          if (!groupStatus[grp.id]?.passes) return 0;
-          return f === 0 ? e : Math.max(0, e - f);
-        })();
-        return {
-          label:      grp.label || grp.id,
-          count:      groupCounts[grp.id] || 0,
-          earned:     Math.round((groupEarned[grp.id] || 0) * 100) / 100,
-          shares:     Math.round((groupShares[grp.id] || 0) * 100) / 100,
-          floor:      grp.min_commission || 0,
-          passes:     groupStatus[grp.id]?.passes || false,
-          payout:     Math.round((groupStatus[grp.id]?.payout || 0) * 100) / 100,
-          esc_bonus:  Math.round(((groupStatus[grp.id]?.payout || 0) - basePayoutBeforeEsc) * 100) / 100,
-        };
-      });
-
-      // Note if any group with sales/earnings failed
-      const anyFailed = thresholds.some(grp =>
-        !groupStatus[grp.id]?.passes &&
-        ((groupCounts[grp.id] || 0) > 0 || (groupEarned[grp.id] || 0) > 0)
+      // Combined threshold note
+      const failedNotes = structureDetails.filter(sd => sd.threshold_note || sd.blocked_by_qualifier).map(sd =>
+        sd.blocked_by_qualifier ? `${sd.structure_name}: blocked (all-must-qualify)` : `${sd.structure_name}: ${sd.threshold_note}`
       );
-      acc.threshold_note = anyFailed ? buildThresholdNote(thresholds, groupStatus, groupCounts, groupEarned) : null;
+
+      agentResults[agent.agent_id] = {
+        earned:            totalEarned,
+        structure_details: structureDetails.length > 1 ? structureDetails : null,
+        // Single-structure compat fields (used when only 1 structure)
+        breakdown:         structureDetails.length === 1 ? structureDetails[0].breakdown : allBreakdown,
+        threshold_note:    failedNotes.length > 0 ? failedNotes.join(' | ') : null,
+        group_details:     structureDetails.length === 1 ? structureDetails[0].group_details : null,
+        ungrouped_earned:  structureDetails.length === 1 ? structureDetails[0].ungrouped_earned : null,
+      };
     }
 
     // Calculate bonus_earned per agent from activity counts × payment rates
@@ -415,6 +413,7 @@ export default async function handler(req, res) {
     }
 
     // Process chargebacks: cancelled sales where chargeback_date falls in this month
+    // Use first structure for chargeback rate calculation (backward-compatible)
     const chargebacks = {}; // agentId → [{hash, product, premium, share, commission, chargeback_date}]
     for (const sale of sales) {
       if (!sale.is_cancelled || !sale.chargeback_date) continue;
@@ -426,7 +425,7 @@ export default async function handler(req, res) {
       const isSplit   = !!sale.split_sale;
       const isFS      = isFinancialService[sale.subcategory] || false;
       if (primaryId) {
-        const struct       = getStructure(primaryId);
+        const struct       = getStructureList(primaryId)[0] || null;
         const defaultRatio = struct?.default_split_ratio ?? 0.5;
         const ratio        = isSplit ? (sale.split_ratio ?? defaultRatio) : 1;
         const share        = premium * ratio;
@@ -448,25 +447,25 @@ export default async function handler(req, res) {
 
     // Build final results — include all agents from roster (even those with no sales)
     let results = roster.map(agent => {
-      const acc  = accumulator[agent.agent_id];
+      const res  = agentResults[agent.agent_id] || { earned: 0, breakdown: [], threshold_note: null, group_details: null, ungrouped_earned: null, structure_details: null };
       const paid = paymentByAgent[agent.agent_id] || null;
-      const cbList         = chargebacks[agent.agent_id] || [];
+      const cbList           = chargebacks[agent.agent_id] || [];
       const chargeback_total = Math.round(cbList.reduce((s, c) => s + c.commission, 0) * 100) / 100;
-      const agentEarned    = acc ? Math.round(acc.earned * 100) / 100 : 0;
-      const agentBonus     = bonusEarned[agent.agent_id] || 0;
-      const net_earned     = Math.round((agentEarned - chargeback_total) * 100) / 100;
-      const recalculated   = paid != null && Math.abs(parseFloat(paid.amount_paid) - (agentEarned + agentBonus - chargeback_total)) > 0.01;
+      const agentBonus       = bonusEarned[agent.agent_id] || 0;
+      const net_earned       = Math.round((res.earned - chargeback_total) * 100) / 100;
+      const recalculated     = paid != null && Math.abs(parseFloat(paid.amount_paid) - (res.earned + agentBonus - chargeback_total)) > 0.01;
       return {
-        agent_id:         agent.agent_id,
-        name:             agent.name,
-        earned:           agentEarned,
-        breakdown:        acc ? acc.breakdown : [],
-        threshold_note:   acc?.threshold_note || null,
-        group_details:    acc?.group_details   || null,
-        ungrouped_earned: acc?.ungrouped_earned ?? null,
+        agent_id:          agent.agent_id,
+        name:              agent.name,
+        earned:            res.earned,
+        breakdown:         res.breakdown,
+        threshold_note:    res.threshold_note,
+        group_details:     res.group_details,
+        ungrouped_earned:  res.ungrouped_earned,
+        structure_details: res.structure_details,
         paid,
-        bonus_earned:     agentBonus,
-        chargebacks:      cbList,
+        bonus_earned:      agentBonus,
+        chargebacks:       cbList,
         chargeback_total,
         net_earned,
         recalculated,

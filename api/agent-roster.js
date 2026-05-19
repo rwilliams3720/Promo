@@ -24,7 +24,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     const { data, error } = await supabase
       .from('agent_roster')
-      .select('id, agent_id, name, active, created_at')
+      .select('id, agent_id, name, active, commission_structure_id, commission_all_must_qualify, created_at')
       .eq('user_id', userId)
       .order('name');
     if (error) return res.status(500).json({ error: error.message });
@@ -49,11 +49,38 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'PATCH') {
-    const { id, name, active } = req.body || {};
+    if (req.body.action === 'add_commission_structure') {
+      const { agent_id, commission_structure_id } = req.body;
+      if (!agent_id || !commission_structure_id) return res.status(400).json({ error: 'agent_id and commission_structure_id required' });
+      const { data: existingRows } = await supabase.from('agent_commission_structures').select('sort_order').eq('user_id', userId).eq('agent_id', agent_id).order('sort_order', { ascending: false }).limit(1);
+      const nextOrder = existingRows?.length ? (existingRows[0].sort_order + 1) : 0;
+      const { error } = await supabase.from('agent_commission_structures').upsert({ user_id: userId, agent_id, commission_structure_id, sort_order: nextOrder }, { onConflict: 'user_id,agent_id,commission_structure_id' });
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ ok: true });
+    }
+
+    if (req.body.action === 'remove_commission_structure') {
+      const { agent_id, commission_structure_id } = req.body;
+      if (!agent_id || !commission_structure_id) return res.status(400).json({ error: 'agent_id and commission_structure_id required' });
+      const { error } = await supabase.from('agent_commission_structures').delete().eq('user_id', userId).eq('agent_id', agent_id).eq('commission_structure_id', commission_structure_id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ ok: true });
+    }
+
+    if (req.body.action === 'update_qualifier') {
+      const { id, commission_all_must_qualify } = req.body;
+      if (!id) return res.status(400).json({ error: 'id required' });
+      const { error } = await supabase.from('agent_roster').update({ commission_all_must_qualify: !!commission_all_must_qualify }).eq('user_id', userId).eq('id', id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ ok: true });
+    }
+
+    const { id, name, active, commission_structure_id } = req.body || {};
     if (!id) return res.status(400).json({ error: 'id required' });
     const update = {};
     if (name !== undefined) update.name = name;
     if (active !== undefined) update.active = active;
+    if ('commission_structure_id' in (req.body || {})) update.commission_structure_id = commission_structure_id || null;
     const { error } = await supabase
       .from('agent_roster')
       .update(update)

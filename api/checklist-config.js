@@ -122,9 +122,14 @@ export default async function handler(req, res) {
       supabase.from('checklist_config').select('*').eq('user_id', dataUserId).order('sort_order'),
       supabase.from('sales_subcategories').select('*').eq('user_id', dataUserId).order('scoring_category').order('sort_order'),
     ]);
-    const { data: agentData }    = await supabase.from('agent_roster').select('id, agent_id, name, active, commission_structure_id').eq('user_id', dataUserId).order('name');
+    const { data: agentData }    = await supabase.from('agent_roster').select('id, agent_id, name, active, commission_structure_id, commission_all_must_qualify').eq('user_id', dataUserId).order('name');
     const { data: locationData } = await supabase.from('sales_locations').select('id, name, active, sort_order, address, phone, hours, goal_count, goal_premium, goals_enabled, activity_goals').eq('user_id', dataUserId).order('sort_order').order('created_at');
     const { data: lsRow }        = await supabase.from('accounts').select('lead_sources').eq('user_id', dataUserId).single();
+    const { data: agentStructData } = await supabase
+      .from('agent_commission_structures')
+      .select('agent_id, commission_structure_id, sort_order')
+      .eq('user_id', dataUserId)
+      .order('sort_order');
 
     let formConfig = formRes.data || [];
     let subcategories = subcatRes.data || [];
@@ -202,7 +207,17 @@ export default async function handler(req, res) {
       formConfig,
       subcategories,
       emailConfig: emailCfg,
-      agents: agentData || [],
+      agents: (() => {
+        const agentStructsByAgent = {};
+        for (const row of (agentStructData || [])) {
+          if (!agentStructsByAgent[row.agent_id]) agentStructsByAgent[row.agent_id] = [];
+          agentStructsByAgent[row.agent_id].push(row.commission_structure_id);
+        }
+        return (agentData || []).map(a => ({
+          ...a,
+          commission_structure_ids: agentStructsByAgent[a.agent_id] || [],
+        }));
+      })(),
       locations: locationData || [],
       productTypes,
       leadSources,
