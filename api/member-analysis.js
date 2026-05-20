@@ -645,7 +645,7 @@ Rules: plain text only, no markdown, no bullets. Use agent names and real number
 
   const message = await anthropic.messages.create({
     model:      'claude-haiku-4-5-20251001',
-    max_tokens: Math.min(400 * groupSize + 200, 2400),
+    max_tokens: Math.min(600 * groupSize + 400, 8000),
     messages:   [{ role: 'user', content: prompt }],
   });
 
