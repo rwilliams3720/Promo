@@ -5624,7 +5624,8 @@ function renderAgentRoster() {
     return `<div style="margin-bottom:.5rem;padding:.5rem;background:var(--card2);border:1px solid var(--border2);border-radius:8px;">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
         <input type="checkbox" ${a.active !== false ? 'checked' : ''} onchange="toggleAgentRoster('${escHtml(a.id)}', this.checked)" title="Active in dropdowns">
-        <span style="font-size:13px;font-weight:600;flex:1;">${escHtml(a.name)}</span>
+        <span id="rn-label-${safeId}" style="font-size:13px;font-weight:600;flex:1;">${escHtml(a.name)}</span>
+        <button onclick="startEditRosterName('${escHtml(a.id)}','${safeId}')" style="background:none;border:none;color:var(--muted);padding:0 2px;cursor:pointer;font-size:14px;line-height:1;" title="Rename">&#x270E;</button>
         <span style="font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;">${escHtml(a.agent_id)}</span>
         <button class="btn btn-secondary" style="padding:2px 8px;font-size:11px;" onclick="deleteAgentRoster('${escHtml(a.id)}', this)">&#x2715;</button>
       </div>
@@ -5632,6 +5633,54 @@ function renderAgentRoster() {
       ${renderAgentRosterGoalsSection(a)}
     </div>`;
   }).join('');
+}
+
+function startEditRosterName(id, agentId) {
+  const label = document.getElementById('rn-label-' + agentId);
+  if (!label) return;
+  const currentName = label.textContent;
+  const pencil = label.nextElementSibling; // the ✎ button
+  label.style.display = 'none';
+  if (pencil) pencil.style.display = 'none';
+  const wrap = document.createElement('span');
+  wrap.id = 'rn-edit-' + agentId;
+  wrap.style.cssText = 'display:flex;align-items:center;gap:4px;flex:1;min-width:0;';
+  wrap.innerHTML = `<input id="rn-input-${agentId}" value="${currentName.replace(/"/g,'&quot;')}" style="font-size:13px;font-weight:600;flex:1;min-width:60px;background:var(--card);border:1px solid var(--accent);color:var(--text);border-radius:5px;padding:2px 6px;outline:none;"><button onclick="saveRosterName('${id}','${agentId}',this)" style="background:none;border:1px solid rgba(0,212,255,.3);color:var(--accent);border-radius:5px;padding:2px 9px;font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap;">Save</button><button onclick="cancelEditRosterName('${agentId}')" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:5px;padding:2px 7px;font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">✕</button><span id="rn-msg-${agentId}" style="font-size:11px;display:none;"></span>`;
+  label.parentNode.insertBefore(wrap, label.nextSibling?.nextSibling || null);
+  const inp = document.getElementById('rn-input-' + agentId);
+  if (inp) { inp.focus(); inp.select(); inp.addEventListener('keydown', e => { if (e.key === 'Enter') saveRosterName(id, agentId, inp); if (e.key === 'Escape') cancelEditRosterName(agentId); }); }
+}
+
+async function saveRosterName(id, agentId, triggerEl) {
+  const input = document.getElementById('rn-input-' + agentId);
+  const msg   = document.getElementById('rn-msg-' + agentId);
+  const newName = (input?.value || '').trim();
+  if (!newName) return;
+  const saveBtn = input?.parentNode?.querySelector('button');
+  if (saveBtn) saveBtn.disabled = true;
+  const r = await fetch('/api/agent-roster', {
+    method: 'PATCH',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, name: newName }),
+  });
+  if (r.ok) {
+    const a = _agentRoster.find(x => x.id === id);
+    if (a) a.name = newName;
+    renderAgentRoster();
+  } else {
+    const d = await r.json().catch(() => ({}));
+    if (saveBtn) saveBtn.disabled = false;
+    if (msg) { msg.style.display = 'inline'; msg.style.color = 'var(--danger)'; msg.textContent = d.error || 'Save failed'; }
+  }
+}
+
+function cancelEditRosterName(agentId) {
+  const label  = document.getElementById('rn-label-' + agentId);
+  const pencil = label?.nextElementSibling;
+  const wrap   = document.getElementById('rn-edit-' + agentId);
+  if (label)  label.style.display = '';
+  if (pencil && pencil.tagName === 'BUTTON') pencil.style.display = '';
+  if (wrap)   wrap.remove();
 }
 
 async function addAgentStructure(agentId, btn) {
@@ -11331,16 +11380,21 @@ function displayCachedMemberAnalysis() {
       }
     } catch(e) {}
   }
-  if (!_memberAnalysisAt) return;
-  fetch('/api/member-analysis', { headers: authHeaders() })
-    .then(r => r.json())
+  // No valid localStorage — fetch server cache without triggering a paid generation.
+  // checkOnly=1 returns 200+data if a valid cache exists, or 204 if nothing cached.
+  // We do NOT guard on _memberAnalysisAt here: that would silently block new browsers
+  // when the DB save previously failed and member_analysis_at was never written.
+  fetch('/api/member-analysis?checkOnly=1', { headers: authHeaders() })
+    .then(r => r.status === 204 ? null : r.json())
     .then(data => {
-      if (data.agentSections) {
-        if (data.curKey) _maCurKey = data.curKey;
-        renderMemberAnalysisCards(data.agentSections, data.agentData, data.generatedAt || data.cachedAt, data.hoursLastPeriod);
-        updateHoursLabel(data.hoursLastPeriod);
-        _lsSet('br-member-analysis-' + _userId, JSON.stringify({ userId: _userId, ...data }));
-      }
+      if (!data?.agentSections) return;
+      if (data.curKey) _maCurKey = data.curKey;
+      // Sync _memberAnalysisAt from the server timestamp so the countdown is accurate
+      const ts = data.cachedAt || data.generatedAt;
+      if (ts) { _memberAnalysisAt = ts; updateMemberAnalysisBtn(); }
+      renderMemberAnalysisCards(data.agentSections, data.agentData, data.generatedAt || data.cachedAt, data.hoursLastPeriod);
+      updateHoursLabel(data.hoursLastPeriod);
+      _lsSet('br-member-analysis-' + _userId, JSON.stringify({ userId: _userId, ...data }));
     })
     .catch(() => {});
 }
@@ -11398,10 +11452,10 @@ async function runMemberAnalysis(bypassHoursCheck) {
       return;
     }
     const nowIso = new Date().toISOString();
-    _memberAnalysisAt = data.generatedAt || nowIso;
+    _memberAnalysisAt = data.cachedAt || data.generatedAt || nowIso;
     if (data.curKey) _maCurKey = data.curKey;
     _lsSet('br-member-analysis-' + _userId, JSON.stringify({ userId: _userId, ...data }));
-    renderMemberAnalysisCards(data.agentSections, data.agentData, data.generatedAt, data.hoursLastPeriod);
+    renderMemberAnalysisCards(data.agentSections, data.agentData, data.generatedAt || data.cachedAt, data.hoursLastPeriod);
     updateHoursLabel(data.hoursLastPeriod);
     if (msg) {
       msg.style.display = 'block';

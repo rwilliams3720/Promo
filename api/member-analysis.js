@@ -200,7 +200,8 @@ export default async function handler(req, res) {
 
   // ── GET: return cached or generate fresh analysis ─────────────────────────
   if (req.method === 'GET') {
-    const force = req.query?.force === '1';
+    const force     = req.query?.force     === '1';
+    const checkOnly = req.query?.checkOnly === '1'; // return cache if valid, else 204 — never generates fresh
 
     if (!force && acct.member_analysis_cache && acct.member_analysis_at) {
       const age = Date.now() - new Date(acct.member_analysis_at).getTime();
@@ -213,6 +214,9 @@ export default async function handler(req, res) {
       }
     }
 
+    // checkOnly: caller just wants existing cache — don't trigger a paid generation
+    if (checkOnly) return res.status(204).end();
+
     const selectedAgents = acct.member_analysis_agents || [];
     if (!selectedAgents.length) {
       return res.status(400).json({ error: 'No agents selected. Go to Account → Sales to choose agents.' });
@@ -222,11 +226,15 @@ export default async function handler(req, res) {
     try {
       const payload = await generateAnalysis(dataUserId, acct, selectedIds, selectedAgents, acct.member_hours_data);
       const now = new Date().toISOString();
-      supabase.from('accounts').update({
+      // Await the save so member_analysis_at is committed before returning.
+      // Silent failure here would cause _memberAnalysisAt to be null on next login
+      // and block displayCachedMemberAnalysis from ever fetching the server cache.
+      const { error: saveErr } = await supabase.from('accounts').update({
         member_analysis_cache: payload,
         member_analysis_at:    now,
-      }).eq('user_id', dataUserId).then(() => {});
-      return res.status(200).json(payload);
+      }).eq('user_id', dataUserId);
+      if (saveErr) console.error('[member-analysis] cache save error:', saveErr.message);
+      return res.status(200).json({ ...payload, cachedAt: now });
     } catch (err) {
       console.error('member-analysis generate error:', err);
       return res.status(500).json({ error: err.message });
