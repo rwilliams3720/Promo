@@ -25,7 +25,7 @@ export default async function handler(req, res) {
     try {
       const { data, error } = await supabase
         .from('accounts')
-        .select('user_id,email,company_name,contact_name,phone,plan,agent_count,referral_source,status,is_admin,notes,trial_ends_at,paid_through,stripe_customer_id,created_at,last_login,has_sales_addon,has_member_analysis,member_analysis_count,has_commissions_addon,has_lead_analysis_addon')
+        .select('user_id,email,company_name,contact_name,phone,plan,agent_count,referral_source,status,is_admin,notes,trial_ends_at,paid_through,stripe_customer_id,created_at,last_login,has_sales_addon,has_member_analysis,member_analysis_count,has_commissions_addon,has_lead_analysis_addon,credit_waived')
         .order('created_at', { ascending: false });
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json(data || []);
@@ -39,7 +39,7 @@ export default async function handler(req, res) {
     const { userId, ...fields } = req.body || {};
     if (!userId) return res.status(400).json({ error: 'userId required' });
 
-    const allowed = ['status','notes','paid_through','is_admin','plan','agent_count','trial_ends_at','stripe_customer_id','timezone','report_hour','has_sales_addon','has_member_analysis','member_analysis_count','has_commissions_addon','has_lead_analysis_addon'];
+    const allowed = ['status','notes','paid_through','is_admin','plan','agent_count','trial_ends_at','stripe_customer_id','timezone','report_hour','has_sales_addon','has_member_analysis','member_analysis_count','has_commissions_addon','has_lead_analysis_addon','credit_waived'];
     const update  = {};
     for (const key of allowed) {
       if (fields[key] !== undefined) update[key] = fields[key];

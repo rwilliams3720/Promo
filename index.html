@@ -2375,6 +2375,7 @@ let _selfReportConfig = {};  // { activities_enabled, sales_enabled, requires_ap
 let _hasMemberAnalysis    = false;
 let _memberAnalysisCount  = 0;
 let _analysisCredits      = null;
+let _creditWaived         = false;
 let _memberAnalysisAgents = [];
 let _memberAnalysisAt     = null;
 let _memberAnalysisAgentsSetAt = null;
@@ -2563,6 +2564,7 @@ async function checkAccountAndShow(session) {
       _memberAnalysisAgentsSetAt = acct.member_analysis_agents_set_at || null;
       _hasMemberAnalysis         = acct.has_member_analysis          || false;
       _memberAnalysisCount       = acct.member_analysis_count        || 0;
+      _creditWaived              = acct.credit_waived                || false;
       _memberHoursData           = acct.member_hours_data?.periods   || [];
       _salesEntryMode = acct.sales_entry_mode || 'upload';
       _checklistToken = acct.checklist_token  || null;
@@ -4820,6 +4822,15 @@ function renderAdminTable(rows) {
                 color:${r.has_lead_analysis_addon?'var(--purple, #7b61ff)':'var(--muted)'};"
               title="${r.has_lead_analysis_addon?'Disable':'Enable'} Lead Analysis">
               Lead ${r.has_lead_analysis_addon?'✓':'—'}
+            </button>
+          </div>
+          <div style="display:flex;align-items:center;gap:4px;">
+            <button onclick="adminSave('${r.user_id}','credit_waived',${!r.credit_waived})"
+              style="font-size:10px;padding:2px 7px;border-radius:4px;border:none;cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:600;
+                background:${r.credit_waived?'rgba(251,191,36,.15)':'rgba(255,255,255,.06)'};
+                color:${r.credit_waived?'var(--gold)':'var(--muted)'};"
+              title="${r.credit_waived?'Remove':'Grant'} free re-runs">
+              Credits ${r.credit_waived?'✓':'—'}
             </button>
           </div>
         </div>
@@ -11470,7 +11481,7 @@ function closeCreditModal() {
 }
 
 async function forceRunMemberAnalysis() {
-  if (_isAdmin) { runMemberAnalysis(false, true); return; }
+  if (_isAdmin || _creditWaived) { runMemberAnalysis(false, true); return; }
   // Always fetch fresh balance before showing modal
   try {
     const r = await fetch('/api/analysis-credits', { headers: authHeaders() });
