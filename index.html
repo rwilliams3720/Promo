@@ -5347,6 +5347,34 @@ async function updateMemberRole(memberId, role, custom_tabs = null) {
     const data = await res.json();
     alert(data.error || 'Failed to update role.');
     loadAgencyMembers(); // re-render to restore old value
+    return;
+  }
+  // Keep _allMembersList in sync so manager row re-evaluation is correct
+  const m = _allMembersList.find(x => x.id === memberId);
+  if (m) {
+    m.role = role;
+    if (custom_tabs !== null) m.custom_tabs = custom_tabs;
+  }
+  refreshManagerRows();
+}
+
+// Re-evaluate every manager-row in the DOM against the current _allMembersList roles.
+// Called after any role change so candidates (captain/CO only) stay accurate.
+function refreshManagerRows() {
+  for (const m of _allMembersList) {
+    const row = document.getElementById(`manager-row-${m.id}`);
+    const sel = document.getElementById(`manager-sel-${m.id}`);
+    if (!row || !sel) continue;
+    const candidates = _allMembersList.filter(x =>
+      x.id !== m.id && ['captain','chief_officer'].includes(x.role) && x.status === 'active'
+    );
+    row.style.display = candidates.length ? '' : 'none';
+    const preserved = sel.value;
+    sel.innerHTML = `<option value="">— No manager —</option>` +
+      candidates.map(x =>
+        `<option value="${x.id}"${m.managed_by === x.id ? ' selected' : ''}>${escHtml(x.email)} (${ROLE_LABEL[x.role]})</option>`
+      ).join('');
+    if (preserved && candidates.some(c => c.id === preserved)) sel.value = preserved;
   }
 }
 
