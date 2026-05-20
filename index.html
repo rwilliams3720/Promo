@@ -550,6 +550,18 @@
   </div>
 </div>
 
+<!-- Analysis credit run modal -->
+<div id="credit-run-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:2rem;max-width:420px;width:calc(100% - 2rem);">
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:1.3rem;letter-spacing:.04em;color:var(--accent);margin-bottom:1rem;">Re-run Analysis</div>
+    <div id="credit-run-body" style="font-size:13px;color:var(--text);margin-bottom:1.5rem;"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;align-items:center;flex-wrap:wrap;">
+      <button class="btn btn-secondary" onclick="closeCreditModal()">Cancel</button>
+      <div id="credit-run-actions"></div>
+    </div>
+  </div>
+</div>
+
 <!-- ── APP SHELL ── -->
 <div id="screen-app" style="display:none">
 <main>
@@ -1407,6 +1419,24 @@
             <button class="btn" style="background:rgba(255,77,109,.12);color:var(--danger);border:1px solid rgba(255,77,109,.3);" onclick="cancelCommissionsAddon(this)">Remove Add-On</button>
             <div id="commissions-addon-cancel-msg" style="font-size:13px;margin-top:8px;display:none;"></div>
           </div>
+        </div>
+
+        <!-- Analysis Credits Wallet — owners with member analysis add-on -->
+        <div class="acct-section" id="analysis-credits-section" style="display:none">
+          <h3>Analysis Credits</h3>
+          <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Credits let you re-run team member analysis outside the 5-day window. Each on-demand run costs $3.</p>
+          <div style="background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:1rem 1.2rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:.75rem;">
+            <div>
+              <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Current Balance</div>
+              <div id="credit-balance-display" style="font-size:1.6rem;font-weight:700;color:var(--accent);">—</div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn btn-secondary" style="font-size:13px;" onclick="addAnalysisCredits(5,this)">Add $5</button>
+              <button class="btn btn-secondary" style="font-size:13px;" onclick="addAnalysisCredits(10,this)">Add $10</button>
+              <button class="btn btn-secondary" style="font-size:13px;" onclick="addAnalysisCredits(20,this)">Add $20</button>
+            </div>
+          </div>
+          <div id="credit-wallet-msg" style="font-size:13px;display:none;margin-top:4px;"></div>
         </div>
 
         <!-- Lead Source Analysis Add-On — account owners only -->
@@ -2344,6 +2374,7 @@ let _selfReportConfig = {};  // { activities_enabled, sales_enabled, requires_ap
 // ── Member Analysis add-on state ─────────────────────────────────────────────
 let _hasMemberAnalysis    = false;
 let _memberAnalysisCount  = 0;
+let _analysisCredits      = null;
 let _memberAnalysisAgents = [];
 let _memberAnalysisAt     = null;
 let _memberAnalysisAgentsSetAt = null;
@@ -2676,6 +2707,19 @@ async function checkAccountAndShow(session) {
         _memberAnalysisCount = maCount;
       }).catch(() => {});
     } else if (_urlParams.get('member_analysis') === 'cancel') {
+      history.replaceState({}, '', '/app');
+    } else if (_urlParams.get('billing') === 'credit_success') {
+      history.replaceState({}, '', '/app');
+      const addedAmt = parseFloat(_urlParams.get('amount')) || 0;
+      setTimeout(async () => {
+        await fetchAnalysisCredits();
+        const el = document.getElementById('credit-balance-display');
+        if (el) { el.style.color = 'var(--accent2)'; setTimeout(() => { el.style.color = 'var(--accent)'; }, 3000); }
+        if (addedAmt) {
+          showInlineMsg('credit-wallet-msg', `$${addedAmt.toFixed(2)} added to your balance!`, 'ok');
+        }
+      }, 800);
+    } else if (_urlParams.get('billing') === 'credit_cancel') {
       history.replaceState({}, '', '/app');
     }
 
@@ -4459,6 +4503,10 @@ async function loadAccountTab() {
   // Lead Analysis add-on section
   document.getElementById('lead-analysis-addon-section').style.display = '';
   renderLeadAnalysisAddonSection(acct);
+  // Analysis credits wallet — show when member analysis is active
+  const hasMa = acct.has_member_analysis || _hasMemberAnalysis || _isAdmin;
+  document.getElementById('analysis-credits-section').style.display = hasMa ? '' : 'none';
+  if (hasMa) fetchAnalysisCredits();
 }
 
 async function confirmResetMyData(btn) {
@@ -11402,9 +11450,103 @@ function maHoursMismatchUpload() {
   goToSalesSubTab('team', 'ma-hours-section');
 }
 
-function forceRunMemberAnalysis() {
-  if (!confirm('Re-run analysis now? This bypasses the 5-day cooldown and will count as a fresh generation.')) return;
-  runMemberAnalysis(false, true);
+async function fetchAnalysisCredits() {
+  try {
+    const r = await fetch('/api/analysis-credits', { headers: authHeaders() });
+    if (!r.ok) return;
+    const d = await r.json();
+    _analysisCredits = Number(d.balance) || 0;
+    updateCreditBalanceDisplay();
+  } catch(e) {}
+}
+
+function updateCreditBalanceDisplay() {
+  const el = document.getElementById('credit-balance-display');
+  if (el && _analysisCredits !== null) el.textContent = '$' + _analysisCredits.toFixed(2);
+}
+
+function closeCreditModal() {
+  document.getElementById('credit-run-modal').style.display = 'none';
+}
+
+async function forceRunMemberAnalysis() {
+  // Always fetch fresh balance before showing modal
+  try {
+    const r = await fetch('/api/analysis-credits', { headers: authHeaders() });
+    if (r.ok) { const d = await r.json(); _analysisCredits = Number(d.balance) || 0; }
+  } catch(e) {}
+
+  const balance = _analysisCredits !== null ? _analysisCredits : 0;
+  const body    = document.getElementById('credit-run-body');
+  const actions = document.getElementById('credit-run-actions');
+  const modal   = document.getElementById('credit-run-modal');
+
+  if (balance >= 3) {
+    body.innerHTML =
+      `<p style="margin:0 0 .6rem;">This bypasses the 5-day cooldown. Cost: <strong>$3.00</strong></p>` +
+      `<div style="background:var(--deep);border:1px solid var(--border);border-radius:8px;padding:.7rem 1rem;font-size:13px;">` +
+        `<div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Current balance</span><span>$${balance.toFixed(2)}</span></div>` +
+        `<div style="display:flex;justify-content:space-between;margin-top:4px;"><span style="color:var(--muted);">After run</span><span>$${(balance - 3).toFixed(2)}</span></div>` +
+      `</div>`;
+    actions.innerHTML = `<button class="btn btn-primary" onclick="confirmCreditRun(this)">Run — $3.00</button>`;
+  } else {
+    body.innerHTML =
+      `<p style="margin:0 0 .6rem;color:var(--danger);">Insufficient balance: <strong>$${balance.toFixed(2)}</strong></p>` +
+      `<p style="margin:0 0 1rem;color:var(--muted);">You need at least $3.00 to re-run analysis. Add funds below:</p>` +
+      `<div style="display:flex;gap:8px;flex-wrap:wrap;">` +
+        `<button class="btn btn-secondary" style="font-size:13px;" onclick="closeCreditModal();addAnalysisCredits(5)">Add $5</button>` +
+        `<button class="btn btn-secondary" style="font-size:13px;" onclick="closeCreditModal();addAnalysisCredits(10)">Add $10</button>` +
+        `<button class="btn btn-secondary" style="font-size:13px;" onclick="closeCreditModal();addAnalysisCredits(20)">Add $20</button>` +
+      `</div>`;
+    actions.innerHTML = '';
+  }
+
+  modal.style.display = 'flex';
+}
+
+async function confirmCreditRun(btn) {
+  btn.disabled = true;
+  btn.textContent = 'Processing…';
+  try {
+    const r = await fetch('/api/analysis-credits', {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'charge_run' }),
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      document.getElementById('credit-run-body').insertAdjacentHTML('beforeend',
+        `<p style="color:var(--danger);margin-top:.75rem;">${d.error || 'Error processing payment.'}</p>`);
+      btn.disabled = false;
+      btn.textContent = 'Run — $3.00';
+      return;
+    }
+    _analysisCredits = d.balance;
+    updateCreditBalanceDisplay();
+    closeCreditModal();
+    runMemberAnalysis(false, true);
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = 'Run — $3.00';
+  }
+}
+
+async function addAnalysisCredits(amount, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch('/api/analysis-credits', {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'checkout', amount }),
+    });
+    const d = await r.json();
+    if (d.url) { window.location.href = d.url; return; }
+    showInlineMsg('credit-wallet-msg', d.error || 'Error starting checkout', 'err');
+    if (btn) btn.disabled = false;
+  } catch(e) {
+    showInlineMsg('credit-wallet-msg', e.message, 'err');
+    if (btn) btn.disabled = false;
+  }
 }
 
 async function runMemberAnalysis(bypassHoursCheck, force) {

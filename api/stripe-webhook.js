@@ -51,6 +51,22 @@ export default async function handler(req, res) {
         const session = event.data.object;
         const userId  = session.client_reference_id;
         if (!userId) break;
+
+        // One-time credit purchase — no subscription
+        if (session.metadata?.type === 'analysis_credit') {
+          const credits = Number(session.metadata.credits) || 0;
+          if (credits > 0) {
+            const { data: acct } = await supabase.from('accounts').select('credit_balance').eq('user_id', userId).single();
+            const current = Number(acct?.credit_balance) || 0;
+            const newBal  = Math.round((current + credits) * 100) / 100;
+            await supabase.from('accounts').update({
+              credit_balance: newBal,
+              ...(session.customer ? { stripe_customer_id: session.customer } : {}),
+            }).eq('user_id', userId);
+          }
+          break;
+        }
+
         const sub = await stripe.subscriptions.retrieve(session.subscription);
         const type = subType(sub);
         if (type === 'plan') {
