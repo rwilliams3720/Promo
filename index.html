@@ -11470,6 +11470,7 @@ function closeCreditModal() {
 }
 
 async function forceRunMemberAnalysis() {
+  if (_isAdmin) { runMemberAnalysis(false, true); return; }
   // Always fetch fresh balance before showing modal
   try {
     const r = await fetch('/api/analysis-credits', { headers: authHeaders() });
