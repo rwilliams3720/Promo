@@ -3947,54 +3947,50 @@ function updateAnalysisBtn() {
   }
 }
 
-function displayCachedAnalysis() {
-  // If server cache was cleared (e.g. after archive), discard stale browser cache on any browser/login
-  if (!_analysisAt) {
-    _lsRemove('br-analysis-data');
-    return;
+function _renderAnalysisData(data) {
+  if (data.chartData) renderAnalysisCharts(data.chartData);
+  if (data.insights) {
+    const paragraphs = data.insights.split(/\n\n+/).filter(Boolean);
+    document.getElementById('analysis-body').innerHTML = paragraphs.map(p => `<p>${p.trim()}</p>`).join('');
+    document.getElementById('analysis-email-btn').style.display = '';
   }
+  const ts = data.cachedAt || data.generatedAt || _analysisAt;
+  if (ts) {
+    const msg = document.getElementById('analysis-msg');
+    if (msg) {
+      msg.style.display = 'block';
+      msg.style.color = 'var(--muted)';
+      msg.textContent = `Generated ${new Date(ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
+    }
+  }
+}
+
+function displayCachedAnalysis() {
   const cached = _lsGet('br-analysis-data');
   if (cached) {
     try {
       const data = JSON.parse(cached);
-      if (data.userId && data.userId !== _userId) {
-        _lsRemove('br-analysis-data');
-        // fall through to server fetch below
-      } else {
-      if (data.chartData) renderAnalysisCharts(data.chartData);
-      if (data.insights) {
-        const paragraphs = data.insights.split(/\n\n+/).filter(Boolean);
-        document.getElementById('analysis-body').innerHTML = paragraphs.map(p => `<p>${p.trim()}</p>`).join('');
-        document.getElementById('analysis-email-btn').style.display = '';
+      if (data.userId && data.userId === _userId && data.insights) {
+        _renderAnalysisData(data);
+        return;
       }
-      if (data.cachedAt) {
-        const msg = document.getElementById('analysis-msg');
-        msg.style.display = 'block';
-        msg.style.color = 'var(--muted)';
-        msg.textContent = `Generated ${new Date(data.cachedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
-      }
-      return;
-      } // end userId match block
-    } catch(e) { /* stale or corrupt — fall through to server fetch */ }
+      // Wrong user or corrupt — clear and fall through
+      _lsRemove('br-analysis-data');
+    } catch(e) { _lsRemove('br-analysis-data'); }
   }
 
-  // No local cache but account has a prior analysis — fetch it from server silently.
-  // The server returns the cached payload without calling Claude.
-  if (!_analysisAt) return;
-  fetch('/api/ai-analysis', { headers: authHeaders() })
-    .then(r => r.ok ? r.json() : null)
+  // No valid localStorage — fetch server cache without triggering a paid Claude call.
+  // checkOnly=1: returns 200+data if valid cache exists, 204 if nothing cached.
+  // Do NOT guard on _analysisAt here — a failed DB save leaves it null and would
+  // silently block new browsers from ever seeing the analysis.
+  fetch('/api/ai-analysis?checkOnly=1', { headers: authHeaders() })
+    .then(r => r.status === 204 ? null : r.ok ? r.json() : null)
     .then(data => {
       if (!data?.insights) return;
-      renderAnalysisCharts(data.chartData || []);
-      const paragraphs = data.insights.split(/\n\n+/).filter(Boolean);
-      document.getElementById('analysis-body').innerHTML = paragraphs.map(p => `<p>${p.trim()}</p>`).join('');
-      document.getElementById('analysis-email-btn').style.display = '';
-      const cachedAt = data.cachedAt || _analysisAt;
-      _lsSet('br-analysis-data', JSON.stringify({ userId: _userId, insights: data.insights, chartData: data.chartData, cachedAt }));
-      const msg = document.getElementById('analysis-msg');
-      msg.style.display = 'block';
-      msg.style.color = 'var(--muted)';
-      msg.textContent = `Generated ${new Date(cachedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
+      const ts = data.cachedAt || data.generatedAt;
+      if (ts && !_analysisAt) { _analysisAt = ts; updateAnalysisBtn(); }
+      _renderAnalysisData(data);
+      _lsSet('br-analysis-data', JSON.stringify({ userId: _userId, insights: data.insights, chartData: data.chartData, cachedAt: ts }));
     })
     .catch(() => {});
 }
@@ -4042,11 +4038,9 @@ async function runAnalysis() {
     const paragraphs = (data.insights || '').split(/\n\n+/).filter(Boolean);
     body.innerHTML = paragraphs.map(p => `<p>${p.trim()}</p>`).join('');
 
-    if (!data.cached) {
-      const nowIso = new Date().toISOString();
-      _analysisAt = nowIso;
-      _lsSet('br-analysis-data', JSON.stringify({ userId: _userId, insights: data.insights, chartData: data.chartData, cachedAt: nowIso }));
-    }
+    const ts = data.cachedAt || data.generatedAt || new Date().toISOString();
+    _analysisAt = ts;
+    _lsSet('br-analysis-data', JSON.stringify({ userId: _userId, insights: data.insights, chartData: data.chartData, cachedAt: ts }));
 
     const source = data.cached
       ? `Cached — generated ${new Date(data.cachedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`

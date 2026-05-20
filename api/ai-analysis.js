@@ -55,7 +55,8 @@ export default async function handler(req, res) {
     return handleEmailAnalysis(req, res, acct, dataUserId);
   }
 
-  const force = req.query?.force === '1';
+  const force     = req.query?.force     === '1';
+  const checkOnly = req.query?.checkOnly === '1'; // return cache if valid, else 204 — never generates fresh
 
   // Return cache if still fresh
   if (!force && acct.ai_analysis_cache && acct.ai_analysis_at) {
@@ -64,6 +65,8 @@ export default async function handler(req, res) {
       return res.status(200).json({ ...acct.ai_analysis_cache, cached: true, cachedAt: acct.ai_analysis_at });
     }
   }
+
+  if (checkOnly) return res.status(204).end();
 
   try {
     const cutoff = new Date();
@@ -398,13 +401,14 @@ End with ONE sentence (no heading) naming the single most critical finding for t
       note: insights.split(/(?<=[.!?])\s+/).filter(Boolean).slice(-1)[0]?.slice(0, 200) || '',
     };
 
-    supabase.from('accounts').update({
+    const { error: saveErr } = await supabase.from('accounts').update({
       ai_analysis_cache: payload,
       ai_analysis_at:    now,
       ai_history_key:    histKey,
-    }).eq('user_id', dataUserId).then(() => {});
+    }).eq('user_id', dataUserId);
+    if (saveErr) console.error('[ai-analysis] cache save error:', saveErr.message);
 
-    return res.status(200).json(payload);
+    return res.status(200).json({ ...payload, cachedAt: now });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
