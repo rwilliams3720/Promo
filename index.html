@@ -1171,6 +1171,7 @@
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
             <a href="#" onclick="goToAccountTab('billing','member-analysis-section');return false;" style="font-size:12px;color:var(--accent);">Need more seats? Adjust your plan →</a>
             <button class="btn btn-secondary" id="ma-refresh-btn" onclick="runMemberAnalysis()">Analyze</button>
+            <a href="#" id="ma-force-link" onclick="forceRunMemberAnalysis();return false;" style="display:none;font-size:11px;color:var(--muted);">Re-run →</a>
           </div>
         </div>
         <div id="ma-analysis-body" style="max-height:70vh;overflow-y:auto;padding-right:2px;">
@@ -11338,10 +11339,11 @@ function maAnalysisRemainingMs() {
 }
 
 function updateMemberAnalysisBtn() {
-  const btn = document.getElementById('ma-refresh-btn');
+  const btn       = document.getElementById('ma-refresh-btn');
+  const forceLink = document.getElementById('ma-force-link');
   if (!btn) return;
   const hasMa = _hasMemberAnalysis || _isAdmin;
-  if (!hasMa) { btn.style.display = 'none'; return; }
+  if (!hasMa) { btn.style.display = 'none'; if (forceLink) forceLink.style.display = 'none'; return; }
   btn.style.display = '';
   const remaining = maAnalysisRemainingMs();
   if (remaining > 0) {
@@ -11349,10 +11351,12 @@ function updateMemberAnalysisBtn() {
     const hrs  = Math.floor((remaining % 86400000) / 3600000);
     btn.disabled = true;
     btn.textContent = days > 0 ? `Next in ${days}d ${hrs}h` : `Next in ${hrs}h`;
+    if (forceLink) forceLink.style.display = '';
     setTimeout(updateMemberAnalysisBtn, Math.min(remaining, 5 * 60 * 1000));
   } else {
     btn.disabled = false;
     btn.textContent = 'Analyze';
+    if (forceLink) forceLink.style.display = 'none';
   }
 }
 
@@ -11398,9 +11402,14 @@ function maHoursMismatchUpload() {
   goToSalesSubTab('team', 'ma-hours-section');
 }
 
-async function runMemberAnalysis(bypassHoursCheck) {
+function forceRunMemberAnalysis() {
+  if (!confirm('Re-run analysis now? This bypasses the 5-day cooldown and will count as a fresh generation.')) return;
+  runMemberAnalysis(false, true);
+}
+
+async function runMemberAnalysis(bypassHoursCheck, force) {
   if (_memberAnalysisLoading) return;
-  if (maAnalysisRemainingMs() > 0) return;
+  if (!force && maAnalysisRemainingMs() > 0) return;
   if (!(_hasMemberAnalysis || _isAdmin)) return;
   if (!_memberAnalysisAgents?.length) {
     const body = document.getElementById('ma-analysis-body');
@@ -11439,7 +11448,7 @@ async function runMemberAnalysis(bypassHoursCheck) {
   if (body) body.innerHTML = '<div style="color:var(--muted);font-size:13px;">Generating individual analysis…</div>';
   if (msg) msg.style.display = 'none';
   try {
-    const r = await fetch('/api/member-analysis', { headers: authHeaders() });
+    const r = await fetch(`/api/member-analysis${force ? '?force=1' : ''}`, { headers: authHeaders() });
     const data = await r.json();
     if (!r.ok) {
       if (body) body.innerHTML = `<div style="color:var(--danger);font-size:13px;">${data.error || 'Error loading analysis.'}</div>`;
