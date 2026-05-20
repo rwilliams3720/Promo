@@ -20,6 +20,34 @@ const FULL_TO_ABBR = {
 };
 
 const MONTH_ORDER = { Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12 };
+const POLICY_PRODUCTS = ['wl','ul','term','health','auto','fire'];
+
+// Mirror of agent-goals.js helper — returns {start, end} for the current recurring period
+function currentPeriodDates(periodType, now) {
+  const yr = now.getUTCFullYear();
+  const mo = now.getUTCMonth();
+  if (periodType === 'monthly') {
+    return {
+      start: new Date(Date.UTC(yr, mo, 1)).toISOString().slice(0, 10),
+      end:   new Date(Date.UTC(yr, mo + 1, 0)).toISOString().slice(0, 10),
+    };
+  }
+  if (periodType === 'quarterly') {
+    const q = Math.floor(mo / 3);
+    return {
+      start: new Date(Date.UTC(yr, q * 3, 1)).toISOString().slice(0, 10),
+      end:   new Date(Date.UTC(yr, q * 3 + 3, 0)).toISOString().slice(0, 10),
+    };
+  }
+  if (periodType === 'semi_annual') {
+    const h = mo < 6 ? 0 : 1;
+    return {
+      start: new Date(Date.UTC(yr, h * 6, 1)).toISOString().slice(0, 10),
+      end:   new Date(Date.UTC(yr, h * 6 + 6, 0)).toISOString().slice(0, 10),
+    };
+  }
+  return { start: `${yr}-01-01`, end: `${yr}-12-31` };
+}
 
 function normMonth(raw) {
   const parts = raw.trim().split(' ');
@@ -225,8 +253,10 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
   const pctElapsed   = Math.round(daysElapsed / daysInMonth * 100);
   const curKey       = `${MONTH_ABBR[now.getUTCMonth()]} ${now.getUTCFullYear()}`;
 
+  const today = now.toISOString().slice(0, 10);
+
   // Parallel data fetch
-  const [scoring, raceRes, histWinsRes, rosterRes, missedRes, vmRes] = await Promise.all([
+  const [scoring, raceRes, histWinsRes, rosterRes, missedRes, vmRes, goalsRes] = await Promise.all([
     fetchScoringConfig(dataUserId),
     supabase.from('race_data')
       .select('agent_id,name,team,placed,answered,talk_min,avg_min,wl,ul,term,health,auto,fire')
@@ -247,6 +277,10 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
       .select('*', { count: 'exact', head: true })
       .eq('user_id', dataUserId)
       .eq('disposition', 'voicemail'),
+    supabase.from('agent_goals')
+      .select('agent_id,period_type,period_label,period_start,period_end,goals,is_recurring')
+      .eq('user_id', dataUserId)
+      .in('agent_id', selectedIds),
   ]);
 
   const raceMap   = {};
@@ -288,6 +322,51 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
         premByAgentMtd[row.agent_id] = (premByAgentMtd[row.agent_id] || 0) + amt;
       }
     }
+  }
+
+  // Build goal actuals by agent — goals active today (or recurring → effective current window)
+  const goalsByAgent = {}; // agentId → [{ periodType, periodLabel, goals, actuals }]
+  const allGoals = (goalsRes.data || []).filter(g => {
+    if (g.is_recurring) return true; // always include; compute effective window below
+    return g.period_start <= today && g.period_end >= today;
+  });
+  for (const goal of allGoals) {
+    const aid      = goal.agent_id;
+    const effStart = goal.is_recurring ? currentPeriodDates(goal.period_type, now).start : goal.period_start;
+    const effEnd   = goal.is_recurring ? currentPeriodDates(goal.period_type, now).end   : goal.period_end;
+    if (!goalsByAgent[aid]) goalsByAgent[aid] = [];
+
+    let totPolicies = 0, totPremium = 0;
+    const totByProduct = { wl:0, ul:0, term:0, health:0, auto:0, fire:0 };
+
+    // Sum archived months that fall entirely within the effective goal period
+    for (const h of (histWinsRes.data || []).filter(r => r.agent_id === aid)) {
+      const normM  = normMonth(h.month);
+      const mo0    = MONTH_ORDER[normM.split(' ')[0]] - 1;
+      const yr0    = parseInt(normM.split(' ')[1]);
+      const mStart = `${yr0}-${String(mo0 + 1).padStart(2, '0')}-01`;
+      const mEnd   = new Date(Date.UTC(yr0, mo0 + 1, 0)).toISOString().slice(0, 10);
+      if (mStart >= effStart && mEnd <= effEnd) {
+        for (const p of POLICY_PRODUCTS) totByProduct[p] += h[p] || 0;
+        totPolicies += POLICY_PRODUCTS.reduce((s, p) => s + (h[p] || 0), 0);
+        if (premByAgentMonth[aid]?.[normM]) totPremium += premByAgentMonth[aid][normM];
+      }
+    }
+    // Add current period (race_data) if it starts within the effective goal period
+    if (mtdStart >= effStart && mtdStart <= effEnd) {
+      const cur = raceMap[aid];
+      if (cur) {
+        for (const p of POLICY_PRODUCTS) totByProduct[p] += cur[p] || 0;
+        totPolicies += POLICY_PRODUCTS.reduce((s, p) => s + (cur[p] || 0), 0);
+        totPremium  += premByAgentMtd[aid] || 0;
+      }
+    }
+    goalsByAgent[aid].push({
+      periodType:  goal.period_type,
+      periodLabel: goal.period_label,
+      goals:       goal.goals,
+      actuals:     { policies: totPolicies, premium: totPremium, ...totByProduct },
+    });
   }
 
   // Build hours lookup: agentId → { normPeriod → hours }
@@ -494,8 +573,31 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
       ...curEffParts,
     ].filter(Boolean).join(' ') : 'No current period data';
 
+    // Build goal-vs-actual lines for this agent
+    const agGoals = goalsByAgent[agentId] || [];
+    const goalLines = agGoals.map(g => {
+      const G = g.goals;
+      const A = g.actuals;
+      const parts = [];
+      if (G.policies != null) {
+        const pct = G.policies > 0 ? Math.round(A.policies / G.policies * 100) : 0;
+        parts.push(`policies ${A.policies}/${G.policies} (${pct}%)`);
+      }
+      if (G.premium != null) {
+        const pct = G.premium > 0 ? Math.round(A.premium / G.premium * 100) : 0;
+        parts.push(`premium $${Math.round(A.premium)}/$${G.premium} (${pct}%)`);
+      }
+      for (const prod of POLICY_PRODUCTS) {
+        if (G[prod] != null) {
+          const pct = G[prod] > 0 ? Math.round((A[prod] || 0) / G[prod] * 100) : 0;
+          parts.push(`${prod} ${A[prod] || 0}/${G[prod]} (${pct}%)`);
+        }
+      }
+      return `Goals (${g.periodType}, ${g.periodLabel}): ${parts.join(' | ')}`;
+    }).join('\n');
+
     return `AGENT: ${ag.name} (${ag.team})${standingLine ? ` | Team standing: ${standingLine}` : ''}
-Archived history (oldest→newest, p=placed a=answered min=talk prem=written premium hrs=hours pol/hr=efficiency comp=compensation /pol-cost=cost per policy /hr-cost=labor cost per hour):
+${goalLines ? goalLines + '\n' : ''}Archived history (oldest→newest, p=placed a=answered min=talk prem=written premium hrs=hours pol/hr=efficiency comp=compensation /pol-cost=cost per policy /hr-cost=labor cost per hour):
 ${histLines || '  No archived months'}
 Current: ${curLine}`;
   }).join('\n\n');
@@ -528,7 +630,8 @@ Cover these points in 3–5 sentences per agent:
 2. Strengths — where they lead within their own team. For sales agents: placed calls, policies, talk time, premium. For service agents: answered calls, handle rate, talk time. Do not evaluate service agents on placed calls or new policies — those are sales-team metrics.
 3. Gaps/concerns — the single biggest metric holding them back compared to their same-team peers, with evidence from the data.
 4. Team standing — their rank within their own team (sales or service) in score and key team metrics. For service agents, lead with answered and handle rate. For sales agents, lead with placed and policies. Be direct. Never compare a service agent's metrics against a sales agent's metrics.
-5. Cost efficiency — if compensation data is available for this agent, comment on cost per policy trend and rank within their team. If the agent is salaried (0 hours but has compensation), focus on cost per policy as the key efficiency metric. Skip this point if no compensation data for this agent.
+5. Goal progress — if Goals lines are shown for this agent, assess their pace against each goal given the percent of period elapsed (${pctElapsed}% of the current month). State whether they are on track, ahead, or behind, and by how much. If no goals are shown, skip this point entirely.
+6. Cost efficiency — if compensation data is available for this agent, comment on cost per policy trend and rank within their team. If the agent is salaried (0 hours but has compensation), focus on cost per policy as the key efficiency metric. Skip this point if no compensation data for this agent.
 
 Rules: plain text only, no markdown, no bullets. Use agent names and real numbers. Separate agents with one blank line.`;
 
