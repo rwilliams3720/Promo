@@ -66,6 +66,12 @@
     color:var(--accent2);font-size:12px;font-weight:500;padding:5px 12px;border-radius:20px;letter-spacing:.06em;}
   .live-dot{width:7px;height:7px;background:var(--accent2);border-radius:50%;animation:pulse 1.8s infinite;}
   @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+  @keyframes deepLinkPulse {
+    0%   { box-shadow: 0 0 0 0 rgba(0,212,255,.5); outline: 2px solid rgba(0,212,255,.6); }
+    60%  { box-shadow: 0 0 0 10px rgba(0,212,255,0); outline: 2px solid rgba(0,212,255,.1); }
+    100% { box-shadow: 0 0 0 0 rgba(0,212,255,0); outline: 2px solid transparent; }
+  }
+  .deep-link-pulse { animation: deepLinkPulse 1s ease-out 2; border-radius: 10px; }
 
   .source-banner{display:flex;align-items:center;gap:10px;background:rgba(0,212,255,0.06);border:1px solid var(--border);
     border-radius:10px;padding:10px 16px;margin-bottom:1.5rem;font-size:13px;}
@@ -636,7 +642,7 @@
       <!-- Mode indicator (hidden unless has add-on) -->
       <div id="manage-mode-banner" style="display:none;background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:.75rem 1rem;margin-bottom:1rem;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
         <div style="font-size:13px;color:var(--muted);">Sales entry mode: <strong id="manage-mode-label" style="color:var(--text);">Upload</strong></div>
-        <button class="btn btn-secondary" style="font-size:12px;padding:5px 12px;" onclick="goToAccountTab('billing')">Change Mode</button>
+        <button class="btn btn-secondary" style="font-size:12px;padding:5px 12px;" onclick="goToAccountTab('sales')">Change Mode</button>
       </div>
 
       <div class="panel" id="upload-panel-calls">
@@ -863,7 +869,7 @@
           <p style="font-size:14px;color:var(--muted);max-width:480px;margin:0 auto 1.5rem;line-height:1.7;">
             Track every sale with full detail — agent, product, subcategory, premium, lead source, and location. Filter by month, search across all records, and download a full spreadsheet. Available with the Sales Tracking add-on.
           </p>
-          <button class="btn btn-primary" onclick="goToAccountTab('billing')">Add to Account</button>
+          <button class="btn btn-primary" onclick="goToAccountTab('billing','sales-addon-section')">Add to Account</button>
         </div>
       </div>
       <div id="perf-saleslog-content">
@@ -904,7 +910,7 @@
           <p style="font-size:14px;color:var(--muted);max-width:480px;margin:0 auto 1.5rem;line-height:1.7;">
             Unlock interactive pie charts with drilldown by lead source, location, subcategory, and more — plus manual entry, customer tracking, and commission integration.
           </p>
-          <button class="btn btn-primary" onclick="goToAccountTab('billing')">Add to Account — $25/mo</button>
+          <button class="btn btn-primary" onclick="goToAccountTab('billing','sales-addon-section')">Add to Account — $25/mo</button>
         </div>
       </div>
       <div id="perf-salesperf-content">
@@ -970,7 +976,7 @@
           </p>
           <div style="font-size:1.4rem;font-weight:700;color:var(--accent);margin-bottom:1.25rem;">$25<span style="font-size:14px;font-weight:400;color:var(--muted);">/mo</span></div>
           <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
-            <button class="btn btn-primary" onclick="goToAccountTab('billing');showAccountSubTab('billing',document.querySelector('[data-pane=billing]'))">Add to Plan — $25/mo</button>
+            <button class="btn btn-primary" onclick="goToAccountTab('billing','commissions-addon-section')">Add to Plan — $25/mo</button>
           </div>
         </div>
       </div>
@@ -1037,6 +1043,7 @@
                 <div style="font-size:12px;color:var(--muted);line-height:1.7;">
                   <div>Groups combine policy counts across selected products. All conditions must be met before the group's earned commission is released.</div>
                   <div style="margin-top:.35rem;"><strong style="color:var(--text);">Commission floor</strong> — only the amount <em>above</em> the floor pays. <span style="font-size:11px;">E.g. floor $500, earned $800 → pays $300.</span></div>
+                  <div style="margin-top:.35rem;"><strong style="color:var(--text);">Commission cap</strong> — maximum commission from a single policy, from this structure, or agent total. Cap is applied after all rates, thresholds, and escalators. <span style="font-size:11px;">E.g. cap $2,000/period, earned $2,400 → pays $2,000.</span></div>
                   <div style="margin-top:.35rem;"><strong style="color:var(--text);">Requires</strong> — a group can require other groups to pass first.</div>
                   <div style="margin-top:.35rem;font-size:11px;padding:.35rem .55rem;background:rgba(255,255,255,.04);border-left:2px solid rgba(255,179,0,.5);border-radius:0 4px 4px 0;">Products not assigned to any group always pay regardless of threshold results.</div>
                 </div>
@@ -1095,7 +1102,7 @@
           </div>
         </div>
         <div id="goals-content">
-          <div style="color:var(--muted);font-size:13px;text-align:center;padding:2rem;">Set goals in <button class="btn btn-secondary" style="padding:2px 8px;font-size:12px;" onclick="goToAccountTab('sales')">Account → Sales → Team</button></div>
+          <div style="color:var(--muted);font-size:13px;text-align:center;padding:2rem;">Set goals in <button class="btn btn-secondary" style="padding:2px 8px;font-size:12px;" onclick="goToAccountTab('sales','ma-agents-section')">Account → Sales → Team</button></div>
         </div>
       </div>
     </div><!-- /perf-sub-goals -->
@@ -1162,7 +1169,7 @@
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.2rem;">
           <div class="panel-title" style="margin:0">Individual Agent Analysis</div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <a href="#" onclick="goToAccountTab('billing');return false;" style="font-size:12px;color:var(--accent);">Need more seats? Adjust your plan →</a>
+            <a href="#" onclick="goToAccountTab('billing','member-analysis-section');return false;" style="font-size:12px;color:var(--accent);">Need more seats? Adjust your plan →</a>
             <button class="btn btn-secondary" id="ma-refresh-btn" onclick="runMemberAnalysis()">Analyze</button>
           </div>
         </div>
@@ -1180,7 +1187,7 @@
         <div class="panel" style="text-align:center;padding:2.5rem 1.5rem;">
           <div style="font-family:'Bebas Neue',sans-serif;font-size:1.6rem;letter-spacing:.04em;margin-bottom:.75rem;">Lead Source Analysis</div>
           <p style="font-size:13px;color:var(--muted);max-width:460px;margin:0 auto 1.25rem;">Understand which lead channels produce the most volume, highest average premium, and best agent-source fit. Requires the Sales Tracking add-on with manual or checklist entries.</p>
-          <button class="btn btn-primary" onclick="goToAccountTab('billing')">Add Sales Tracking — $25/mo</button>
+          <button class="btn btn-primary" onclick="goToAccountTab('billing','sales-addon-section')">Add Sales Tracking — $25/mo</button>
         </div>
       </div>
       <!-- Content -->
@@ -1465,7 +1472,7 @@
           <div class="acct-section" id="ma-agents-section" style="display:none">
             <h3>Team Member Analysis — Agent Selection</h3>
             <p id="ma-agents-desc" style="font-size:13px;color:var(--muted);margin-bottom:.75rem;"></p>
-            <p style="font-size:12px;color:var(--muted);margin-bottom:.75rem;">Need more seats? <a href="#" onclick="goToAccountTab('billing');return false;" style="color:var(--accent);">Adjust your plan →</a></p>
+            <p style="font-size:12px;color:var(--muted);margin-bottom:.75rem;">Need more seats? <a href="#" onclick="goToAccountTab('billing','member-analysis-section');return false;" style="color:var(--accent);">Adjust your plan →</a></p>
             <div id="ma-agent-picker" style="margin-bottom:.75rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px;"></div>
             <div id="ma-seat-counter" style="font-size:12px;color:var(--muted);margin-bottom:.5rem;"></div>
             <button class="btn btn-primary" onclick="saveMemberAnalysisAgents(this)">Save Selection</button>
@@ -1476,7 +1483,7 @@
           <div class="acct-section" id="ma-hours-teaser" style="display:none">
             <h3>Team Member Hours</h3>
             <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Track agent hours to unlock efficiency metrics (policies per hour, premium per hour) in Team Member Analysis.</p>
-            <button class="btn btn-primary" onclick="showAccountSubTab('billing',document.querySelector('[data-pane=billing]'))">Add Sales Tracking — $25/mo</button>
+            <button class="btn btn-primary" onclick="goToAccountTab('billing','sales-addon-section')">Add Sales Tracking — $25/mo</button>
           </div>
 
           <!-- Team Member Hours Uploader -->
@@ -1836,6 +1843,26 @@
                   <button class="btn btn-secondary" style="font-size:11px;padding:3px 10px;white-space:nowrap;margin-left:12px;" onclick="addThresholdGroup()">+ Add Group</button>
                 </div>
                 <div id="cs-thresholds-list"></div>
+              </div>
+
+              <!-- Commission Caps -->
+              <div style="margin:.75rem 0 .75rem;">
+                <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.4rem;">Commission Limits <span style="text-transform:none;font-weight:400;">(optional)</span></div>
+                <div style="font-size:11px;color:var(--muted);margin-bottom:.5rem;">Cap the commission earned from this structure. Limits are applied after all rates, thresholds, and escalators are calculated.</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;">
+                  <div>
+                    <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">CAP PER POLICY $</label>
+                    <input id="cs-builder-cap-policy" type="number" min="0" step="0.01" placeholder="No cap"
+                           style="width:100%;background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;box-sizing:border-box;">
+                    <div style="font-size:10px;color:var(--muted);margin-top:2px;">Max commission from any single policy</div>
+                  </div>
+                  <div>
+                    <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">CAP PER PERIOD $</label>
+                    <input id="cs-builder-cap-structure" type="number" min="0" step="0.01" placeholder="No cap"
+                           style="width:100%;background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;box-sizing:border-box;">
+                    <div style="font-size:10px;color:var(--muted);margin-top:2px;">Max total from this structure per month</div>
+                  </div>
+                </div>
               </div>
 
               <div id="cs-builder-id" style="display:none;"></div>
@@ -2203,6 +2230,9 @@ let _memberCustomTabs = [];     // allowed tab names for custom role
 let _ownerUserId      = null;   // owner's user_id when _isMember is true
 let _ownerCompany     = '';     // owner's company name shown in header
 let _dataUserId       = null;   // use for all data queries (= _ownerUserId || _userId)
+let _managedMemberIds = [];     // for captains/COs: member IDs they manage
+let _managedAgentIds  = [];     // derived: roster_agent_id values of managed members
+let _allMembersList   = [];     // all loaded member rows, for manager picker
 
 const PLAN_PRICES = { basic: 25, pro: 35, premium: 50 };
 const PLAN_FEATURES = {
@@ -2464,6 +2494,16 @@ function authHeaders() {
   return { 'Authorization': 'Bearer ' + _session.access_token };
 }
 
+function scrollAndPulse(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.remove('deep-link-pulse');
+  void el.offsetWidth; // force reflow so animation restarts
+  el.classList.add('deep-link-pulse');
+  setTimeout(() => el.classList.remove('deep-link-pulse'), 2100);
+}
+
 async function checkAccountAndShow(session) {
   console.log('[br] checkAccountAndShow: start, user.id=', session?.user?.id ?? 'MISSING');
   try {
@@ -2545,6 +2585,30 @@ async function checkAccountAndShow(session) {
         showMsg('li-msg', 'No account found. Please sign up or use a valid invite link.');
         return;
       }
+    }
+
+    // Load managed subordinates for captains/COs
+    if (_isMember && ['captain','chief_officer'].includes(_memberRole)) {
+      try {
+        const { data: myMemberRow } = await _supabase
+          .from('account_members')
+          .select('id')
+          .eq('member_user_id', _userId)
+          .eq('status', 'active')
+          .single();
+        if (myMemberRow) {
+          const { data: subordinates } = await _supabase
+            .from('account_members')
+            .select('id, roster_agent_id')
+            .eq('owner_user_id', _ownerUserId)
+            .eq('managed_by', myMemberRow.id)
+            .eq('status', 'active');
+          if (subordinates?.length) {
+            _managedMemberIds = subordinates.map(s => s.id);
+            _managedAgentIds  = subordinates.map(s => s.roster_agent_id).filter(Boolean);
+          }
+        }
+      } catch(_) { /* managed_by column may not exist yet */ }
     }
 
     // Load add-on config for owners, captain/chief_officer members, and self-reporting members
@@ -2859,10 +2923,11 @@ function showPerfSubTab(name, btn) {
   if (name === 'goals') loadGoalsTab();
 }
 
-function goToAccountTab(pane) {
+function goToAccountTab(pane, targetId) {
   const btn = document.querySelector('.tab[onclick*="account"]');
   showTab('account', btn);
   if (pane) showAccountSubTab(pane);
+  if (targetId) setTimeout(() => scrollAndPulse(targetId), 200);
 }
 
 function showTab(name, btn) {
@@ -5039,6 +5104,12 @@ function renderMemberRow(m) {
   const rosterOpts = _agentRoster.map(a =>
     `<option value="${escHtml(a.agent_id)}"${m.roster_agent_id === a.agent_id ? ' selected' : ''}>${escHtml(a.name)}</option>`
   ).join('');
+  const managerCandidates = _allMembersList.filter(x =>
+    x.id !== m.id && ['captain','chief_officer'].includes(x.role) && x.status === 'active'
+  );
+  const managerOpts = managerCandidates.map(x =>
+    `<option value="${x.id}"${m.managed_by === x.id ? ' selected' : ''}>${escHtml(x.email)} (${ROLE_LABEL[x.role]})</option>`
+  ).join('');
   return `<tr>
       <td style="padding:6px 8px;border-bottom:1px solid var(--border2);font-family:'DM Mono',monospace;font-size:12px;">${escHtml(m.email)}</td>
       <td style="padding:6px 8px;border-bottom:1px solid var(--border2);">
@@ -5061,6 +5132,19 @@ function renderMemberRow(m) {
           </select>
           <button onclick="saveMemberRosterAgent('${m.id}',this)" style="background:none;border:1px solid rgba(0,212,255,.3);color:var(--accent);border-radius:5px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">Save</button>
           <span id="agent-link-msg-${m.id}" style="font-size:11px;display:none;"></span>
+        </div>
+      </td>
+    </tr>
+    <tr id="manager-row-${m.id}" ${!managerCandidates.length ? 'style="display:none"' : ''}>
+      <td colspan="4" style="padding:0 8px 8px 8px;border-bottom:1px solid var(--border2);">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="font-size:11px;color:var(--muted);">Reports to:</span>
+          <select id="manager-sel-${m.id}" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:3px 6px;font-size:12px;outline:none;">
+            <option value="">— No manager —</option>
+            ${managerOpts}
+          </select>
+          <button onclick="saveMemberManager('${m.id}',this)" style="background:none;border:1px solid rgba(0,212,255,.3);color:var(--accent);border-radius:5px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">Save</button>
+          <span id="manager-msg-${m.id}" style="font-size:11px;display:none;"></span>
         </div>
       </td>
     </tr>
@@ -5091,6 +5175,7 @@ async function loadAgencyMembers() {
     const data = await res.json();
     if (!res.ok) { container.innerHTML = `<div style="color:var(--danger);font-size:13px;">${data.error}</div>`; return; }
     if (!data.length) { container.innerHTML = '<div style="font-size:13px;color:var(--muted);">No team members yet. Invite someone below.</div>'; return; }
+    _allMembersList = data;
     container.innerHTML = `
       <table style="width:100%;border-collapse:collapse;font-size:13px;">
         <thead>
@@ -5128,6 +5213,30 @@ async function saveMemberRosterAgent(memberId, btn) {
     btn.disabled = false;
     if (msgEl) { msgEl.style.display=''; setTimeout(() => { msgEl.style.display='none'; }, 3000); }
   }
+}
+
+async function saveMemberManager(memberId, btn) {
+  const sel = document.getElementById('manager-sel-' + memberId);
+  if (!sel) return;
+  const managed_by = sel.value || null;
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/members', {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ memberId, managed_by }),
+    });
+    const d = await r.json();
+    const msg = document.getElementById('manager-msg-' + memberId);
+    if (r.ok) {
+      if (msg) { msg.textContent = 'Saved'; msg.style.color = 'var(--accent2)'; msg.style.display = ''; setTimeout(() => { msg.style.display = 'none'; }, 2000); }
+      const m = _allMembersList.find(x => x.id === memberId);
+      if (m) m.managed_by = managed_by;
+    } else {
+      if (msg) { msg.textContent = d.error || 'Failed'; msg.style.color = 'var(--danger)'; msg.style.display = ''; }
+    }
+  } catch(e) { console.error(e); }
+  btn.disabled = false;
 }
 
 async function sendTeamInvite(btn) {
@@ -5454,11 +5563,19 @@ function renderAgentRoster() {
              <input type="checkbox" id="qual-${safeId}" ${a.commission_all_must_qualify ? 'checked' : ''} onchange="saveAgentQualifier('${escHtml(a.id)}',this.checked)">
              All structures must qualify for any payout
            </label>` : '';
+      const capTotalHtml = `<div style="margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+        <span style="font-size:10px;color:var(--muted);white-space:nowrap;">Max Total Commission $</span>
+        <input id="cap-total-${safeId}" type="number" min="0" step="1" placeholder="No cap" value="${a.commission_cap_total != null ? a.commission_cap_total : ''}"
+               style="width:110px;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:3px 6px;font-size:11px;outline:none;">
+        <button onclick="saveCommissionCapTotal('${safeId}',document.getElementById('cap-total-${safeId}'),this)" style="background:none;border:1px solid rgba(0,212,255,.3);color:var(--accent);border-radius:5px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">Save</button>
+        <span style="font-size:10px;color:var(--muted);">per month total</span>
+      </div>`;
       return `<div style="margin-top:6px;padding:6px 8px;background:var(--deep);border-radius:6px;border:1px solid var(--border2);">
         <div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Commission Structures</div>
         ${assignedRows || '<div style="font-size:11px;color:var(--muted);">None assigned</div>'}
         ${addDropdown}
         ${qualLabel}
+        ${capTotalHtml}
       </div>`;
     })() : '';
     return `<div style="margin-bottom:.5rem;padding:.5rem;background:var(--card2);border:1px solid var(--border2);border-radius:8px;">
@@ -5520,6 +5637,24 @@ async function saveAgentQualifier(agentRosterId, checked) {
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'update_qualifier', id: agentRosterId, commission_all_must_qualify: checked }),
   });
+}
+
+async function saveCommissionCapTotal(agentId, input, btn) {
+  const val = parseFloat(input.value) || null;
+  btn.disabled = true;
+  const r = await fetch('/api/agent-roster', {
+    method: 'PATCH',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'update_cap_total', agent_id: agentId, commission_cap_total: val }),
+  });
+  const d = await r.json();
+  btn.disabled = false;
+  if (r.ok) {
+    const ag = _agentRoster.find(a => a.agent_id === agentId);
+    if (ag) ag.commission_cap_total = val;
+    input.style.borderColor = 'var(--accent2)';
+    setTimeout(() => input.style.borderColor = '', 1500);
+  }
 }
 
 async function assignAgentStructure(agentId, structureId) {
@@ -5681,6 +5816,8 @@ function openStructureBuilder(structure) {
   });
   buildRatesTable(structure?.rates || {});
   renderThresholdGroups();
+  document.getElementById('cs-builder-cap-policy').value    = structure?.cap_per_policy    != null ? structure.cap_per_policy    : '';
+  document.getElementById('cs-builder-cap-structure').value = structure?.cap_per_structure  != null ? structure.cap_per_structure  : '';
   const msgEl = document.getElementById('cs-builder-msg');
   if (msgEl) { msgEl.style.display = 'none'; }
   builder.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -5695,6 +5832,8 @@ function closeStructureBuilder() {
   const builder = document.getElementById('cs-builder');
   if (builder) builder.style.display = 'none';
   _csThresholds = [];
+  document.getElementById('cs-builder-cap-policy').value    = '';
+  document.getElementById('cs-builder-cap-structure').value = '';
 }
 
 // ── Production threshold state ─────────────────────────────────────────────
@@ -6020,7 +6159,15 @@ async function saveStructureFromBuilder(btn) {
   }
 
   const thresholds = collectThresholds();
-  const payload = { name, default_split_ratio: splitPct / 100, pay_on_issue: payOnIssue, thresholds, rates };
+  const payload = {
+    name,
+    default_split_ratio: splitPct / 100,
+    pay_on_issue: payOnIssue,
+    thresholds,
+    rates,
+    cap_per_policy:    parseFloat(document.getElementById('cs-builder-cap-policy').value)    || null,
+    cap_per_structure: parseFloat(document.getElementById('cs-builder-cap-structure').value)  || null,
+  };
   btn.disabled = true;
   try {
     const method = id ? 'PATCH' : 'POST';
@@ -6084,6 +6231,7 @@ function renderCommissionStructuresList() {
           <span style="font-size:11px;color:var(--muted);">Split: ${splitPrimary}/${100 - splitPrimary}</span>
           ${s.pay_on_issue ? '<span style="font-size:10px;color:var(--accent);margin-left:8px;">Pay on Issue</span>' : ''}
           ${(s.thresholds||[]).length ? `<span style="font-size:10px;color:var(--warn);margin-left:8px;" title="${(s.thresholds||[]).map(t=>`${t.label||'Group'}: ${t.min_count?t.min_count+' policies':''}${t.min_commission?` $${t.min_commission} floor`:''}${(t.requires||[]).length?' (requires others)':''}`).join(' | ')}">${s.thresholds.length} prod. group${s.thresholds.length>1?'s':''}</span>` : ''}
+          ${(s.cap_per_policy || s.cap_per_structure) ? `<span style="font-size:10px;color:var(--accent2);margin-left:8px;" title="${[s.cap_per_policy?`$${s.cap_per_policy}/policy`:'',s.cap_per_structure?`$${s.cap_per_structure}/period`:''].filter(Boolean).join(', ')} cap">&#x2B06; Cap</span>` : ''}
         </div>
         ${rateLines ? `<div style="display:flex;flex-wrap:wrap;gap:4px;">${rateLines}</div>` : ''}
       </div>
@@ -6995,10 +7143,12 @@ function renderCommissions() {
           </td>
           <td style="padding:8px 10px;text-align:center;">
             ${r.threshold_note
-              ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(255,179,0,.12);color:#ffb300;cursor:help;" title="${escHtml(r.threshold_note)}">⚠ Min not met</span>`
-              : r.recalculated
-                ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(255,179,0,.12);color:#ffb300;">⚠ Recalculated</span>`
-                : `<span style="font-size:11px;padding:2px 8px;border-radius:20px;${isPaid ? 'background:rgba(0,229,180,.15);color:var(--accent2)' : 'background:rgba(255,255,255,.06);color:var(--muted)'};">${isPaid ? 'Paid' : 'Unpaid'}</span>`}
+              ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(255,179,0,.12);color:#ffb300;cursor:help;" title="${escHtml(r.threshold_note)}">&#x26A0; Min not met</span>`
+              : r.cap_total_note
+                ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(255,179,0,.12);color:#ffb300;cursor:help;" title="${escHtml(r.cap_total_note)}">&#x2B06; Capped</span>`
+                : r.recalculated
+                  ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(255,179,0,.12);color:#ffb300;">&#x26A0; Recalculated</span>`
+                  : `<span style="font-size:11px;padding:2px 8px;border-radius:20px;${isPaid ? 'background:rgba(0,229,180,.15);color:var(--accent2)' : 'background:rgba(255,255,255,.06);color:var(--muted)'};">${isPaid ? 'Paid' : 'Unpaid'}</span>`}
           </td>
           <td style="padding:8px 10px;display:flex;gap:4px;align-items:center;">
             <button class="btn btn-secondary" style="font-size:11px;padding:3px 9px;" onclick="toggleCommBreakdown('${escHtml(r.agent_id)}')">&darr;</button>
@@ -8668,11 +8818,15 @@ function renderGoalsTab() {
   if (!el) return;
   const PT = { monthly:'Monthly', quarterly:'Quarterly', semi_annual:'Semi-Annual', annual:'Annual' };
   const ML = { wl:'WL', ul:'UL', term:'Term', health:'Health', auto:'Auto', fire:'Fire', policies:'Total Policies', premium:'Premium ($)' };
-  const filtered = _goalsViewFilter === 'all'
+  let filtered = _goalsViewFilter === 'all'
     ? _agentGoals
     : _agentGoals.filter(g => g.period_type === _goalsViewFilter);
+  // Captain/CO with managed agents only see goals for their managed agents
+  if (_isMember && _managedAgentIds.length > 0) {
+    filtered = filtered.filter(g => _managedAgentIds.includes(g.agent_id));
+  }
   if (!filtered.length) {
-    el.innerHTML = '<div style="color:var(--muted);font-size:13px;text-align:center;padding:2rem;">No goals found. Set goals in <button class="btn btn-secondary" style="padding:2px 8px;font-size:12px;" onclick="goToAccountTab(\'sales\')">Account → Sales → Team</button></div>';
+    el.innerHTML = '<div style="color:var(--muted);font-size:13px;text-align:center;padding:2rem;">No goals found. Set goals in <button class="btn btn-secondary" style="padding:2px 8px;font-size:12px;" onclick="goToAccountTab(\'sales\',\'ma-agents-section\')">Account → Sales → Team</button></div>';
     return;
   }
   const byAgent = {};
@@ -11150,7 +11304,7 @@ function displayCachedMemberAnalysis() {
 
 function maHoursMismatchUpload() {
   document.getElementById('ma-hours-mismatch-warn').style.display = 'none';
-  goToAccountTab('sales');
+  goToAccountTab('sales', 'ma-hours-section');
 }
 
 async function runMemberAnalysis(bypassHoursCheck) {

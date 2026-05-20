@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
-const SELECT = 'id, name, default_split_ratio, pay_on_issue, thresholds, rates, created_at';
+const SELECT = 'id, name, default_split_ratio, pay_on_issue, thresholds, rates, cap_per_policy, cap_per_structure, created_at';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -37,7 +37,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const { name, default_split_ratio, pay_on_issue, thresholds, rates } = req.body || {};
+    const { name, default_split_ratio, pay_on_issue, thresholds, rates, cap_per_policy, cap_per_structure } = req.body || {};
     if (!name) return res.status(400).json({ error: 'name required' });
     const { data, error } = await supabase
       .from('commission_structures')
@@ -48,6 +48,8 @@ export default async function handler(req, res) {
         pay_on_issue: pay_on_issue ?? false,
         thresholds: thresholds || [],
         rates: rates || {},
+        cap_per_policy:    cap_per_policy    ?? null,
+        cap_per_structure: cap_per_structure ?? null,
       })
       .select(SELECT)
       .single();
@@ -59,7 +61,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'PATCH') {
-    const { id, name, default_split_ratio, pay_on_issue, thresholds, rates } = req.body || {};
+    const { id, name, default_split_ratio, pay_on_issue, thresholds, rates, cap_per_policy, cap_per_structure } = req.body || {};
     if (!id) return res.status(400).json({ error: 'id required' });
     const update = {};
     if (name !== undefined)                update.name = name;
@@ -67,6 +69,8 @@ export default async function handler(req, res) {
     if (pay_on_issue !== undefined)        update.pay_on_issue = !!pay_on_issue;
     if (thresholds !== undefined)          update.thresholds = thresholds;
     if (rates !== undefined)               update.rates = rates;
+    if (cap_per_policy !== undefined)      update.cap_per_policy = cap_per_policy ?? null;
+    if (cap_per_structure !== undefined)   update.cap_per_structure = cap_per_structure ?? null;
     if (!Object.keys(update).length) return res.status(400).json({ error: 'No updatable fields provided' });
     const { data, error } = await supabase
       .from('commission_structures')

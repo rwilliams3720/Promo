@@ -64,8 +64,11 @@ function applyRate(structure, product, subcategory, premiumShare, writtenPremium
   if (subcategory && productCfg.subcategories?.[subcategory]) {
     const sub = productCfg.subcategories[subcategory];
     if (!sub.type || sub.type === 'none') return 0;
-    if (sub.type === 'percent') return premiumShare * ((sub.rate || 0) / 100);
-    if (sub.type === 'flat')    return sub.rate || 0;
+    let subComm = 0;
+    if (sub.type === 'percent') subComm = premiumShare * ((sub.rate || 0) / 100);
+    else if (sub.type === 'flat') subComm = sub.rate || 0;
+    if (structure.cap_per_policy != null && subComm > structure.cap_per_policy) subComm = structure.cap_per_policy;
+    return subComm;
   }
 
   // No subcategory override — use product default or FS rate
@@ -73,9 +76,11 @@ function applyRate(structure, product, subcategory, premiumShare, writtenPremium
 
   // Financial service rate overrides the base rate (still uses product's type)
   const rate = (isFS && productCfg.fs_rate != null) ? productCfg.fs_rate : (productCfg.rate || 0);
-  if (productCfg.type === 'percent') return premiumShare * (rate / 100);
-  if (productCfg.type === 'flat')    return rate;
-  return 0;
+  let comm = 0;
+  if (productCfg.type === 'percent') comm = premiumShare * (rate / 100);
+  else if (productCfg.type === 'flat') comm = rate;
+  if (structure.cap_per_policy != null && comm > structure.cap_per_policy) comm = structure.cap_per_policy;
+  return comm;
 }
 
 // Build a human-readable note explaining which groups blocked payout
@@ -138,7 +143,7 @@ function calcStructurePayout(agentId, struct, sales, roster, isFinancialService,
   const thresholds = struct.thresholds || [];
   if (!thresholds.length) {
     const total = Math.round(breakdown.reduce((s, b) => s + b.commission, 0) * 100) / 100;
-    return { earned: total, breakdown, threshold_note: null, group_details: null, ungrouped_earned: total };
+    return { earned: struct.cap_per_structure != null ? Math.min(total, struct.cap_per_structure) : total, breakdown, threshold_note: null, group_details: null, ungrouped_earned: total };
   }
 
   const productToGroup = {};
@@ -212,6 +217,7 @@ function calcStructurePayout(agentId, struct, sales, roster, isFinancialService,
 
   const groupPayout = thresholds.reduce((s, grp) => s + (groupStatus[grp.id]?.payout || 0), 0);
   const totalEarned = Math.round((ungrouped + groupPayout) * 100) / 100;
+  const cappedEarned = struct.cap_per_structure != null ? Math.min(totalEarned, struct.cap_per_structure) : totalEarned;
 
   const group_details = thresholds.map(grp => {
     const basePayout = (() => {
@@ -237,7 +243,7 @@ function calcStructurePayout(agentId, struct, sales, roster, isFinancialService,
   );
 
   return {
-    earned: totalEarned,
+    earned: cappedEarned,
     breakdown,
     threshold_note: anyFailed ? buildThresholdNote(thresholds, groupStatus, groupCounts, groupEarned) : null,
     group_details,
@@ -279,7 +285,7 @@ export default async function handler(req, res) {
         .eq('user_id', dataUserId)
         .or(`and(sale_date.gte.${fromDate},sale_date.lte.${toDate}),and(issued_date.gte.${fromDate},issued_date.lte.${toDate})`),
       supabase.from('agent_roster')
-        .select('agent_id, name, commission_structure_id, commission_all_must_qualify')
+        .select('agent_id, name, commission_structure_id, commission_all_must_qualify, commission_cap_total')
         .eq('user_id', dataUserId),
       supabase.from('commission_structures')
         .select('id, name, default_split_ratio, pay_on_issue, thresholds, rates')
@@ -380,7 +386,11 @@ export default async function handler(req, res) {
         for (const sd of structureDetails) { sd.earned = 0; sd.blocked_by_qualifier = true; }
       }
 
-      const totalEarned = Math.round(structureDetails.reduce((s, sd) => s + sd.earned, 0) * 100) / 100;
+      const rawTotalEarned = Math.round(structureDetails.reduce((s, sd) => s + sd.earned, 0) * 100) / 100;
+      const agentCapTotal  = agentById[agent.agent_id]?.commission_cap_total;
+      const totalEarned    = agentCapTotal != null ? Math.min(rawTotalEarned, agentCapTotal) : rawTotalEarned;
+      const capTotalNote   = (agentCapTotal != null && rawTotalEarned > agentCapTotal)
+        ? `Capped at $${agentCapTotal.toFixed(0)} (earned $${rawTotalEarned.toFixed(0)})` : null;
 
       // Flatten breakdown for chargeback processing (all structures)
       const allBreakdown = structureDetails.flatMap(sd => sd.breakdown);
@@ -398,6 +408,7 @@ export default async function handler(req, res) {
         threshold_note:    failedNotes.length > 0 ? failedNotes.join(' | ') : null,
         group_details:     structureDetails.length === 1 ? structureDetails[0].group_details : null,
         ungrouped_earned:  structureDetails.length === 1 ? structureDetails[0].ungrouped_earned : null,
+        cap_total_note:    capTotalNote,
       };
     }
 
@@ -447,7 +458,7 @@ export default async function handler(req, res) {
 
     // Build final results — include all agents from roster (even those with no sales)
     let results = roster.map(agent => {
-      const res  = agentResults[agent.agent_id] || { earned: 0, breakdown: [], threshold_note: null, group_details: null, ungrouped_earned: null, structure_details: null };
+      const res  = agentResults[agent.agent_id] || { earned: 0, breakdown: [], threshold_note: null, group_details: null, ungrouped_earned: null, structure_details: null, cap_total_note: null };
       const paid = paymentByAgent[agent.agent_id] || null;
       const cbList           = chargebacks[agent.agent_id] || [];
       const chargeback_total = Math.round(cbList.reduce((s, c) => s + c.commission, 0) * 100) / 100;
@@ -463,6 +474,7 @@ export default async function handler(req, res) {
         group_details:     res.group_details,
         ungrouped_earned:  res.ungrouped_earned,
         structure_details: res.structure_details,
+        cap_total_note:    res.cap_total_note || null,
         paid,
         bonus_earned:      agentBonus,
         chargebacks:       cbList,

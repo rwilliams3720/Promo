@@ -24,7 +24,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     const { data, error } = await supabase
       .from('agent_roster')
-      .select('id, agent_id, name, active, commission_structure_id, commission_all_must_qualify, created_at')
+      .select('id, agent_id, name, active, commission_structure_id, commission_all_must_qualify, commission_cap_total, created_at')
       .eq('user_id', userId)
       .order('name');
     if (error) return res.status(500).json({ error: error.message });
@@ -71,6 +71,16 @@ export default async function handler(req, res) {
       const { id, commission_all_must_qualify } = req.body;
       if (!id) return res.status(400).json({ error: 'id required' });
       const { error } = await supabase.from('agent_roster').update({ commission_all_must_qualify: !!commission_all_must_qualify }).eq('user_id', userId).eq('id', id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ ok: true });
+    }
+
+    if (req.body.action === 'update_cap_total') {
+      const { agent_id, commission_cap_total } = req.body;
+      if (!agent_id) return res.status(400).json({ error: 'agent_id required' });
+      const { error } = await supabase.from('agent_roster')
+        .update({ commission_cap_total: commission_cap_total ?? null })
+        .eq('user_id', userId).eq('agent_id', agent_id);
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ ok: true });
     }

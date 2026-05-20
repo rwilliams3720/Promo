@@ -20,7 +20,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     const { data, error } = await supabase
       .from('account_members')
-      .select('id, email, role, custom_tabs, roster_agent_id, status, created_at, member_user_id')
+      .select('id, email, role, custom_tabs, roster_agent_id, managed_by, status, created_at, member_user_id')
       .eq('owner_user_id', user.id)
       .neq('status', 'removed')
       .order('created_at', { ascending: false });
@@ -31,7 +31,7 @@ export default async function handler(req, res) {
 
   // ── PATCH — update role ──────────────────────────────────────────────────────
   if (req.method === 'PATCH') {
-    const { memberId, role, custom_tabs, roster_agent_id } = req.body || {};
+    const { memberId, role, custom_tabs, roster_agent_id, managed_by } = req.body || {};
     if (!memberId) return res.status(400).json({ error: 'memberId required.' });
 
     const update = {};
@@ -42,6 +42,7 @@ export default async function handler(req, res) {
       update.custom_tabs = custom_tabs || null;
     }
     if (roster_agent_id !== undefined) update.roster_agent_id = roster_agent_id || null;
+    if (managed_by !== undefined) update.managed_by = managed_by || null;
 
     if (!Object.keys(update).length) return res.status(400).json({ error: 'No updates provided.' });
 
