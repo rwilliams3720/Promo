@@ -840,10 +840,15 @@
       </div>
       <div style="overflow-x:auto;">
         <table class="tbl" id="perf-tbl">
-          <thead><tr>
-            <th style="text-align:left">Agent</th>
-            <th>Placed</th><th>Answered</th><th>VM</th><th>Missed</th>
-            <th>Talk Min</th><th>Avg Min</th><th>Max Min</th>
+          <thead><tr id="perf-thead-row">
+            <th style="text-align:left;cursor:pointer;user-select:none;white-space:nowrap" onclick="setPerfSort(1)">Agent</th>
+            <th style="cursor:pointer;user-select:none;white-space:nowrap" onclick="setPerfSort(3)">Placed</th>
+            <th style="cursor:pointer;user-select:none;white-space:nowrap" onclick="setPerfSort(4)">Answered</th>
+            <th style="cursor:pointer;user-select:none;white-space:nowrap" onclick="setPerfSort(5)">VM</th>
+            <th style="cursor:pointer;user-select:none;white-space:nowrap" onclick="setPerfSort(6)">Missed</th>
+            <th style="cursor:pointer;user-select:none;white-space:nowrap" onclick="setPerfSort(7)">Talk Min</th>
+            <th style="cursor:pointer;user-select:none;white-space:nowrap" onclick="setPerfSort(8)">Avg Min</th>
+            <th style="cursor:pointer;user-select:none;white-space:nowrap" onclick="setPerfSort(9)">Max Min</th>
           </tr></thead>
           <tbody id="perf-body"></tbody>
         </table>
@@ -2251,7 +2256,9 @@ let _pendingUploadData   = null;
 let _pendingUploadType   = null;
 let _pendingUnknownTypes = null;
 let _uploadInProgress    = false;
-let _perfData = null;
+let _perfData    = null;
+let _perfSortCol = null; // r[] index: 1=agent 3=placed 4=answered 5=vm 6=missed 7=talk 8=avg 9=max
+let _perfSortDir = 1;    // 1=asc -1=desc
 let _session  = null;
 let _adminRows = [];
 let _raceData  = [];
@@ -3813,17 +3820,54 @@ function populatePerfDates() {
   if (prev && keys.includes(prev)) sel.value = prev;
 }
 
+const PERF_COL_LABELS = { 1:'Agent', 3:'Placed', 4:'Answered', 5:'VM', 6:'Missed', 7:'Talk Min', 8:'Avg Min', 9:'Max Min' };
+
+function setPerfSort(col) {
+  if (_perfSortCol === col) {
+    _perfSortDir = -_perfSortDir;
+  } else {
+    _perfSortCol = col;
+    _perfSortDir = col === 1 ? 1 : -1; // agent sorts A→Z by default; numbers sort high→low
+  }
+  renderPerf();
+}
+
 function renderPerf() {
   if (!_perfData) return;
   const period   = document.getElementById('perf-period').value;
   const selected = document.getElementById('perf-date').value;
-  const rows = (_perfData[period] || []).filter(r => r[0] === selected);
-  const teamMap = {};
+  const allRows  = (_perfData[period] || []).filter(r => r[0] === selected);
+  const teamMap  = {};
   (_raceData || []).forEach(ag => { teamMap[ag.name] = ag.team; });
 
-  document.getElementById('perf-body').innerHTML = rows.map(r => {
-    const isTotal = r[1] === '— TEAM TOTAL —';
-    const team = !isTotal ? (teamMap[r[1]] || r[2]) : '';
+  // Keep TEAM TOTAL pinned at bottom regardless of sort
+  const totals = allRows.filter(r => r[1] === '— TEAM TOTAL —');
+  let agents   = allRows.filter(r => r[1] !== '— TEAM TOTAL —');
+
+  if (_perfSortCol !== null) {
+    agents.sort((a, b) => {
+      const av = _perfSortCol === 1 ? (a[1] || '').toLowerCase() : (Number(a[_perfSortCol]) || 0);
+      const bv = _perfSortCol === 1 ? (b[1] || '').toLowerCase() : (Number(b[_perfSortCol]) || 0);
+      return av < bv ? -_perfSortDir : av > bv ? _perfSortDir : 0;
+    });
+  }
+
+  // Update header sort indicators
+  const theadRow = document.getElementById('perf-thead-row');
+  if (theadRow) {
+    theadRow.querySelectorAll('th[onclick]').forEach(th => {
+      const col = parseInt((th.getAttribute('onclick') || '').replace(/\D/g, ''));
+      const label = PERF_COL_LABELS[col] || '';
+      th.textContent = col === _perfSortCol
+        ? label + ' ' + (_perfSortDir === 1 ? '▲' : '▼')
+        : label;
+    });
+  }
+
+  const sorted = [...agents, ...totals];
+  document.getElementById('perf-body').innerHTML = sorted.map(r => {
+    const isTotal  = r[1] === '— TEAM TOTAL —';
+    const team     = !isTotal ? (teamMap[r[1]] || r[2]) : '';
     const teamBadge = team
       ? `<span class="team-badge ${team==='sales'?'badge-sales':'badge-service'}">${team}</span>`
       : '';
