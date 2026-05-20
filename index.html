@@ -1317,7 +1317,7 @@
             <div style="background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:1rem 1.2rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1.25rem;">
               <div>
                 <div style="font-size:14px;font-weight:700;color:var(--text);">Sales Tracking <span style="font-size:11px;background:rgba(0,212,255,.12);color:var(--accent);padding:2px 8px;border-radius:4px;margin-left:6px;font-weight:600;">Active</span></div>
-                <div style="font-size:13px;color:var(--muted);margin-top:3px;">Manage agents, checklist, and product types on the <button class="btn-link" onclick="showAccountSubTab('sales',document.querySelector('[data-pane=sales]'),'ma-agents-section')">Sales tab</button>.</div>
+                <div style="font-size:13px;color:var(--muted);margin-top:3px;">Manage agents, checklist, and product types on the <button class="btn-link" onclick="goToSalesSubTab('team','ma-agents-section')">Sales tab</button>.</div>
               </div>
               <div style="font-size:1.1rem;font-weight:700;color:var(--muted);">$25<span style="font-size:12px;font-weight:400;">/mo</span></div>
             </div>
@@ -1356,7 +1356,7 @@
               <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
                 <div>
                   <div style="font-size:14px;font-weight:700;color:var(--text);">Team Member Analysis <span style="font-size:11px;background:rgba(0,212,255,.12);color:var(--accent);padding:2px 8px;border-radius:4px;margin-left:6px;font-weight:600;">Active</span></div>
-                  <div style="font-size:13px;color:var(--muted);margin-top:3px;">Configure agents on the <button class="btn-link" onclick="showAccountSubTab('sales',document.querySelector('[data-pane=sales]'),'agent-roster-list')">Sales tab</button>.</div>
+                  <div style="font-size:13px;color:var(--muted);margin-top:3px;">Configure agents on the <button class="btn-link" onclick="goToSalesSubTab('team','agent-roster-list')">Sales tab</button>.</div>
                 </div>
                 <div id="ma-active-price" style="font-size:1.1rem;font-weight:700;color:var(--muted);"></div>
               </div>
@@ -2866,6 +2866,16 @@ function showSalesSubTab(name, btn) {
   if (name === 'commissions') renderCommissionStructuresList();
   if (name === 'bonus') initBonusSubTab();
   if (name === 'access') renderSelfReportSettings();
+}
+
+// Deep-link into a specific sales sub-tab and optionally pulse a target element.
+// Use instead of goToAccountTab('sales',...) when the target lives inside a sub-tab.
+function goToSalesSubTab(subTab, targetId) {
+  const acctBtn = document.querySelector('.tab[onclick*="account"]');
+  showTab('account', acctBtn);
+  showAccountSubTab('sales');
+  showSalesSubTab(subTab);
+  if (targetId) setTimeout(() => scrollAndPulse(targetId), 250);
 }
 
 function showManageSubTab(name, btn) {
@@ -11337,7 +11347,7 @@ function displayCachedMemberAnalysis() {
 
 function maHoursMismatchUpload() {
   document.getElementById('ma-hours-mismatch-warn').style.display = 'none';
-  goToAccountTab('sales', 'ma-hours-section');
+  goToSalesSubTab('team', 'ma-hours-section');
 }
 
 async function runMemberAnalysis(bypassHoursCheck) {
@@ -11528,7 +11538,7 @@ function updateHoursLabel(lastPeriod) {
     || (_memberHoursData?.length
         ? [..._memberHoursData].sort((a,b) => new Date(b.uploaded_at||0) - new Date(a.uploaded_at||0))[0]?.period
         : null);
-  const link = `<a href="#" onclick="goToAccountTab('sales');return false;" style="color:var(--accent);">Upload →</a>`;
+  const link = `<a href="#" onclick="goToSalesSubTab('team','ma-hours-section');return false;" style="color:var(--accent);">Upload →</a>`;
   const html = period
     ? `Hours on file: <strong>${escHtml(period)}</strong> · ${link}`
     : `No hours on file · ${link}`;
