@@ -1139,6 +1139,7 @@
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
             <button class="btn btn-secondary" id="analysis-refresh-btn" onclick="runAnalysis()">Analyze</button>
             <button class="btn btn-secondary" id="analysis-email-btn" onclick="emailAnalysis()" style="display:none">Email Analysis</button>
+            <a href="#" id="ai-force-link" onclick="forceRunAnalysis();return false;" style="display:none;font-size:11px;color:var(--muted);">Re-run →</a>
           </div>
         </div>
         <div class="analysis-charts">
@@ -1210,6 +1211,7 @@
             <div class="panel-title" style="margin:0">Lead Source Analysis</div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
               <button class="btn btn-secondary" id="la-refresh-btn" onclick="runLeadAnalysis()">Analyze</button>
+              <a href="#" id="la-force-link" onclick="forceRunLeadAnalysis();return false;" style="display:none;font-size:11px;color:var(--muted);">Re-run →</a>
             </div>
           </div>
           <div id="la-analysis-body">
@@ -3977,7 +3979,8 @@ function analysisRemainingMs() {
 }
 
 function updateAnalysisBtn() {
-  const btn = document.getElementById('analysis-refresh-btn');
+  const btn       = document.getElementById('analysis-refresh-btn');
+  const forceLink = document.getElementById('ai-force-link');
   if (!btn) return;
   const remaining = analysisRemainingMs();
   if (remaining > 0) {
@@ -3986,11 +3989,12 @@ function updateAnalysisBtn() {
     const label = days > 0 ? `${days}d ${hours}h` : `${hours}h`;
     btn.disabled = true;
     btn.textContent = `Analyze (${label})`;
-    // Poll at min(remaining, 5 minutes) so button re-enables promptly when timer expires
+    if (forceLink) forceLink.style.display = '';
     setTimeout(updateAnalysisBtn, Math.min(remaining, 5 * 60 * 1000));
   } else {
     btn.disabled = false;
     btn.textContent = 'Analyze';
+    if (forceLink) forceLink.style.display = 'none';
   }
 }
 
@@ -4060,9 +4064,9 @@ function renderAnalysisTrialTeaser() {
   document.getElementById('analysis-msg').style.display = 'none';
 }
 
-async function runAnalysis() {
+async function runAnalysis(force) {
   if (_analysisLoading) return;
-  if (analysisRemainingMs() > 0) return;
+  if (!force && analysisRemainingMs() > 0) return;
   _analysisLoading = true;
   const btn  = document.getElementById('analysis-refresh-btn');
   const body = document.getElementById('analysis-body');
@@ -11277,7 +11281,8 @@ function leadAnalysisRemainingMs() {
 }
 
 function updateLeadAnalysisBtn() {
-  const btn = document.getElementById('la-refresh-btn');
+  const btn       = document.getElementById('la-refresh-btn');
+  const forceLink = document.getElementById('la-force-link');
   if (!btn) return;
   const remaining = leadAnalysisRemainingMs();
   if (remaining > 0) {
@@ -11286,10 +11291,12 @@ function updateLeadAnalysisBtn() {
     const label = days > 0 ? `${days}d ${hrs}h` : `${hrs}h`;
     btn.disabled = true;
     btn.textContent = `Analyze (${label})`;
+    if (forceLink) forceLink.style.display = '';
     setTimeout(updateLeadAnalysisBtn, Math.min(remaining, 5 * 60 * 1000));
   } else {
     btn.disabled = false;
     btn.textContent = 'Analyze';
+    if (forceLink) forceLink.style.display = 'none';
   }
 }
 
@@ -11363,9 +11370,9 @@ function _applyLeadAnalysis(data) {
   }
 }
 
-async function runLeadAnalysis() {
+async function runLeadAnalysis(force) {
   if (_leadAnalysisLoading) return;
-  if (leadAnalysisRemainingMs() > 0) return;
+  if (!force && leadAnalysisRemainingMs() > 0) return;
   _leadAnalysisLoading = true;
   const btn  = document.getElementById('la-refresh-btn');
   const body = document.getElementById('la-analysis-body');
@@ -11480,9 +11487,13 @@ function closeCreditModal() {
   document.getElementById('credit-run-modal').style.display = 'none';
 }
 
-async function forceRunMemberAnalysis() {
-  if (_isAdmin || _creditWaived) { runMemberAnalysis(false, true); return; }
-  // Always fetch fresh balance before showing modal
+// Shared credit modal — pass the callback to invoke after a successful charge.
+// Admin and credit-waived accounts skip the modal entirely.
+let _creditRunCallback = null;
+
+async function showCreditRunModal(onConfirm) {
+  if (_isAdmin || _creditWaived) { onConfirm(); return; }
+  _creditRunCallback = onConfirm;
   try {
     const r = await fetch('/api/analysis-credits', { headers: authHeaders() });
     if (r.ok) { const d = await r.json(); _analysisCredits = Number(d.balance) || 0; }
@@ -11491,11 +11502,10 @@ async function forceRunMemberAnalysis() {
   const balance = _analysisCredits !== null ? _analysisCredits : 0;
   const body    = document.getElementById('credit-run-body');
   const actions = document.getElementById('credit-run-actions');
-  const modal   = document.getElementById('credit-run-modal');
 
   if (balance >= 3) {
     body.innerHTML =
-      `<p style="margin:0 0 .6rem;">This bypasses the 5-day cooldown. Cost: <strong>$3.00</strong></p>` +
+      `<p style="margin:0 0 .6rem;">This bypasses the cooldown. Cost: <strong>$3.00</strong></p>` +
       `<div style="background:var(--deep);border:1px solid var(--border);border-radius:8px;padding:.7rem 1rem;font-size:13px;">` +
         `<div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Current balance</span><span>$${balance.toFixed(2)}</span></div>` +
         `<div style="display:flex;justify-content:space-between;margin-top:4px;"><span style="color:var(--muted);">After run</span><span>$${(balance - 3).toFixed(2)}</span></div>` +
@@ -11504,7 +11514,7 @@ async function forceRunMemberAnalysis() {
   } else {
     body.innerHTML =
       `<p style="margin:0 0 .6rem;color:var(--danger);">Insufficient balance: <strong>$${balance.toFixed(2)}</strong></p>` +
-      `<p style="margin:0 0 1rem;color:var(--muted);">You need at least $3.00 to re-run analysis. Add funds below:</p>` +
+      `<p style="margin:0 0 1rem;color:var(--muted);">You need at least $3.00 to re-run. Add funds below:</p>` +
       `<div style="display:flex;gap:8px;flex-wrap:wrap;">` +
         `<button class="btn btn-secondary" style="font-size:13px;" onclick="closeCreditModal();addAnalysisCredits(5)">Add $5</button>` +
         `<button class="btn btn-secondary" style="font-size:13px;" onclick="closeCreditModal();addAnalysisCredits(10)">Add $10</button>` +
@@ -11513,7 +11523,7 @@ async function forceRunMemberAnalysis() {
     actions.innerHTML = '';
   }
 
-  modal.style.display = 'flex';
+  document.getElementById('credit-run-modal').style.display = 'flex';
 }
 
 async function confirmCreditRun(btn) {
@@ -11536,12 +11546,16 @@ async function confirmCreditRun(btn) {
     _analysisCredits = d.balance;
     updateCreditBalanceDisplay();
     closeCreditModal();
-    runMemberAnalysis(false, true);
+    if (_creditRunCallback) { _creditRunCallback(); _creditRunCallback = null; }
   } catch(e) {
     btn.disabled = false;
     btn.textContent = 'Run — $3.00';
   }
 }
+
+function forceRunAnalysis()     { showCreditRunModal(() => runAnalysis(true)); }
+function forceRunLeadAnalysis() { showCreditRunModal(() => runLeadAnalysis(true)); }
+function forceRunMemberAnalysis() { showCreditRunModal(() => runMemberAnalysis(false, true)); }
 
 async function addAnalysisCredits(amount, btn) {
   if (btn) btn.disabled = true;
