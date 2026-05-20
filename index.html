@@ -1317,7 +1317,7 @@
             <div style="background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:1rem 1.2rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1.25rem;">
               <div>
                 <div style="font-size:14px;font-weight:700;color:var(--text);">Sales Tracking <span style="font-size:11px;background:rgba(0,212,255,.12);color:var(--accent);padding:2px 8px;border-radius:4px;margin-left:6px;font-weight:600;">Active</span></div>
-                <div style="font-size:13px;color:var(--muted);margin-top:3px;">Manage agents, checklist, and product types on the <button class="btn-link" onclick="showAccountSubTab('sales',document.querySelector('[data-pane=sales]'))">Sales tab</button>.</div>
+                <div style="font-size:13px;color:var(--muted);margin-top:3px;">Manage agents, checklist, and product types on the <button class="btn-link" onclick="showAccountSubTab('sales',document.querySelector('[data-pane=sales]'),'ma-agents-section')">Sales tab</button>.</div>
               </div>
               <div style="font-size:1.1rem;font-weight:700;color:var(--muted);">$25<span style="font-size:12px;font-weight:400;">/mo</span></div>
             </div>
@@ -1356,7 +1356,7 @@
               <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
                 <div>
                   <div style="font-size:14px;font-weight:700;color:var(--text);">Team Member Analysis <span style="font-size:11px;background:rgba(0,212,255,.12);color:var(--accent);padding:2px 8px;border-radius:4px;margin-left:6px;font-weight:600;">Active</span></div>
-                  <div style="font-size:13px;color:var(--muted);margin-top:3px;">Configure agents on the <button class="btn-link" onclick="showAccountSubTab('sales',document.querySelector('[data-pane=sales]'))">Sales tab</button>.</div>
+                  <div style="font-size:13px;color:var(--muted);margin-top:3px;">Configure agents on the <button class="btn-link" onclick="showAccountSubTab('sales',document.querySelector('[data-pane=sales]'),'agent-roster-list')">Sales tab</button>.</div>
                 </div>
                 <div id="ma-active-price" style="font-size:1.1rem;font-weight:700;color:var(--muted);"></div>
               </div>
@@ -1397,7 +1397,7 @@
             <div style="background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:1rem 1.2rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1.25rem;">
               <div>
                 <div style="font-size:14px;font-weight:700;color:var(--text);">Commissions <span style="font-size:11px;background:rgba(0,212,255,.12);color:var(--accent);padding:2px 8px;border-radius:4px;margin-left:6px;font-weight:600;">Active</span></div>
-                <div style="font-size:13px;color:var(--muted);margin-top:3px;">Manage structures and bonus types on the <button class="btn-link" onclick="showTab('perf',document.querySelector('.tab[onclick*=perf]'));showPerfSubTab('commissions',document.getElementById('perf-stab-commissions'))">Commissions tab</button>.</div>
+                <div style="font-size:13px;color:var(--muted);margin-top:3px;">Manage structures and bonus types on the <button class="btn-link" onclick="showTab('perf',document.querySelector('.tab[onclick*=perf]'));showPerfSubTab('commissions',document.getElementById('perf-stab-commissions'));setTimeout(()=>scrollAndPulse('perf-sub-commissions'),250)">Commissions tab</button>.</div>
               </div>
               <div style="font-size:1.1rem;font-weight:700;color:var(--muted);">$25<span style="font-size:12px;font-weight:400;">/mo</span></div>
             </div>
@@ -1429,7 +1429,7 @@
             <div style="background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:1rem 1.2rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1.25rem;">
               <div>
                 <div style="font-size:14px;font-weight:700;color:var(--text);">Lead Source Analysis <span style="font-size:11px;background:rgba(0,212,255,.12);color:var(--accent);padding:2px 8px;border-radius:4px;margin-left:6px;font-weight:600;">Active</span></div>
-                <div style="font-size:13px;color:var(--muted);margin-top:3px;">View insights on the <button class="btn-link" onclick="showTab('analysis',document.querySelector('.tab[onclick*=analysis]'));showAnalysisSubTab('leadsources',document.getElementById('analysis-stab-leadsources'))">Lead Sources tab</button>.</div>
+                <div style="font-size:13px;color:var(--muted);margin-top:3px;">View insights on the <button class="btn-link" onclick="showTab('analysis',document.querySelector('.tab[onclick*=analysis]'));showAnalysisSubTab('leadsources',document.getElementById('analysis-stab-leadsources'));setTimeout(()=>scrollAndPulse('la-content'),250)">Lead Sources tab</button>.</div>
               </div>
               <div style="font-size:1.1rem;font-weight:700;color:var(--muted);">$10<span style="font-size:12px;font-weight:400;">/mo</span></div>
             </div>
@@ -1448,7 +1448,7 @@
         <!-- Locked (no add-on) -->
         <div id="sales-pane-locked" style="display:none;padding:2rem 0;">
           <p style="font-size:14px;color:var(--muted);margin-bottom:1.25rem;">Sales Tracking is not active on your account.</p>
-          <button class="btn btn-primary" onclick="showAccountSubTab('billing',document.querySelector('[data-pane=billing]'))">Add Sales Tracking — $25/mo</button>
+          <button class="btn btn-primary" onclick="showAccountSubTab('billing',document.querySelector('[data-pane=billing]'),'sales-addon-section')">Add Sales Tracking — $25/mo</button>
         </div>
 
         <!-- Content (has add-on) -->
@@ -2845,13 +2845,14 @@ async function handleSignOut() {
 }
 
 // ── TABS ──────────────────────────────────────────────────────────────────────
-function showAccountSubTab(name, btn) {
+function showAccountSubTab(name, btn, targetId) {
   document.querySelectorAll('#tab-account .acct-pane').forEach(p => p.style.display = 'none');
   document.querySelectorAll('#acct-subtab-nav .acct-stab').forEach(b => b.classList.remove('active'));
   const pane = document.getElementById('acct-pane-' + name);
   if (pane) pane.style.display = '';
   const activeBtn = btn || document.querySelector(`#acct-subtab-nav [data-pane="${name}"]`);
   if (activeBtn) activeBtn.classList.add('active');
+  if (targetId) setTimeout(() => scrollAndPulse(targetId), 200);
 }
 
 function showSalesSubTab(name, btn) {
@@ -4305,28 +4306,32 @@ function selectHistMonth(month) {
 // ── ACCOUNT TAB ───────────────────────────────────────────────────────────────
 const ADDONS = [
   {
-    key:   'sales_tracking',
+    key:       'sales_tracking',
+    sectionId: 'sales-addon-section',
     label: 'Sales Tracking',
     desc:  'Manual sales entry, shareable checklist link, and subcategory tracking.',
     price: '$25/mo',
     active: acct => !!(acct.has_sales_addon),
   },
   {
-    key:   'member_analysis',
+    key:       'member_analysis',
+    sectionId: 'member-analysis-section',
     label: 'Team Member Analysis',
     desc:  'Individual month-over-month coaching analysis — score, policies, and premium per agent.',
     price: '$10/head/mo',
     active: acct => !!(acct.has_member_analysis),
   },
   {
-    key:   'commissions',
+    key:       'commissions',
+    sectionId: 'commissions-addon-section',
     label: 'Commissions',
     desc:  'Tiered structures, escalators, activity bonuses, chargebacks, and payment tracking.',
     price: '$25/mo',
     active: acct => !!(acct.has_commissions_addon),
   },
   {
-    key:   'lead_analysis',
+    key:       'lead_analysis',
+    sectionId: 'lead-analysis-addon-section',
     label: 'Lead Source Analysis',
     desc:  'AI analysis of channel performance — volume, avg premium, trend momentum, and agent-source fit.',
     price: '$10/mo',
@@ -4351,7 +4356,7 @@ function renderAddonsOverview(acct) {
         <span style="font-size:13px;font-weight:600;color:var(--muted);">${escHtml(addon.price)}</span>
         ${badge}
         <button class="btn btn-secondary" style="padding:3px 12px;font-size:12px;"
-                onclick="showAccountSubTab('billing',document.querySelector('[data-pane=billing]'))">Manage</button>
+                onclick="showAccountSubTab('billing',document.querySelector('[data-pane=billing]'),'${escHtml(addon.sectionId)}')">Manage</button>
       </div>
     </div>`;
   }).join('');
@@ -11395,7 +11400,7 @@ function renderMemberAnalysisTeaser() {
         Get individual month-over-month coaching analysis for each of your team members —
         trends, strengths, gaps, and group standings — refreshed every 5 days.
       </p>
-      <button class="btn btn-primary" onclick="showAccountSubTab('billing',document.querySelector('[data-pane=billing]'));showTab('account',document.getElementById('accountTab'));">
+      <button class="btn btn-primary" onclick="showTab('account',document.querySelector('.tab[onclick*=account]'));showAccountSubTab('billing',document.querySelector('[data-pane=billing]'),'member-analysis-section')">
         Add Team Member Analysis — $10/head/mo
       </button>
     </div>`;
@@ -11765,6 +11770,7 @@ async function maHoursSave(btn) {
     if (periodInput) periodInput.value = '';
     _maHoursFileRows = []; _maHoursHeaders = [];
     showInlineMsg('ma-hours-msg', `Data saved for "${period}". Re-run analysis to include efficiency data.`, 'ok');
+    setTimeout(() => scrollAndPulse('ma-hours-periods'), 150);
   } catch(e) {
     showInlineMsg('ma-hours-msg', e.message, 'err');
   } finally {
