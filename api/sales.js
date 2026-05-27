@@ -55,11 +55,31 @@ function sha256Short(input) {
   return crypto.createHash('sha256').update(input, 'utf8').digest('hex').slice(0, 16);
 }
 
-function privacyName(fullName) {
-  if (!fullName) return '';
-  const parts = fullName.trim().split(/\s+/);
-  if (parts.length === 1) return parts[0].slice(0, 2);
-  return parts[0].slice(0, 2) + ' ' + parts.slice(1).join(' ');
+const ENCRYPTION_KEY = process.env.CUSTOMER_ENCRYPTION_KEY
+  ? Buffer.from(process.env.CUSTOMER_ENCRYPTION_KEY, 'hex')
+  : null;
+
+function encryptField(text) {
+  if (!text) return null;
+  if (!ENCRYPTION_KEY) return text;
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', ENCRYPTION_KEY, iv);
+  const encrypted = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return iv.toString('base64') + ':' + encrypted.toString('base64') + ':' + tag.toString('base64');
+}
+
+function decryptField(ciphertext) {
+  if (!ciphertext) return null;
+  if (!ENCRYPTION_KEY || !ciphertext.includes(':')) return ciphertext;
+  try {
+    const [ivB64, encB64, tagB64] = ciphertext.split(':');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', ENCRYPTION_KEY, Buffer.from(ivB64, 'base64'));
+    decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
+    return decipher.update(Buffer.from(encB64, 'base64')) + decipher.final('utf8');
+  } catch {
+    return ciphertext;
+  }
 }
 
 async function resolveUser(token) {
@@ -151,7 +171,11 @@ export default async function handler(req, res) {
       unissuedData = d2 || [];
     }
 
-    return res.status(200).json({ entries: [...(monthData || []), ...unissuedData] });
+    const entries = [...(monthData || []), ...unissuedData].map(row => ({
+      ...row,
+      customer_name: decryptField(row.customer_name),
+    }));
+    return res.status(200).json({ entries });
   }
 
   // ── POST: create manual entry ─────────────────────────────────────────────
@@ -168,9 +192,9 @@ export default async function handler(req, res) {
     if (!product || !saleDate) return res.status(400).json({ error: 'product and saleDate required' });
     if (!leadSource) return res.status(400).json({ error: 'lead source required' });
 
-    const privName   = privacyName(customerName || '');
+    const normalizedName = (customerName || '').toLowerCase().trim();
     const resolvedIssuedDate = autoIssued ? saleDate : (issuedDate || null);
-    const hash = sha256Short([agentId || '', product, subcategory || '', saleDate, writtenPremium || '', privName].join('|'));
+    const hash = sha256Short([agentId || '', product, subcategory || '', saleDate, writtenPremium || '', normalizedName].join('|'));
 
     const { error } = await supabase.from('sales_log').upsert({
       user_id:         dataUserId,
@@ -182,7 +206,7 @@ export default async function handler(req, res) {
       issued_date:     resolvedIssuedDate,
       written_premium: writtenPremium ? parseFloat(writtenPremium) : null,
       source:          'manual',
-      customer_name:   privName       || null,
+      customer_name:   encryptField(customerName || '') || null,
       lead_source:     leadSource     || null,
       period:          period         ? parseInt(period) : null,
       auto_issued:     autoIssued     ?? null,
@@ -216,7 +240,7 @@ export default async function handler(req, res) {
     for (const k of allowed) {
       if (fields[k] !== undefined) update[k] = fields[k];
     }
-    if (update.customer_name)   update.customer_name   = privacyName(update.customer_name);
+    if (update.customer_name !== undefined) update.customer_name = encryptField(update.customer_name) || null;
     if (update.written_premium) update.written_premium = parseFloat(update.written_premium);
     if (update.split_ratio != null) update.split_ratio = parseFloat(update.split_ratio) || null;
     if (fields.is_cancelled !== undefined) update.is_cancelled = !!fields.is_cancelled;

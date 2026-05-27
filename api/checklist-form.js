@@ -75,12 +75,18 @@ function sha256Short(input) {
   return crypto.createHash('sha256').update(input, 'utf8').digest('hex').slice(0, 16);
 }
 
-// First 2 chars of first name + full last name
-function privacyName(fullName) {
-  if (!fullName) return '';
-  const parts = fullName.trim().split(/\s+/);
-  if (parts.length === 1) return parts[0].slice(0, 2);
-  return parts[0].slice(0, 2) + ' ' + parts.slice(1).join(' ');
+const ENCRYPTION_KEY = process.env.CUSTOMER_ENCRYPTION_KEY
+  ? Buffer.from(process.env.CUSTOMER_ENCRYPTION_KEY, 'hex')
+  : null;
+
+function encryptField(text) {
+  if (!text) return null;
+  if (!ENCRYPTION_KEY) return text;
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', ENCRYPTION_KEY, iv);
+  const encrypted = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return iv.toString('base64') + ':' + encrypted.toString('base64') + ':' + tag.toString('base64');
 }
 
 function defaultEmailConfig(companyName) {
@@ -179,7 +185,7 @@ export default async function handler(req, res) {
     if (!acct.has_sales_addon)  return res.status(403).json({ error: 'Feature not active' });
 
     const userId        = acct.user_id;
-    const privName      = privacyName(customerName);
+    const encryptedName = encryptField(customerName);
 
     const extendedCompletions = {
       ...( formCompletions || {} ),
@@ -196,7 +202,7 @@ export default async function handler(req, res) {
         user_id:          userId,
         sub_date:         subDate,
         appt_date:        apptDate || null,
-        customer_name:    privName,
+        customer_name:    encryptedName,
         salesperson_id:   salespersonId || null,
         form_completions: extendedCompletions,
       })
@@ -223,7 +229,7 @@ export default async function handler(req, res) {
         sale_date:      subDate,
         written_premium: s.writtenPremium ? parseFloat(s.writtenPremium) : null,
         source:         'checklist',
-        customer_name:  privName,
+        customer_name:  encryptedName,
         lead_source:    s.leadSource   || null,
         period:         s.period       ? parseInt(s.period)  : null,
         auto_issued:    s.autoIssued   ?? null,
@@ -241,9 +247,8 @@ export default async function handler(req, res) {
     return res.status(200).json({
       ok: true,
       submissionId,
-      privacyName: privName,
       emailPayload: {
-        subject:      (emailCfg.subject || 'New Customer — Checklist Completed').replace('[CustomerName]', privName),
+        subject:      (emailCfg.subject || 'New Customer — Checklist Completed').replace('[CustomerName]', customerName),
         agencyName:   emailCfg.agency_name  || acct.company_name || '',
         agentName:    emailCfg.agent_name   || '',
         agentPhone:   emailCfg.agent_phone  || '',
@@ -272,7 +277,7 @@ export default async function handler(req, res) {
         resourcesTitleEs: emailCfg.resources_title_es || null,
         resourcesLinksEs: emailCfg.resources_links_es || null,
         thankYouEs:       emailCfg.thank_you_es       || null,
-        customerName: privName,
+        customerName,
         subDate,
         apptDate:        apptDate      || null,
         apptTime:        apptTime      || null,
