@@ -117,7 +117,7 @@ Browser (index.html, served by Vercel)
 | `api/signup.js` | Creates auth user via Admin API + sends admin notification email via Resend |
 | `api/invite.js` | Invite lifecycle: create, validate token, accept (creates sub-user), resend |
 | `api/members.js` | Agency member CRUD: list, update role, remove |
-| `api/sales.js` | Manual/checklist sales CRUD; supports is_cancelled + chargeback_date; member self-reporting |
+| `api/sales.js` | Manual/checklist sales CRUD; supports is_cancelled, chargeback_date, sale_weight; split sales create two rows at 0.5 weight each; member self-reporting |
 | `api/agent-roster.js` | Agent roster CRUD + multi-structure PATCH actions |
 | `api/checklist-config.js` | Sales config GET/PATCH; returns commission_structure_ids per agent; update_self_report action |
 | `api/checklist-form.js` | Public checklist form — token-gated; writes checklist_submissions + sales_log |
@@ -134,6 +134,9 @@ Browser (index.html, served by Vercel)
 | `agent-roster-migration.sql` | agent_roster table + RLS + seed from race_data |
 | `lead-sources-migration.sql` | Adds `lead_sources (jsonb)` column to accounts |
 | `credits-migration.sql` | Adds `credit_balance numeric` and `credit_waived boolean` columns to accounts |
+| `member-analysis-migration.sql` | Team Member Analysis columns on accounts including `member_analysis_agents_set_at` |
+| `split-sale-migration.sql` | Adds `sale_weight numeric DEFAULT 1` to sales_log; back-fills 0.5 for existing split sales |
+| `commission-bank-migration.sql` | Adds `commission_bank_config jsonb` to accounts; creates `commission_bank` ledger table |
 | `vercel.json` | Builds + routes |
 | `package.json` | Dependencies: `@supabase/supabase-js`, `xlsx` |
 
@@ -165,7 +168,8 @@ All data tables have a `user_id uuid` column (FK → auth.users) and RLS policy 
 | `sales_log` | Every classified sale (upload, manual, checklist) | `(user_id, hash)` |
 | `historical_wins` | Archived end-of-month per-agent results | `(user_id, month, agent_id)` |
 | `historical_months` | Archived end-of-month team-level aggregates for trend charts | `(user_id, month)` |
-| `race_config` | Key-value store — `current_month` | `(user_id, key)` |
+| `race_config` | Key-value store — `current_month`, `last_upload_at` | `(user_id, key)` |
+| `commission_bank` | Commission deferral ledger — one row per agent per month | `(user_id, agent_id, month)` |
 | `scoring_config` | Point values per category | `(user_id, config_key)` |
 | `account_members` | Sub-user invite/access records | `id (uuid)` |
 | `agent_roster` | Per-account agent list for manual sales entry dropdowns | `(user_id, agent_id)` |
@@ -193,6 +197,13 @@ Added by `credits-migration.sql`:
 `credit_balance (numeric default 0)` — pre-paid credit wallet; deducted $3 per on-demand analysis re-run.
 `credit_waived (boolean default false)` — when true, the account can re-run analyses without spending credits (waived by admin). Admins (`is_admin=true`) always bypass credits on their own account regardless of this flag.
 
+Added by `member-analysis-migration.sql`:
+`has_member_analysis (boolean default false)`, `member_analysis_count (smallint default 0)`, `member_analysis_agents (jsonb default '[]')`, `member_analysis_agents_set_at (timestamptz)`, `member_analysis_cache (jsonb)`, `member_analysis_at (timestamptz)`, `member_hours_data (jsonb)`.
+**`member_analysis_agents_set_at` is required** — the PATCH in `api/member-analysis.js` always saves both `member_analysis_agents` and `member_analysis_agents_set_at` in a single UPDATE. If this column is missing the entire update fails silently, so agent selection never persists.
+
+Added by `commission-bank-migration.sql`:
+`commission_bank_config (jsonb default '{}')` — shape: `{ enabled, cap_per_period, interest_rate, interest_period }`. Managed in Account → Sales → Commissions sub-tab.
+
 ### account_members columns
 `id (uuid PK), owner_user_id, member_user_id (nullable until accepted), email, role ('captain'|'chief_officer'|'bosun'|'custom'), custom_tabs (jsonb), status ('invited'|'active'|'removed'), invite_token (unique, nullable after accept), invite_expires_at, created_at`
 UNIQUE(owner_user_id, email)
@@ -210,6 +221,7 @@ Base (from upload): `user_id, hash, agent_id, product, sale_date, written_premiu
 Added by `directive2-migration.sql`: `source ('upload'|'manual'|'checklist'), customer_name, subcategory, lead_source, period (smallint), auto_issued (boolean), split_sale (boolean), teammate, checklist_id (uuid FK → checklist_submissions)`
 Added manually: `issued_date (date)` — run `ALTER TABLE sales_log ADD COLUMN IF NOT EXISTS issued_date date;`
 Added for chargebacks: `is_cancelled (boolean default false)`, `chargeback_date (date)` — when `is_cancelled=true` and `chargeback_date` falls in the commission month, a negative line item is deducted from the agent's commissions.
+Added by `split-sale-migration.sql`: `sale_weight (numeric NOT NULL DEFAULT 1)` — split sales create two rows each with `sale_weight=0.5`; `api/commissions.js` multiplies policy rates by this weight so split sales count as half a policy each.
 
 `other` and `deposit` products do NOT increment policy counts in race_data (excluded in `rebuildRaceData`).
 
@@ -310,6 +322,35 @@ Shows last 200 manual + checklist entries. Gated by `_hasSalesAddon || _isAdmin`
 
 `cl-appt-location` shown only when Meeting Type = "In Person". `cl-location` shown whenever `_clLocations.length > 0`.
 
+### Checklist Email Template — Spanish (Dual-Language)
+
+The customer email sent after a checklist form submission supports full Spanish. The agency maintains separate English and Spanish template fields; no AI translation is used.
+
+**UI** — Account → Sales → Email: an English | Español tab toggle (`etSetLang(lang)`) shows/hides the respective field groups. All structural labels and user-customized text have independent Spanish fields. Leaving a Spanish field blank falls back to the built-in `ET_DEFAULT_*_ES` constant for that section.
+
+**Pre-built Spanish defaults** (`ET_DEFAULT_BODY_PARA1_ES`, `ET_DEFAULT_BODY_PARA2_ES`, `ET_DEFAULT_IMPORTANT_TITLE_ES`, `ET_DEFAULT_IMPORTANT_BODY_ES`, `ET_DEFAULT_RESOURCES_TITLE_ES`, `ET_DEFAULT_RESOURCES_LINKS_ES`, `ET_DEFAULT_THANK_YOU_ES`) — written directly into `index.html`; the feature works without any configuration.
+
+**Storage** — all `*_es` fields are stored in `accounts.checklist_email_config` alongside their English counterparts:
+`greeting_es, footer_es, body_para1_es, body_para2_es, important_title_es, important_body_es, resources_title_es, resources_links_es, thank_you_es`
+
+**Rendering** — `buildCustomerEmailHtmlEs(payload)` wraps `buildCustomerEmailHtml(esPayload, esFormItems)`:
+- Merges `*Es` payload fields over English fields, falling back to `ET_DEFAULT_*_ES` constants
+- Builds `esFormItems` map using each form item's `title_es / description_es / link_label_es` (falls back to English)
+- Post-processes the returned HTML to replace hardcoded English strings: `'YOUR NEXT APPOINTMENT'` → `'SU PRÓXIMA CITA'`, `'>Best regards,<'` → `'>Atentamente,<'`
+
+`buildCustomerEmailHtml` accepts an optional `formItemsOverride` second parameter to avoid global state mutation; `buildCustomerEmailHtmlEs` uses this to pass the derived Spanish items map.
+
+### Checklist Form Items — Spanish Fields
+
+Each form item (GSD, DSS, SCD, etc.) has an English | Español tab panel in Account → Sales → Email → Form Items. `fiSetLang(lang)` toggles `.fi-lang-en` / `.fi-lang-es` CSS classes across all item panels simultaneously.
+
+**Spanish fields per item** (stored in `checklist_email_config.formConfig[key]`):
+- `title_es` — Spanish title (falls back to English `title` when blank)
+- `description_es` — Spanish description
+- `link_label_es` — Spanish link label (link URL is shared with English)
+
+`saveFormItems()` collects and persists these fields via `PATCH /api/checklist-config` with `action: 'update formTypes'`. `buildCustomerEmailHtmlEs` reads them from `_clFormItems` at send time.
+
 ### api/sales.js — resolveUser
 Checks `is_admin` and sets `hasSalesAddon = true` for admins. Members must be captain/chief_officer, OR have `self_report_config.sales_enabled = true` on the owner account. Non-captain/CO members auto-fill their own `agent_id` from `roster_agent_id`.
 
@@ -317,7 +358,7 @@ Checks `is_admin` and sets `hasSalesAddon = true` for admins. Members must be ca
 `GET /api/sales` supports optional `fromDate` and `toDate` query params (YYYY-MM-DD). Used by `spLoad()` in Sales Performance for custom date ranges.
 
 ### Agent Roster
-`agent_roster` is the canonical source for manual entry agent dropdowns. `agent_id` in roster must match `agent_id` in `race_data` for manual sales to roll up correctly.
+`agent_roster` is the canonical source for manual entry agent dropdowns. `agent_id` in roster must match `agent_id` in `race_data` for manual sales to roll up correctly. `refreshAgentDropdowns()` is called automatically after every add, edit, or delete operation to keep all live dropdowns in sync without a page reload.
 
 Debug query:
 ```sql
@@ -369,6 +410,19 @@ Expanding a row shows per-structure breakdown when multiple structures assigned.
 - `add_commission_structure`: upserts into `agent_commission_structures` with auto sort_order
 - `remove_commission_structure`: deletes from junction table
 - `update_qualifier`: sets `commission_all_must_qualify` on the agent_roster row
+
+### Commission Bank
+
+Defers a configurable portion of earned commissions across periods (e.g., hold-back for chargebacks, interest accrual).
+
+**`commission_bank_config jsonb`** (on `accounts`):
+```json
+{ "enabled": true, "cap_per_period": 500, "interest_rate": 0.05, "interest_period": "monthly" }
+```
+Managed in Account → Sales → Commissions sub-tab.
+
+**`commission_bank` table** — ledger of deferred/banked amounts per agent per month:
+PK `(user_id, agent_id, month)`. Each row records how much was deferred that period and whether it has been released.
 
 ## Activity Bonuses
 
@@ -801,6 +855,9 @@ Returns `{ supabaseUrl, supabaseKey }`. Returns HTTP 500 if env vars missing.
 9. Run `lead-sources-migration.sql` (adds `lead_sources jsonb` to accounts)
 10. Run commissions migration SQL (see below)
 11. Run `credits-migration.sql` (adds `credit_balance` and `credit_waived` to accounts)
+12. Run `member-analysis-migration.sql` (Team Member Analysis columns — **must include `member_analysis_agents_set_at`**)
+13. Run `split-sale-migration.sql` (adds `sale_weight` to sales_log)
+14. Run `commission-bank-migration.sql` (adds `commission_bank_config` to accounts + creates `commission_bank` table)
 
 ### Commissions + Activity Bonuses migration
 ```sql
