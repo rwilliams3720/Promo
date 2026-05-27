@@ -29,7 +29,7 @@ async function rebuildRaceData(dataUserId, agentIds) {
 
   const { data: salesRows } = await supabase
     .from('sales_log')
-    .select('agent_id, product')
+    .select('agent_id, product, sale_weight')
     .eq('user_id', dataUserId)
     .in('agent_id', ids);
 
@@ -39,7 +39,7 @@ async function rebuildRaceData(dataUserId, agentIds) {
     const cat = row.product;
     if (cat === 'other' || cat === 'deposit' || cat === 'skip' || !row.agent_id) continue;
     if (!totals[row.agent_id]) continue;
-    if (totals[row.agent_id][cat] !== undefined) totals[row.agent_id][cat]++;
+    if (totals[row.agent_id][cat] !== undefined) totals[row.agent_id][cat] += (row.sale_weight ?? 1);
   }
 
   const now = new Date().toISOString();
@@ -157,7 +157,7 @@ export default async function handler(req, res) {
   // ── POST: create manual entry ─────────────────────────────────────────────
   if (req.method === 'POST') {
     let { agentId, product, subcategory, saleDate, issuedDate, writtenPremium, customerName,
-          leadSource, period, autoIssued, splitSale, splitRatio, teammate, location } = req.body || {};
+          leadSource, period, autoIssued, splitSale, splitRatio, teammate, location, saleWeight } = req.body || {};
 
     // Non-captain/CO members can only submit for themselves
     if (ctx.isMember && !ctx.isCapOrCO) {
@@ -193,10 +193,11 @@ export default async function handler(req, res) {
       location:        location       || null,
       is_cancelled:    false,
       chargeback_date: null,
+      sale_weight:     saleWeight != null ? parseFloat(saleWeight) : 1,
     }, { onConflict: 'user_id,hash', ignoreDuplicates: false });
 
     if (error) return res.status(500).json({ error: error.message });
-    const agentIds = agentId ? [agentId] : [];
+    const agentIds = [agentId, teammate].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i);
     await rebuildRaceData(dataUserId, agentIds);
     return res.status(200).json({ ok: true, hash });
   }
@@ -210,7 +211,7 @@ export default async function handler(req, res) {
 
     const allowed = ['agent_id','product','subcategory','sale_date','issued_date','written_premium',
                      'customer_name','lead_source','period','auto_issued','split_sale','split_ratio','teammate','hidden','location',
-                     'is_cancelled','chargeback_date'];
+                     'is_cancelled','chargeback_date','sale_weight'];
     const update = {};
     for (const k of allowed) {
       if (fields[k] !== undefined) update[k] = fields[k];

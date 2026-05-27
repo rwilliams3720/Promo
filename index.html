@@ -506,8 +506,12 @@
 
     <!-- Customer Email tab -->
     <div id="cl-tab-customer" style="flex:1;overflow-y:auto;padding:0;display:none;">
-      <div style="padding:.75rem 1.5rem;background:var(--card2);border-bottom:1px solid var(--border);font-size:13px;color:var(--muted);">
-        Copy this email, then paste directly into a new Outlook message — formatting is preserved.
+      <div style="padding:.75rem 1.5rem;background:var(--card2);border-bottom:1px solid var(--border);font-size:13px;color:var(--muted);display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+        <span>Copy this email, then paste directly into a new Outlook message — formatting is preserved.</span>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;white-space:nowrap;">
+          <input type="checkbox" id="cl-spanish-toggle" onchange="clToggleSpanish(this.checked)" style="width:15px;height:15px;">
+          Español
+        </label>
       </div>
       <div id="cl-email-preview-body" style="background:#f4f8fc;"></div>
       <div style="padding:1rem 1.5rem;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;">
@@ -1587,7 +1591,8 @@
           <!-- Agent Roster -->
           <div class="acct-section">
             <h3>Agent Roster</h3>
-            <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Agents available in manual entry and checklist dropdowns. Upload mode auto-adds agents from your files.</p>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:.5rem;">Agents available in manual entry and checklist dropdowns. Upload mode auto-adds agents from your files.</p>
+            <div style="background:rgba(0,212,255,.07);border:1px solid rgba(0,212,255,.2);border-radius:8px;padding:.55rem .85rem;margin-bottom:.75rem;font-size:12px;color:var(--muted);">&#128161; <strong style="color:var(--text);">Tip:</strong> If using manual entry or the checklist, upload a call report first — agent names are synced automatically from your phone system files.</div>
             <div id="agent-roster-list" style="margin-bottom:.75rem;"></div>
             <div style="display:flex;gap:8px;align-items:center;">
               <input id="new-agent-name" type="text" placeholder="Agent display name" style="flex:1;max-width:260px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;">
@@ -1913,6 +1918,32 @@
 
             <!-- Structures list -->
             <div id="cs-structures-list"></div>
+          </div>
+
+          <!-- Commission Bank config -->
+          <div class="acct-section" id="commission-bank-config-section">
+            <h3>Commission Bank</h3>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Smooth out large commission payouts by capping what's paid per period. Excess rolls into a bank and can be drawn down in lower-earning months. Optionally earn interest on the banked balance.</p>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:.75rem;">
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+                <input type="checkbox" id="bank-enabled" onchange="toggleBankFields(this.checked)">
+                Enable Commission Bank
+              </label>
+            </div>
+            <div id="bank-config-fields" style="display:none;grid-template-columns:1fr 1fr 1fr;gap:.75rem;margin-bottom:.75rem;">
+              <div>
+                <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">CAP PER PERIOD ($)</label>
+                <input id="bank-cap" type="number" min="0" step="100" placeholder="e.g. 5000" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;">
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">ANNUAL INTEREST RATE (%)</label>
+                <input id="bank-rate" type="number" min="0" max="100" step="0.1" placeholder="0" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;">
+              </div>
+              <div style="display:flex;align-items:flex-end;">
+                <button class="btn btn-primary" style="font-size:13px;" onclick="saveBankConfig(this)">Save Bank Config</button>
+              </div>
+            </div>
+            <div id="bank-config-msg" style="font-size:13px;display:none;"></div>
           </div>
 
           </div><!-- /sales-sub-commissions -->
@@ -2356,6 +2387,7 @@ let _hasSalesAddon    = false;
 let _salesEntryMode   = 'upload';   // 'upload' | 'manual'
 // ── Commissions Add-On state ─────────────────────────────────────────────────
 let _hasCommissionsAddon = false;
+let _commissionBankConfig = {};     // { enabled, cap_per_period, interest_rate }
 let _commissionStructures = [];     // [{id, name, default_split_ratio, rates}]
 let _activityTypes        = [];     // [{id, name, category, subcategory, source, call_disposition, active}]
 let _bonusLogEntries      = [];
@@ -2919,7 +2951,7 @@ function showSalesSubTab(name, btn) {
   document.querySelectorAll('#sales-pane-content .acct-stab').forEach(b => b.classList.remove('active'));
   const activeBtn = btn || document.getElementById('sales-stab-' + name);
   if (activeBtn) activeBtn.classList.add('active');
-  if (name === 'commissions') renderCommissionStructuresList();
+  if (name === 'commissions') { renderCommissionStructuresList(); renderBankConfigFields(); }
   if (name === 'bonus') initBonusSubTab();
   if (name === 'access') renderSelfReportSettings();
 }
@@ -3064,6 +3096,11 @@ async function loadRaceData() {
   const month = (rcRes.data || []).find(r => r.key === 'current_month')?.value || '';
   document.getElementById('header-month').textContent = month || 'No race data uploaded';
   _raceCurrentMonth = month;
+
+  // Last upload time — stored in race_config so all users see the same value
+  const lastUploadAt = (rcRes.data || []).find(r => r.key === 'last_upload_at')?.value || '';
+  const luEl = document.getElementById('last-upload-time');
+  if (luEl) luEl.textContent = lastUploadAt ? new Date(lastUploadAt).toLocaleString() : '—';
 
   const EXTRA_CATS = ['deposit','other','other2','other3','other4','other5'];
   const depOthCounts = {};
@@ -3605,7 +3642,10 @@ function handleFile(type, input) {
         + (json.new != null ? `<br><span>${json.new} new record${json.new !== 1 ? 's' : ''} inserted</span>` : '')
         + (json.skipped ? `<br><span class="warn">${json.skipped} duplicate${json.skipped !== 1 ? 's' : ''} skipped</span>` : '');
 
-      document.getElementById('last-upload-time').textContent = new Date().toLocaleString();
+      await _supabase.from('race_config').upsert(
+        { user_id: _dataUserId, key: 'last_upload_at', value: new Date().toISOString() },
+        { onConflict: 'user_id,key' }
+      );
       await loadRaceData();
     } catch(err) {
       document.getElementById('ul-' + type).innerHTML = `<span class="err">Error: ${err.message}</span>`;
@@ -3720,7 +3760,10 @@ async function submitTypeMapper() {
     logEl.innerHTML = `<span class="ok">${json.message || 'Upload complete'}</span>`
       + (json.new != null ? `<br><span>${json.new} new record${json.new !== 1 ? 's' : ''} inserted</span>` : '')
       + (json.skipped ? `<br><span class="warn">${json.skipped} duplicate${json.skipped !== 1 ? 's' : ''} skipped</span>` : '');
-    document.getElementById('last-upload-time').textContent = new Date().toLocaleString();
+    await _supabase.from('race_config').upsert(
+      { user_id: _dataUserId, key: 'last_upload_at', value: new Date().toISOString() },
+      { onConflict: 'user_id,key' }
+    );
     await loadRaceData();
   } catch(err) {
     logEl.innerHTML = `<span class="err">Error: ${err.message}</span>`;
@@ -3758,6 +3801,10 @@ async function submitColMapper() {
       const json = await res.json();
       if (!res.ok || json.success === false) { logEl.innerHTML = `<span class="err">Error: ${json.error || 'Upload failed'}</span>`; return; }
       logEl.innerHTML = `<span class="ok">${json.message || 'Upload complete after mapping.'}</span>`;
+      await _supabase.from('race_config').upsert(
+        { user_id: _dataUserId, key: 'last_upload_at', value: new Date().toISOString() },
+        { onConflict: 'user_id,key' }
+      );
       await loadRaceData();
     } catch(err) {
       logEl.innerHTML = `<span class="err">Error: ${err.message}</span>`;
@@ -5737,6 +5784,27 @@ function renderAgentRoster() {
   }).join('');
 }
 
+// Refreshes all live agent dropdowns in open manual-entry and checklist rows
+function refreshAgentDropdowns() {
+  const activeRoster = _agentRoster.filter(a => a.active !== false);
+  const agentOpts = '<option value="">— Select —</option>' +
+    activeRoster.map(a => `<option value="${escHtml(a.agent_id)}">${escHtml(a.name)}</option>`).join('');
+  const tmOpts = '<option value="">— optional —</option>' +
+    activeRoster.map(a => `<option value="${escHtml(a.agent_id)}">${escHtml(a.name)}</option>`).join('');
+  document.querySelectorAll('#manual-sales-rows .msr-agent').forEach(sel => {
+    const cur = sel.value; sel.innerHTML = agentOpts; sel.value = cur;
+  });
+  document.querySelectorAll('#manual-sales-rows .msr-teammate-sel').forEach(sel => {
+    const cur = sel.value; sel.innerHTML = tmOpts; sel.value = cur;
+  });
+  document.querySelectorAll('#cl-sales-rows .clrow-teammate-sel').forEach(sel => {
+    const cur = sel.value; sel.innerHTML = tmOpts; sel.value = cur;
+  });
+  // Refresh member-analysis picker if the section is visible
+  const maContainer = document.getElementById('ma-agent-picker');
+  if (maContainer && maContainer.offsetParent !== null) renderMemberAnalysisAgentPicker();
+}
+
 function startEditRosterName(id, agentId) {
   const label = document.getElementById('rn-label-' + agentId);
   if (!label) return;
@@ -5768,7 +5836,11 @@ async function saveRosterName(id, agentId, triggerEl) {
   if (r.ok) {
     const a = _agentRoster.find(x => x.id === id);
     if (a) a.name = newName;
+    // Also update race_data so race tab reflects the new name immediately
+    const rd = _raceData.find(r => r.agent_id === agentId);
+    if (rd) { rd.name = newName; renderRace(_raceData); }
     renderAgentRoster();
+    refreshAgentDropdowns();
   } else {
     const d = await r.json().catch(() => ({}));
     if (saveBtn) saveBtn.disabled = false;
@@ -5964,6 +6036,47 @@ function buildRatesTable(existingRates) {
 
     return html;
   }).join('');
+}
+
+// ── Commission Bank config ────────────────────────────────────────────────────
+function toggleBankFields(enabled) {
+  const fields = document.getElementById('bank-config-fields');
+  if (fields) fields.style.display = enabled ? 'grid' : 'none';
+}
+
+function renderBankConfigFields() {
+  const cfg = _commissionBankConfig || {};
+  const enabledCb = document.getElementById('bank-enabled');
+  if (enabledCb) enabledCb.checked = cfg.enabled || false;
+  const capInput  = document.getElementById('bank-cap');
+  if (capInput)  capInput.value = cfg.cap_per_period != null ? cfg.cap_per_period : '';
+  const rateInput = document.getElementById('bank-rate');
+  if (rateInput) rateInput.value = cfg.interest_rate != null ? cfg.interest_rate : '';
+  toggleBankFields(cfg.enabled || false);
+}
+
+async function saveBankConfig(btn) {
+  const enabledCb = document.getElementById('bank-enabled');
+  const capInput  = document.getElementById('bank-cap');
+  const rateInput = document.getElementById('bank-rate');
+  const msg       = document.getElementById('bank-config-msg');
+  const enabled   = enabledCb?.checked || false;
+  const capVal  = capInput?.value  ? parseFloat(capInput.value)  : null;
+  const rateVal = rateInput?.value ? parseFloat(rateInput.value) : 0;
+  _commissionBankConfig = { enabled, cap_per_period: capVal, interest_rate: rateVal };
+  if (btn) btn.disabled = true;
+  try {
+    const { error } = await _supabase.from('accounts')
+      .update({ commission_bank_config: _commissionBankConfig })
+      .eq('user_id', _userId);
+    if (error) throw error;
+    if (msg) { msg.style.display = 'block'; msg.style.color = 'var(--accent2)'; msg.textContent = 'Bank config saved.'; setTimeout(() => { msg.style.display = 'none'; }, 2500); }
+    loadCommissions(); // refresh commission display with new bank config
+  } catch(e) {
+    if (msg) { msg.style.display = 'block'; msg.style.color = 'var(--danger)'; msg.textContent = e.message || 'Save failed'; }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 function openStructureBuilder(structure) {
@@ -7248,6 +7361,10 @@ async function loadCommissions() {
     const r = await fetch(`/api/commissions?month=${_commMonth}`, { headers: authHeaders() });
     if (!r.ok) { if (wrap) wrap.innerHTML = '<span style="color:var(--danger);font-size:13px;">Error loading commissions.</span>'; return; }
     _commData = await r.json();
+    if (_commData.bank_config) {
+      _commissionBankConfig = _commData.bank_config;
+      renderBankConfigFields();
+    }
     renderCommissions();
     if (_isMember) populateWhatIfProducts();
   } catch(e) {
@@ -7458,6 +7575,24 @@ function renderCommissions() {
                 </table>`;
             })() : ''}`;
             })()}
+            ${r.bank_summary ? (() => {
+              const bs  = r.bank_summary;
+              const fmt = n => '$' + (n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+              const items = [
+                ['Bank Balance (start)', fmt(bs.balance_before)],
+                bs.interest > 0 ? ['Interest', `+${fmt(bs.interest)}`] : null,
+                bs.banked   > 0 ? ['Banked this month', `+${fmt(bs.banked)}`] : null,
+                bs.drawdown > 0 ? ['Drawn from bank', `-${fmt(bs.drawdown)}`] : null,
+                ['Paid Out', `<strong>${fmt(bs.paid_out)}</strong>`],
+                ['Bank Balance (end)', `<strong>${fmt(bs.balance_after)}</strong>`],
+              ].filter(Boolean);
+              return `<div style="margin-top:10px;padding:8px 10px;background:rgba(123,97,255,.06);border:1px solid rgba(123,97,255,.2);border-radius:6px;">
+                <div style="font-size:11px;font-weight:700;color:#7b61ff;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Commission Bank${bs.cap != null ? ` — Cap ${fmt(bs.cap)}/mo` : ''}</div>
+                <div style="display:grid;grid-template-columns:auto 1fr;gap:3px 16px;font-size:12px;">
+                  ${items.map(([k,v]) => `<span style="color:var(--muted);">${k}</span><span style="text-align:right;">${v}</span>`).join('')}
+                </div>
+              </div>`;
+            })() : ''}
             ${(r.chargebacks && r.chargebacks.length) ? (() => {
               const fmt = n => '$' + (n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
               return `<div style="margin-top:10px;padding:8px;background:rgba(255,107,107,.05);border:1px solid rgba(255,107,107,.15);border-radius:6px;">
@@ -7493,6 +7628,9 @@ function toggleCommBreakdown(agentId) {
 }
 
 function openPayForm(agentId, agentName, earned, month) {
+  // Find bank_summary for this agent from last loaded commission data
+  const agentRow = (_commData?.results || []).find(r => r.agent_id === agentId);
+  const bankSummary = agentRow?.bank_summary || null;
   const container = document.getElementById('comm-pay-modal');
   if (!container) return;
   const existing = _commPayments[agentId] || null;
@@ -7517,24 +7655,28 @@ function openPayForm(agentId, agentName, earned, month) {
       </div>
       <div id="pay-msg" style="font-size:12px;margin-bottom:.5rem;display:none;"></div>
       <div style="display:flex;gap:8px;">
-        <button class="btn btn-primary" style="font-size:13px;" onclick="saveCommissionPayment('${escHtml(agentId)}','${escHtml(month)}',this)">Save</button>
+        <button class="btn btn-primary" style="font-size:13px;" onclick="saveCommissionPayment('${escHtml(agentId)}','${escHtml(month)}',this,${bankSummary ? `'${escHtml(JSON.stringify(bankSummary))}'` : 'null'})">Save</button>
         <button class="btn btn-secondary" style="font-size:13px;" onclick="document.getElementById('comm-pay-modal').style.display='none'">Cancel</button>
       </div>
     </div>`;
   container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-async function saveCommissionPayment(agentId, month, btn) {
+async function saveCommissionPayment(agentId, month, btn, bankSummaryJson) {
   const amountPaid = parseFloat(document.getElementById('pay-amount')?.value);
   const paidDate   = document.getElementById('pay-date')?.value || null;
   const notes      = document.getElementById('pay-notes')?.value || null;
   if (isNaN(amountPaid) || amountPaid < 0) { showInlineMsg('pay-msg', 'Enter a valid amount.', 'err'); return; }
   btn.disabled = true;
+  let bankEntry = null;
+  if (bankSummaryJson) {
+    try { bankEntry = JSON.parse(bankSummaryJson); } catch(_) {}
+  }
   try {
     const r = await fetch('/api/commissions', {
       method: 'PATCH',
       headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ agentId, month, amountPaid, paidDate, notes }),
+      body: JSON.stringify({ agentId, month, amountPaid, paidDate, notes, bankEntry }),
     });
     if (!r.ok) { const d = await r.json(); showInlineMsg('pay-msg', d.error || 'Error', 'err'); return; }
     document.getElementById('comm-pay-modal').style.display = 'none';
@@ -7682,6 +7824,7 @@ async function addAgentToRoster(btn) {
     _agentRoster.sort((a, b) => a.name.localeCompare(b.name));
     input.value = '';
     renderAgentRoster();
+    refreshAgentDropdowns();
   } catch(e) { showInlineMsg('agent-roster-msg', e.message, 'err'); }
   finally { btn.disabled = false; }
 }
@@ -7698,6 +7841,7 @@ async function deleteAgentRoster(id, btn) {
   if (r.ok) {
     _agentRoster = _agentRoster.filter(a => a.id !== id);
     renderAgentRoster();
+    refreshAgentDropdowns();
   } else { btn.disabled = false; }
 }
 
@@ -9150,15 +9294,18 @@ function manualAddRow(opts = {}) {
         <button class="btn btn-danger" style="padding:4px 10px;font-size:12px;" onclick="document.getElementById('msr-${id}').remove()">Remove</button>
       </div>
     </div>
-    <div id="msr-teammate-row-${id}" style="display:none;margin-top:.5rem;display:none;">
+    <div id="msr-teammate-row-${id}" style="display:none;margin-top:.5rem;">
       <div style="display:flex;gap:.75rem;align-items:flex-end;flex-wrap:wrap;">
         <div>
-          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">TEAMMATE NAME</label>
-          <input class="msr-teammate" type="text" placeholder="Teammate name" style="${msrInputStyle()}; max-width:240px;">
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">TEAMMATE</label>
+          <select class="msr-teammate-sel" style="${msrSelectStyle()}; max-width:240px;">
+            <option value="">— Select agent —</option>
+            ${_agentRoster.filter(a => a.active !== false).map(a => `<option value="${escHtml(a.agent_id)}">${escHtml(a.name)}</option>`).join('')}
+          </select>
         </div>
         <div>
           <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">PRIMARY %</label>
-          <input class="msr-split-ratio" type="number" min="1" max="99" value="50" placeholder="Primary %" style="${msrInputStyle()}; max-width:90px;">
+          <input class="msr-split-ratio" type="number" min="1" max="99" value="50" placeholder="%" style="${msrInputStyle()}; max-width:90px;">
         </div>
       </div>
     </div>
@@ -9218,27 +9365,48 @@ async function manualSubmitAll(btn) {
     const leadSource = row.querySelector('.msr-source')?.value;
     if (!product || !saleDate || !leadSource) { errors++; continue; }
     const subcategory = subcatRaw.includes('|') ? subcatRaw.split('|')[1] : '';
-    const body = {
-      agentId:       row.querySelector('.msr-agent')?.value      || null,
+    const isSplit   = row.querySelector('.msr-split')?.checked ?? false;
+    const ratioRaw  = isSplit ? parseFloat(row.querySelector('.msr-split-ratio')?.value || '50') : 100;
+    const ratio     = Math.min(Math.max(ratioRaw, 1), 99) / 100;
+    const premRaw   = row.querySelector('.msr-prem')?.value || null;
+    const premFloat = premRaw ? parseFloat(premRaw) : null;
+    const teammateId= isSplit ? (row.querySelector('.msr-teammate-sel')?.value || null) : null;
+    const primaryAgent = row.querySelector('.msr-agent')?.value || null;
+    const baseBody = {
       product,
-      subcategory:   subcategory                                  || null,
+      subcategory:   subcategory    || null,
       saleDate,
-      writtenPremium:row.querySelector('.msr-prem')?.value        || null,
       customerName:  row.querySelector('.msr-cust')?.value        || '',
       leadSource:    row.querySelector('.msr-source')?.value      || null,
       period:        row.querySelector('.msr-period')?.value      || null,
       autoIssued:    row.querySelector('.msr-issued')?.checked    ?? null,
       issuedDate:    row.querySelector('.msr-issued-date')?.value || null,
-      splitSale:     row.querySelector('.msr-split')?.checked     ?? null,
-      splitRatio:    row.querySelector('.msr-split')?.checked && row.querySelector('.msr-split-ratio')?.value
-                       ? parseFloat(row.querySelector('.msr-split-ratio').value) / 100 || 0.5
-                       : null,
-      teammate:      row.querySelector('.msr-teammate')?.value    || null,
       location:      row.querySelector('.msr-location')?.value    || null,
+      splitSale:     isSplit                                      || null,
+    };
+    const body = {
+      ...baseBody,
+      agentId:        primaryAgent,
+      writtenPremium: premFloat != null ? (isSplit ? +(premFloat * ratio).toFixed(2) : premFloat) : null,
+      splitRatio:     isSplit ? ratio : null,
+      teammate:       teammateId,
+      saleWeight:     isSplit ? 0.5 : 1,
     };
     const r = await fetch('/api/sales', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (r.ok) { saved++; row.remove(); }
-    else errors++;
+    if (!r.ok) { errors++; continue; }
+    // Second entry for teammate when split sale
+    if (isSplit && teammateId) {
+      const body2 = {
+        ...baseBody,
+        agentId:        teammateId,
+        writtenPremium: premFloat != null ? +(premFloat * (1 - ratio)).toFixed(2) : null,
+        splitRatio:     1 - ratio,
+        teammate:       primaryAgent,
+        saleWeight:     0.5,
+      };
+      await fetch('/api/sales', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body2) });
+    }
+    saved++; row.remove();
   }
   btn.disabled = false;
   msg.style.display = 'block';
@@ -10435,7 +10603,10 @@ function clAddSaleRow() {
     </div>
     <div id="clrow-teammate-${id}" style="display:none;margin-bottom:.5rem;">
       <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">TEAMMATE</label>
-      <input class="clrow-teammate" type="text" placeholder="Teammate name" style="${msrInputStyle()};max-width:240px;">
+      <select class="clrow-teammate-sel" style="${msrSelectStyle()};max-width:240px;">
+        <option value="">— Select agent —</option>
+        ${(_clAgents || _agentRoster.filter(a => a.active !== false)).map(a => `<option value="${escHtml(a.agent_id || a.id)}">${escHtml(a.name)}</option>`).join('')}
+      </select>
     </div>
     <div style="text-align:right;">
       <button class="btn btn-danger" style="padding:3px 10px;font-size:12px;" onclick="document.getElementById('clrow-${id}').remove()">Remove Row</button>
@@ -10639,9 +10810,10 @@ async function clSubmit() {
       writtenPremium: row.querySelector('.clrow-prem')?.value  || null,
       period:         row.querySelector('.clrow-period')?.value || null,
       leadSource:     row.querySelector('.clrow-source')?.value || null,
-      autoIssued:     row.querySelector('.clrow-issued')?.checked ?? null,
-      splitSale:      row.querySelector('.clrow-split')?.checked  ?? null,
-      teammate:       row.querySelector('.clrow-teammate')?.value || null,
+      autoIssued:     row.querySelector('.clrow-issued')?.checked            ?? null,
+      splitSale:      row.querySelector('.clrow-split')?.checked             ?? null,
+      teammate:       row.querySelector('.clrow-teammate-sel')?.value        || null,
+      saleWeight:     row.querySelector('.clrow-split')?.checked ? 0.5 : 1,
     });
   }
 
@@ -10651,11 +10823,11 @@ async function clSubmit() {
     const premEl = rowEl.querySelector('.clrow-prem');
     const srcEl  = rowEl.querySelector('.clrow-source');
     const splitEl = rowEl.querySelector('.clrow-split');
-    const tmEl    = rowEl.querySelector('.clrow-teammate');
+    const tmEl    = rowEl.querySelector('.clrow-teammate-sel');
     if (prodEl && !prodEl.value) clErr(prodEl, 'Product is required.');
     if (premEl && !premEl.value) clErr(premEl, 'Premium is required.');
     if (srcEl  && !srcEl.value)  clErr(srcEl,  'Lead source is required.');
-    if (splitEl?.checked && tmEl && !tmEl.value) clErr(tmEl, 'Teammate name is required.');
+    if (splitEl?.checked && tmEl && !tmEl.value) clErr(tmEl, 'Teammate is required.');
   });
 
   const agentDisplayName = _clAgents.find(a => a.agent_id === salespersonId)?.name || salespersonId || '';
@@ -10756,7 +10928,10 @@ function buildSummaryEmail(payload) {
     if (s.subcategory)    line += ` — ${s.subcategory}`;
     if (s.writtenPremium) line += ` ($${parseFloat(s.writtenPremium).toFixed(2)})`;
     if (s.autoIssued)     line += ' ✓ Auto Issued';
-    if (s.splitSale)      line += ` — Split w/ ${s.teammate || 'TBD'}`;
+    if (s.splitSale) {
+      const tmName = _agentRoster.find(a => a.agent_id === s.teammate)?.name || _clAgents?.find(a => a.agent_id === s.teammate)?.name || s.teammate || 'TBD';
+      line += ` — Split w/ ${tmName}`;
+    }
     return line;
   });
 
@@ -10917,7 +11092,54 @@ ${footerRows}
   return { bodyHtml, fullHtml };
 }
 
+// Spanish translation: rewrites all static template strings; user-configured content stays as-is
+function buildCustomerEmailHtmlEs(payload) {
+  // Translate fixed UI labels embedded in the email structure
+  const esPayload = Object.assign({}, payload);
+  // Override/wrap the static English labels in buildCustomerEmailHtml with Spanish equivalents
+  // We re-call buildCustomerEmailHtml but inject Spanish overrides for the structural labels
+  const ES = {
+    apptLabel:       'SU PRÓXIMA CITA',
+    bestRegards:     'Atentamente,',
+    importantTitle:  payload.importantTitle || 'Información Importante',
+    resourcesTitle:  payload.resourcesTitle || 'Recursos Útiles',
+  };
+  // Rebuild with Spanish structural labels by temporarily patching the payload
+  const orig = buildCustomerEmailHtml(esPayload);
+
+  // Post-process: replace the hardcoded English structural strings with Spanish
+  let { bodyHtml, fullHtml } = orig;
+  const replacements = [
+    ['YOUR NEXT APPOINTMENT', 'SU PRÓXIMA CITA'],
+    ['>Best regards,<', '>Atentamente,<'],
+  ];
+  for (const [en, es] of replacements) {
+    bodyHtml = bodyHtml.split(en).join(es);
+    fullHtml = fullHtml.split(en).join(es);
+  }
+  return { bodyHtml, fullHtml };
+}
+
+let _clSpanish = false;
+let _clEmailPayloadRef = null; // set by showChecklistEmailModal for re-render
+
+function clToggleSpanish(isSpanish) {
+  _clSpanish = isSpanish;
+  if (!_clEmailPayloadRef) return;
+  const cust = isSpanish
+    ? buildCustomerEmailHtmlEs(_clEmailPayloadRef)
+    : buildCustomerEmailHtml(_clEmailPayloadRef);
+  _clCustHtml = cust.fullHtml;
+  document.getElementById('cl-email-preview-body').innerHTML = cust.bodyHtml;
+}
+
 function showChecklistEmailModal(payload) {
+  _clEmailPayloadRef = payload;
+  // Reset Spanish toggle on each new submission
+  _clSpanish = false;
+  const spToggle = document.getElementById('cl-spanish-toggle');
+  if (spToggle) spToggle.checked = false;
+
   // Build internal summary
   const sum = buildSummaryEmail(payload);
   _clSummarySubject = sum.subject;
@@ -11167,10 +11389,14 @@ function renderMemberAnalysisAgentPicker() {
   });
 
   container.innerHTML = agents.map(ag => {
-    const checked = selectedIds.has(ag.id) ? 'checked' : '';
-    return `<label style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--card2);border:1px solid var(--border2);border-radius:8px;font-size:13px;${locked ? 'opacity:.55;cursor:not-allowed;' : 'cursor:pointer;'}">
+    const isChecked = selectedIds.has(ag.id);
+    const checked = isChecked ? 'checked' : '';
+    // When locked: selected agents cannot be removed; unselected can still be added if a seat is open
+    const seatAvailable = isAdmin || selectedIds.size < count;
+    const disableThis = locked && (isChecked || !seatAvailable);
+    return `<label style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--card2);border:1px solid var(--border2);border-radius:8px;font-size:13px;${disableThis ? 'opacity:.55;cursor:not-allowed;' : 'cursor:pointer;'}">
       <input type="checkbox" value="${escHtml(ag.id)}" data-name="${escHtml(ag.name)}" ${checked}
-             ${locked ? 'disabled' : `onchange="enforceMaLimit(this,${isAdmin ? 9999 : count})"`}>
+             ${disableThis ? 'disabled' : `onchange="enforceMaLimit(this,${isAdmin ? 9999 : count})"`}>
       ${escHtml(ag.name)}
     </label>`;
   }).join('');
@@ -11214,9 +11440,9 @@ function renderMemberAnalysisAgentPicker() {
     lockEl.textContent = '';
   }
 
-  // Save button state
+  // Save button: disabled only when fully locked (no open seats and nothing can be changed)
   const saveBtn = container.closest('.acct-section')?.querySelector('button[onclick*="saveMemberAnalysisAgents"]');
-  if (saveBtn) saveBtn.disabled = locked;
+  if (saveBtn) saveBtn.disabled = locked && (selectedIds.size >= count && !isAdmin);
 
   if (!locked) updateMaCounter();
 }

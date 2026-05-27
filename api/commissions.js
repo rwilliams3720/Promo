@@ -9,14 +9,14 @@ async function resolveUser(token) {
 
   const { data: acct } = await supabase
     .from('accounts')
-    .select('has_commissions_addon, is_admin')
+    .select('has_commissions_addon, is_admin, commission_bank_config')
     .eq('user_id', user.id)
     .single();
 
   if (acct) {
     // Owner path
     const hasAddon = acct.has_commissions_addon || acct.is_admin || false;
-    return { userId: user.id, dataUserId: user.id, hasAddon, isOwner: true, memberAgentId: null };
+    return { userId: user.id, dataUserId: user.id, hasAddon, isOwner: true, memberAgentId: null, bankConfig: acct.commission_bank_config || {} };
   }
 
   // Member path
@@ -31,7 +31,7 @@ async function resolveUser(token) {
 
   const { data: ownerAcct } = await supabase
     .from('accounts')
-    .select('has_commissions_addon, is_admin')
+    .select('has_commissions_addon, is_admin, commission_bank_config')
     .eq('user_id', member.owner_user_id)
     .single();
 
@@ -43,6 +43,7 @@ async function resolveUser(token) {
     isOwner: false,
     memberRole: member.role,
     memberAgentId: member.roster_agent_id || null,
+    bankConfig: ownerAcct?.commission_bank_config || {},
   };
 }
 
@@ -262,7 +263,7 @@ export default async function handler(req, res) {
   if (!ctx) return res.status(401).json({ error: 'Invalid token or insufficient access' });
   if (!ctx.hasAddon) return res.status(403).json({ error: 'Commissions add-on required' });
 
-  const { dataUserId, isOwner, memberAgentId } = ctx;
+  const { dataUserId, isOwner, memberAgentId, bankConfig } = ctx;
 
   // ── GET: calculate commissions for a month ───────────────────────────────────
   if (req.method === 'GET') {
@@ -279,7 +280,7 @@ export default async function handler(req, res) {
 
     // Fetch all needed data in parallel
     // Sales: broad OR filter — sale_date OR issued_date within the month (for pay_on_issue support)
-    const [salesRes, rosterRes, structuresRes, subcatsRes, agentStructsRes] = await Promise.all([
+    const [salesRes, rosterRes, structuresRes, subcatsRes, agentStructsRes, bankLedgerRes] = await Promise.all([
       supabase.from('sales_log')
         .select('hash, agent_id, product, subcategory, written_premium, split_sale, split_ratio, teammate, sale_date, issued_date, is_cancelled, chargeback_date')
         .eq('user_id', dataUserId)
@@ -297,6 +298,11 @@ export default async function handler(req, res) {
         .select('agent_id, commission_structure_id, sort_order')
         .eq('user_id', dataUserId)
         .order('sort_order'),
+      // Prior bank ledger entries to compute running balance
+      supabase.from('commission_bank')
+        .select('agent_id, month, bank_balance_after')
+        .eq('user_id', dataUserId)
+        .order('created_at', { ascending: false }),
     ]);
 
     if (salesRes.error)      return res.status(500).json({ error: salesRes.error.message });
@@ -456,6 +462,20 @@ export default async function handler(req, res) {
     const paymentByAgent = {};
     for (const p of (payments || [])) paymentByAgent[p.agent_id] = p;
 
+    // Commission bank: build per-agent prior balance lookup
+    const bankEnabled   = bankConfig?.enabled || false;
+    const bankCap       = bankConfig?.cap_per_period != null ? parseFloat(bankConfig.cap_per_period) : null;
+    const bankRate      = parseFloat(bankConfig?.interest_rate || 0) / 100; // annual rate → decimal
+
+    // Most recent prior bank_balance_after per agent (excluding current month)
+    const priorBankBalance = {};
+    for (const row of (bankLedgerRes.data || [])) {
+      if (row.month === label) continue; // skip current month
+      if (priorBankBalance[row.agent_id] == null) {
+        priorBankBalance[row.agent_id] = parseFloat(row.bank_balance_after) || 0;
+      }
+    }
+
     // Build final results — include all agents from roster (even those with no sales)
     let results = roster.map(agent => {
       const res  = agentResults[agent.agent_id] || { earned: 0, breakdown: [], threshold_note: null, group_details: null, ungrouped_earned: null, structure_details: null, cap_total_note: null };
@@ -463,8 +483,39 @@ export default async function handler(req, res) {
       const cbList           = chargebacks[agent.agent_id] || [];
       const chargeback_total = Math.round(cbList.reduce((s, c) => s + c.commission, 0) * 100) / 100;
       const agentBonus       = bonusEarned[agent.agent_id] || 0;
-      const net_earned       = Math.round((res.earned - chargeback_total) * 100) / 100;
-      const recalculated     = paid != null && Math.abs(parseFloat(paid.amount_paid) - (res.earned + agentBonus - chargeback_total)) > 0.01;
+      const net_earned       = Math.round((res.earned + agentBonus - chargeback_total) * 100) / 100;
+      const recalculated     = paid != null && Math.abs(parseFloat(paid.amount_paid) - net_earned) > 0.01;
+
+      // Commission bank projection
+      let bank_summary = null;
+      if (bankEnabled) {
+        const balanceBefore = priorBankBalance[agent.agent_id] || 0;
+        const interest      = Math.round(balanceBefore * (bankRate / 12) * 100) / 100; // monthly interest
+        const availableTotal = net_earned + balanceBefore + interest;
+
+        let paid_out, banked, drawdown;
+        if (bankCap != null) {
+          if (net_earned >= bankCap) {
+            // Earned over cap — pay cap, bank the rest
+            paid_out = bankCap;
+            banked   = Math.round((net_earned - bankCap) * 100) / 100;
+            drawdown = 0;
+          } else {
+            // Earned under cap — draw from bank to top up (if balance available)
+            const deficit = bankCap - net_earned;
+            drawdown = Math.min(deficit, balanceBefore + interest);
+            paid_out = Math.round((net_earned + drawdown) * 100) / 100;
+            banked   = 0;
+          }
+        } else {
+          paid_out = net_earned;
+          banked   = 0;
+          drawdown = 0;
+        }
+        const balanceAfter = Math.round((balanceBefore + interest + banked - drawdown) * 100) / 100;
+        bank_summary = { balance_before: balanceBefore, interest, banked, drawdown, paid_out, balance_after: balanceAfter, cap: bankCap };
+      }
+
       return {
         agent_id:          agent.agent_id,
         name:              agent.name,
@@ -481,6 +532,7 @@ export default async function handler(req, res) {
         chargeback_total,
         net_earned,
         recalculated,
+        bank_summary,
       };
     });
 
@@ -492,14 +544,14 @@ export default async function handler(req, res) {
       results = results.filter(r => r.agent_id === memberAgentId);
     }
 
-    return res.status(200).json({ results, month: label });
+    return res.status(200).json({ results, month: label, bank_config: bankConfig });
   }
 
   // ── PATCH: upsert commission payment ────────────────────────────────────────
   if (req.method === 'PATCH') {
     if (!isOwner) return res.status(403).json({ error: 'Only the account owner can record payments' });
 
-    const { month, agentId, amountPaid, paidDate, notes } = req.body || {};
+    const { month, agentId, amountPaid, paidDate, notes, bankEntry } = req.body || {};
     if (!month || !agentId) return res.status(400).json({ error: 'month and agentId required' });
 
     const { error } = await supabase
@@ -514,6 +566,27 @@ export default async function handler(req, res) {
       }, { onConflict: 'user_id,month,agent_id' });
 
     if (error) return res.status(500).json({ error: error.message });
+
+    // Save commission bank ledger entry if bank data was provided
+    if (bankEntry) {
+      try {
+        await supabase.from('commission_bank').upsert({
+          user_id:             dataUserId,
+          agent_id:            agentId,
+          month,
+          earned:              parseFloat(bankEntry.earned)         || 0,
+          cap_amount:          bankEntry.cap       != null ? parseFloat(bankEntry.cap)          : null,
+          paid_out:            parseFloat(bankEntry.paid_out)       || 0,
+          banked_amount:       parseFloat(bankEntry.banked)         || 0,
+          interest_amount:     parseFloat(bankEntry.interest)       || 0,
+          bank_balance_before: parseFloat(bankEntry.balance_before) || 0,
+          bank_balance_after:  parseFloat(bankEntry.balance_after)  || 0,
+          drawdown_amount:     parseFloat(bankEntry.drawdown)       || 0,
+          updated_at:          new Date().toISOString(),
+        }, { onConflict: 'user_id,agent_id,month' });
+      } catch (_) { /* commission_bank table may not be migrated yet */ }
+    }
+
     return res.status(200).json({ ok: true });
   }
 

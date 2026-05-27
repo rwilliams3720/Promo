@@ -94,6 +94,11 @@ Browser (index.html, served by Vercel)
     → PATCH action=update_type | update_entry | set_status (approve/reject)
     → DELETE ?resource=types|entries
     → Members with self_report_config.activities_enabled can submit; requires_approval → status=pending
+  ↓ GET /api/analysis-credits  (Authorization: Bearer <jwt>)
+    → returns { balance } from accounts.credit_balance
+  ↓ POST /api/analysis-credits  (Authorization: Bearer <jwt>)
+    → action=charge_run: deducts $3 from credit_balance; 402 if insufficient
+    → action=checkout: creates Stripe one-time Checkout session ($5/$10/$20 via price_data); Stripe initialized lazily inside branch only
 ```
 
 ## Key Files
@@ -122,11 +127,13 @@ Browser (index.html, served by Vercel)
 | `api/commissions.js` | Per-agent commission calculation — multi-structure, chargebacks, bonus_earned, recalculation flag |
 | `api/commission-structures.js` | CRUD for commission_structures table |
 | `api/bonus-activities.js` | Activity type + entry CRUD with approval workflow and call-log auto-aggregation |
+| `api/analysis-credits.js` | Credit wallet: GET balance, POST charge_run ($3 deduct), POST checkout (Stripe one-time payment) |
 | `setup.sql` | Full migration — run once in Supabase SQL Editor |
 | `members-migration.sql` | Directive 1 migration — account_members table + RLS policies |
 | `directive2-migration.sql` | Directive 2 migration — sales tracking tables + accounts columns |
 | `agent-roster-migration.sql` | agent_roster table + RLS + seed from race_data |
 | `lead-sources-migration.sql` | Adds `lead_sources (jsonb)` column to accounts |
+| `credits-migration.sql` | Adds `credit_balance numeric` and `credit_waived boolean` columns to accounts |
 | `vercel.json` | Builds + routes |
 | `package.json` | Dependencies: `@supabase/supabase-js`, `xlsx` |
 
@@ -138,7 +145,7 @@ Browser (index.html, served by Vercel)
 | `SUPABASE_ANON_KEY` | `/api/config` → browser | Public key for client-side auth + reads |
 | `SUPABASE_SERVICE_KEY` | upload, history, perf, admin, signup | Service role key — bypasses RLS for server writes |
 | `RESEND_API_KEY` | email-report, ai-analysis, signup | Resend API key for all outbound email |
-| `STRIPE_SECRET_KEY` | stripe-checkout, addon-checkout, commissions-checkout, stripe-webhook, stripe-portal | Stripe secret key |
+| `STRIPE_SECRET_KEY` | stripe-checkout, addon-checkout, commissions-checkout, analysis-credits, stripe-webhook, stripe-portal | Stripe secret key |
 | `STRIPE_WEBHOOK_SECRET` | stripe-webhook | Webhook signature verification |
 | `STRIPE_PRICE_BASIC` | stripe-checkout, stripe-webhook | Stripe price ID for Basic plan |
 | `STRIPE_PRICE_PRO` | stripe-checkout, stripe-webhook | Stripe price ID for Pro plan |
@@ -181,6 +188,10 @@ Added by `lead-sources-migration.sql`:
 
 Added for commissions/self-reporting:
 `has_commissions_addon (boolean default false)`, `self_report_config (jsonb default '{}')` — see Self-Reporting section.
+
+Added by `credits-migration.sql`:
+`credit_balance (numeric default 0)` — pre-paid credit wallet; deducted $3 per on-demand analysis re-run.
+`credit_waived (boolean default false)` — when true, the account can re-run analyses without spending credits (waived by admin). Admins (`is_admin=true`) always bypass credits on their own account regardless of this flag.
 
 ### account_members columns
 `id (uuid PK), owner_user_id, member_user_id (nullable until accepted), email, role ('captain'|'chief_officer'|'bosun'|'custom'), custom_tabs (jsonb), status ('invited'|'active'|'removed'), invite_token (unique, nullable after accept), invite_expires_at, created_at`
@@ -254,6 +265,7 @@ The Account tab uses 5 sub-tabs controlled by `showAccountSubTab(name, btn)`. Su
 - `#sales-addon-section` — Sales Tracking ($25/mo): `renderSalesAddonSection(acct)` drives upsell vs active
 - `#member-analysis-section` — Team Member Analysis ($10/seat/mo): `renderMemberAnalysisSection(acct)`
 - `#commissions-addon-section` — Commissions ($25/mo): `renderCommissionsAddonSection(acct)` — shows upsell or active state; active state links to Commissions tab
+- `#analysis-credits-section` — Analysis Credits wallet (visible when `has_member_analysis || _isAdmin`). Shows current balance, three Add buttons ($5/$10/$20). `fetchAnalysisCredits()` loads balance from `GET /api/analysis-credits`. `addAnalysisCredits(amount)` calls `POST /api/analysis-credits` action=checkout and redirects to Stripe. On return, `?billing=credit_success` shows a toast. `loadAccountTab()` calls `fetchAnalysisCredits()` when credits section is visible.
 
 **Sales sub-tabs** (inside `#acct-pane-sales`): Team | Checklist | Products | Locations | Commissions | Bonus | Access
 
@@ -442,6 +454,32 @@ The Performance tab has 4 sub-tabs controlled by `showPerfSubTab(name, btn)`:
 
 `showTab('perf')` calls `showPerfSubTab('callperf')` directly.
 
+### Call Performance Table — Sortable Columns
+
+The Call Performance table (`renderPerf()`) supports column sorting. Clicking a column header toggles asc/desc; clicking a different column sorts by that column descending (except Agent which sorts asc by default).
+
+**State variables**:
+```javascript
+let _perfSortCol = null;  // active sort column (r[] index: 1=Agent, 3=Placed, 4=Answered, 5=VM, 6=Missed, 7=Talk, 8=Avg, 9=Max)
+let _perfSortDir = 1;     // 1=asc, -1=desc
+```
+
+**`setPerfSort(col)`**: if same column, flip `_perfSortDir`; if new column, set `_perfSortDir = col === 1 ? 1 : -1`. Then calls `renderPerf()`.
+
+**`renderPerf()` sort logic**:
+- TEAM TOTAL row (`r[1] === '— TEAM TOTAL —'`) is always pinned at the bottom regardless of sort.
+- Agent rows are sorted by string comparison (col 1) or numeric value (cols 3–9).
+- After sorting, `th[onclick]` headers are updated with ▲/▼ indicators:
+  ```javascript
+  const PERF_COL_LABELS = { 1:'Agent', 3:'Placed', 4:'Answered', 5:'VM', 6:'Missed', 7:'Talk Min', 8:'Avg Min', 9:'Max Min' };
+  theadRow.querySelectorAll('th[onclick]').forEach(th => {
+    const col = parseInt((th.getAttribute('onclick') || '').replace(/\D/g, ''));
+    th.textContent = col === _perfSortCol
+      ? PERF_COL_LABELS[col] + ' ' + (_perfSortDir === 1 ? '▲' : '▼')
+      : PERF_COL_LABELS[col];
+  });
+  ```
+
 ### Manage Tab
 Sub-tab nav removed. Sales Log and Sales Performance are in the Performance tab. Manage tab shows: file upload, manual entry (when enabled), activity self-report panels (when self-reporting enabled), activity log (collapsible, owners/captains).
 
@@ -512,6 +550,8 @@ Handled events and their effects:
 
 Add-on payment failures don't alter account status — agents keep access until subscription actually cancels.
 
+**Credit purchases** (`checkout.session.completed`): handled before subscription retrieval. Detected by `session.metadata?.type === 'analysis_credit'`. Reads `metadata.credits` (dollar amount = credit units), adds to `accounts.credit_balance`. Also saves `stripe_customer_id` if not already set. Uses `break` to skip subscription processing entirely.
+
 ## Sandbox Reset (Admin only)
 Account tab shows a "Sandbox — Reset My Data" section for `_isAdmin` accounts. Two-click confirm (5s timeout). Deletes `call_log`, `sales_log`, `historical_wins`, `historical_months`, resets `race_data` to zero, clears `race_config.current_month`. No server endpoint needed — uses anon Supabase client with RLS. Intended for `wilrus01` sandbox testing.
 
@@ -549,6 +589,32 @@ Called server-side on out-of-order upload (uploaded month < current race month).
 - **Archive invalidation**: `confirmArchive()` clears cache so any browser gets clean state on next login.
 - **Email Analysis button**: two-click confirm (6s). Calls `POST /api/ai-analysis?action=email`.
 - **max_tokens**: 1000
+
+### Re-run (Force Run) Links
+
+Each of the three analysis panels (Team AI Analysis, Lead Source Analysis, Member Analysis) shows a `Re-run →` link (`id="ai-force-link"`, `id="la-force-link"`, `id="ma-force-link"`) when the cooldown timer is active. The link calls the respective `forceRun*()` function which goes through `showCreditRunModal(onConfirm)` before executing.
+
+**Credit modal flow** (`showCreditRunModal(onConfirm)`):
+- If `_isAdmin` or `_creditWaived`: calls `onConfirm()` immediately — no modal.
+- Otherwise: fetches current balance from `GET /api/analysis-credits`, shows modal with balance and $3 cost.
+  - Sufficient balance: "Confirm & Use $3 Credit" button → `confirmCreditRun()` → POST charge_run → on success: update `_analysisCredits`, close modal, fire `_creditRunCallback()`.
+  - Insufficient balance: shows Add Credits buttons ($5/$10/$20) → `addAnalysisCredits(amount)`.
+- `_creditRunCallback` stores the pending `onConfirm` callback; cleared after use or cancel.
+
+**Force functions**:
+- `forceRunAnalysis()` → `showCreditRunModal(() => runAnalysis(true))`
+- `forceRunLeadAnalysis()` → `showCreditRunModal(() => runLeadAnalysis(true))`
+- `forceRunMemberAnalysis()` → `showCreditRunModal(() => runMemberAnalysis(false, true))`
+
+**`runAnalysis(force)` / `runLeadAnalysis(force)`**: `force=true` param bypasses the cooldown guard (`if (!force && remaining > 0) return`).
+
+**State variables**:
+```javascript
+let _analysisCredits   = null;   // fetched credit balance
+let _creditWaived      = false;  // set at login from acct.credit_waived
+let _creditRunCallback = null;   // pending onConfirm callback
+```
+`_creditWaived` is loaded in `checkAccountAndShow` (owner path) from `acct.credit_waived`.
 
 ### AI Prompt Structure (5 paragraphs)
 1. Team Trends — improvements / concerns / things to monitor
@@ -701,6 +767,12 @@ ashley, fiona, jocelyn, joseph, peyton, susan, tiffany, tracy, amin, andy, russe
 <script>/* app code */</script>
 ```
 
+## Landing Page (landing.html)
+
+Marketing page for the product. Contains a features grid and an add-ons section. Keep in sync with features available in the app.
+
+Current add-ons documented on landing page: Sales Tracking ($25/mo), Team Member Analysis ($10/mo), Lead Source Analysis ($10/mo — requires Sales Tracking), Commissions ($25/mo).
+
 ## Vercel Analytics
 ```html
 <script defer src="/_vercel/insights/script.js"></script>
@@ -712,7 +784,7 @@ Returns `{ supabaseUrl, supabaseKey }`. Returns HTTP 500 if env vars missing.
 
 ## Admin Account
 - `russelsaiassistant@gmail.com` — `is_admin=true`, `status='paid'`, `trial_ends_at=NULL`
-- Admin panel (Admin tab): Sales ✓/—, Analysis ✓/—, Comm ✓/— toggles per account
+- Admin panel (Admin tab): Sales ✓/—, Analysis ✓/—, Comm ✓/—, Credits ✓/— toggles per account; Credits toggle sets `credit_waived` on the target account (waived = free re-runs)
 - Admin accounts cannot self-delete and cannot be deleted by other admins
 
 ## Common Tasks
@@ -728,6 +800,7 @@ Returns `{ supabaseUrl, supabaseKey }`. Returns HTTP 500 if env vars missing.
 8. Run `ALTER TABLE sales_log ADD COLUMN IF NOT EXISTS issued_date date;`
 9. Run `lead-sources-migration.sql` (adds `lead_sources jsonb` to accounts)
 10. Run commissions migration SQL (see below)
+11. Run `credits-migration.sql` (adds `credit_balance` and `credit_waived` to accounts)
 
 ### Commissions + Activity Bonuses migration
 ```sql
