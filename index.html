@@ -1643,72 +1643,112 @@
               <div class="acct-field"><label>AGENT PHONE</label><input id="et-agent-phone" type="tel" placeholder="555-555-5555"></div>
               <div class="acct-field"><label>AGENT EMAIL</label><input id="et-agent-email" type="email" placeholder="agent@agency.com"></div>
             </div>
-            <div class="acct-field"><label>GREETING</label><textarea id="et-greeting" rows="2" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;resize:vertical;outline:none;" placeholder="Thank you for your business! Your agent has completed your new customer checklist."></textarea></div>
-            <div class="acct-field"><label>CLOSING</label><textarea id="et-footer" rows="2" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;resize:vertical;outline:none;" placeholder="If you have any questions, please don't hesitate to reach out."></textarea></div>
             <div class="acct-field"><label>INTERNAL SUMMARY EMAIL <span style="color:var(--muted);font-weight:400;">(where to send agent copy)</span></label>
               <input id="et-internal-email" type="email" placeholder="agent@office.com" style="max-width:320px;"></div>
             <div class="acct-field"><label>PENALTY WARNING MESSAGE <span style="color:var(--muted);font-weight:400;">(shown before submit if checklist incomplete — leave blank to disable)</span></label>
               <textarea id="et-penalty-warning" rows="2" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;resize:vertical;outline:none;" placeholder="If submitted inaccurately, you risk 80% of your commissions. Please review all items before continuing."></textarea></div>
 
-            <!-- Email Body Sections -->
+            <!-- Language tabs -->
             <div style="border-top:1px solid var(--border2);margin:1.25rem 0 1rem;"></div>
-            <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.85rem;">Email Body Sections</div>
-
-            <!-- Intro Paragraph 1 -->
-            <div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.85rem;margin-bottom:.65rem;">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;">
-                <span style="font-size:12px;font-weight:600;">Intro Paragraph</span>
-                <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap;"><input type="checkbox" id="et-body-para1-enabled" style="accent-color:var(--accent);"> Show</label>
-              </div>
-              <textarea id="et-body-para1" rows="3" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 10px;font-size:12px;resize:vertical;outline:none;box-sizing:border-box;"></textarea>
-            </div>
-
-            <!-- Body Paragraph 2 -->
-            <div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.85rem;margin-bottom:.65rem;">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;">
-                <span style="font-size:12px;font-weight:600;">ID Cards / Portal Paragraph</span>
-                <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap;"><input type="checkbox" id="et-body-para2-enabled" style="accent-color:var(--accent);"> Show</label>
-              </div>
-              <textarea id="et-body-para2" rows="2" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 10px;font-size:12px;resize:vertical;outline:none;box-sizing:border-box;"></textarea>
-            </div>
-
-            <!-- Important Box -->
-            <div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.85rem;margin-bottom:.65rem;">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;">
-                <span style="font-size:12px;font-weight:600;">Important Box</span>
-                <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap;"><input type="checkbox" id="et-important-enabled" style="accent-color:var(--accent);"> Show</label>
-              </div>
-              <div class="acct-field" style="margin-bottom:.5rem;"><label style="font-size:10px;">TITLE</label>
-                <input id="et-important-title" type="text" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:12px;width:100%;box-sizing:border-box;outline:none;"></div>
-              <div class="acct-field"><label style="font-size:10px;">BODY</label>
-                <textarea id="et-important-body" rows="3" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 10px;font-size:12px;resize:vertical;outline:none;box-sizing:border-box;"></textarea></div>
-            </div>
-
-            <!-- Helpful Resources -->
-            <div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.85rem;margin-bottom:.65rem;">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;">
-                <span style="font-size:12px;font-weight:600;">Helpful Resources</span>
-                <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap;"><input type="checkbox" id="et-resources-enabled" style="accent-color:var(--accent);"> Show</label>
-              </div>
-              <div class="acct-field" style="margin-bottom:.6rem;"><label style="font-size:10px;">SECTION TITLE</label>
-                <input id="et-resources-title" type="text" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:12px;width:100%;box-sizing:border-box;outline:none;"></div>
-              <div id="et-resources-list" style="margin-bottom:.6rem;"></div>
-              <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:6px;align-items:center;">
-                <input id="et-new-res-label" type="text" placeholder="Link label" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:12px;outline:none;">
-                <input id="et-new-res-url" type="url" placeholder="https://..." style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:12px;outline:none;">
-                <button class="btn btn-secondary" style="font-size:11px;padding:5px 10px;white-space:nowrap;" onclick="etAddResourceLink()">Add</button>
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem;">
+              <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">Email Content</div>
+              <div style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+                <button id="et-lang-btn-en" onclick="etSetLang('en')" style="padding:5px 14px;font-size:12px;font-weight:600;background:var(--accent);color:#000;border:none;cursor:pointer;">English</button>
+                <button id="et-lang-btn-es" onclick="etSetLang('es')" style="padding:5px 14px;font-size:12px;font-weight:600;background:transparent;color:var(--muted);border:none;border-left:1px solid var(--border);cursor:pointer;">Español</button>
               </div>
             </div>
 
-            <!-- Thank You Line -->
-            <div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.85rem;margin-bottom:.85rem;">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;">
-                <span style="font-size:12px;font-weight:600;">Thank You Line</span>
-                <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap;"><input type="checkbox" id="et-thank-you-enabled" style="accent-color:var(--accent);"> Show</label>
+            <!-- English fields -->
+            <div id="et-lang-fields-en">
+              <div class="acct-field"><label>GREETING</label><textarea id="et-greeting" rows="2" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;resize:vertical;outline:none;" placeholder="Thank you for your business! Your agent has completed your new customer checklist."></textarea></div>
+              <div class="acct-field"><label>CLOSING</label><textarea id="et-footer" rows="2" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;resize:vertical;outline:none;" placeholder="If you have any questions, please don't hesitate to reach out."></textarea></div>
+              <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.85rem;">Email Body Sections</div>
+              <div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.85rem;margin-bottom:.65rem;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;">
+                  <span style="font-size:12px;font-weight:600;">Intro Paragraph</span>
+                  <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap;"><input type="checkbox" id="et-body-para1-enabled" style="accent-color:var(--accent);"> Show</label>
+                </div>
+                <textarea id="et-body-para1" rows="3" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 10px;font-size:12px;resize:vertical;outline:none;box-sizing:border-box;"></textarea>
               </div>
-              <textarea id="et-thank-you" rows="2" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 10px;font-size:12px;resize:vertical;outline:none;box-sizing:border-box;" placeholder="Thank you again for trusting [AgencyName]. We look forward to serving you!"></textarea>
-              <div style="font-size:11px;color:var(--muted);margin-top:4px;">Use <code>[AgencyName]</code> to insert the agency name.</div>
-            </div>
+              <div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.85rem;margin-bottom:.65rem;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;">
+                  <span style="font-size:12px;font-weight:600;">ID Cards / Portal Paragraph</span>
+                  <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap;"><input type="checkbox" id="et-body-para2-enabled" style="accent-color:var(--accent);"> Show</label>
+                </div>
+                <textarea id="et-body-para2" rows="2" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 10px;font-size:12px;resize:vertical;outline:none;box-sizing:border-box;"></textarea>
+              </div>
+              <div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.85rem;margin-bottom:.65rem;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;">
+                  <span style="font-size:12px;font-weight:600;">Important Box</span>
+                  <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap;"><input type="checkbox" id="et-important-enabled" style="accent-color:var(--accent);"> Show</label>
+                </div>
+                <div class="acct-field" style="margin-bottom:.5rem;"><label style="font-size:10px;">TITLE</label>
+                  <input id="et-important-title" type="text" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:12px;width:100%;box-sizing:border-box;outline:none;"></div>
+                <div class="acct-field"><label style="font-size:10px;">BODY</label>
+                  <textarea id="et-important-body" rows="3" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 10px;font-size:12px;resize:vertical;outline:none;box-sizing:border-box;"></textarea></div>
+              </div>
+              <div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.85rem;margin-bottom:.65rem;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;">
+                  <span style="font-size:12px;font-weight:600;">Helpful Resources</span>
+                  <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap;"><input type="checkbox" id="et-resources-enabled" style="accent-color:var(--accent);"> Show</label>
+                </div>
+                <div class="acct-field" style="margin-bottom:.6rem;"><label style="font-size:10px;">SECTION TITLE</label>
+                  <input id="et-resources-title" type="text" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:12px;width:100%;box-sizing:border-box;outline:none;"></div>
+                <div id="et-resources-list" style="margin-bottom:.6rem;"></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:6px;align-items:center;">
+                  <input id="et-new-res-label" type="text" placeholder="Link label" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:12px;outline:none;">
+                  <input id="et-new-res-url" type="url" placeholder="https://..." style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:12px;outline:none;">
+                  <button class="btn btn-secondary" style="font-size:11px;padding:5px 10px;white-space:nowrap;" onclick="etAddResourceLink()">Add</button>
+                </div>
+              </div>
+              <div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.85rem;margin-bottom:.85rem;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;">
+                  <span style="font-size:12px;font-weight:600;">Thank You Line</span>
+                  <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap;"><input type="checkbox" id="et-thank-you-enabled" style="accent-color:var(--accent);"> Show</label>
+                </div>
+                <textarea id="et-thank-you" rows="2" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 10px;font-size:12px;resize:vertical;outline:none;box-sizing:border-box;" placeholder="Thank you again for trusting [AgencyName]. We look forward to serving you!"></textarea>
+                <div style="font-size:11px;color:var(--muted);margin-top:4px;">Use <code>[AgencyName]</code> to insert the agency name.</div>
+              </div>
+            </div><!-- /et-lang-fields-en -->
+
+            <!-- Español fields -->
+            <div id="et-lang-fields-es" style="display:none;">
+              <p style="font-size:12px;color:var(--muted);margin:0 0 .85rem;">Write Spanish versions of your email content below. Leave any field blank to use the built-in Spanish default for that section.</p>
+              <div class="acct-field"><label>SALUDO (GREETING)</label><textarea id="et-greeting-es" rows="2" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;resize:vertical;outline:none;" placeholder="¡Hola y bienvenido(a)! Su agente ha completado su lista de verificación de nuevo cliente."></textarea></div>
+              <div class="acct-field"><label>CIERRE (CLOSING)</label><textarea id="et-footer-es" rows="2" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;resize:vertical;outline:none;" placeholder="Si tiene alguna pregunta, no dude en comunicarse con nosotros."></textarea></div>
+              <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.85rem;">Secciones del Correo</div>
+              <div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.85rem;margin-bottom:.65rem;">
+                <div style="font-size:12px;font-weight:600;margin-bottom:.5rem;">Párrafo de Introducción</div>
+                <textarea id="et-body-para1-es" rows="3" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 10px;font-size:12px;resize:vertical;outline:none;box-sizing:border-box;" placeholder="(Default: Estamos muy contentos de que sea parte de nuestra familia de State Farm…)"></textarea>
+              </div>
+              <div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.85rem;margin-bottom:.65rem;">
+                <div style="font-size:12px;font-weight:600;margin-bottom:.5rem;">Párrafo de Tarjetas / Portal</div>
+                <textarea id="et-body-para2-es" rows="2" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 10px;font-size:12px;resize:vertical;outline:none;box-sizing:border-box;" placeholder="(Default: Debe tener una copia de sus tarjetas de identificación…)"></textarea>
+              </div>
+              <div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.85rem;margin-bottom:.65rem;">
+                <div style="font-size:12px;font-weight:600;margin-bottom:.5rem;">Cuadro Importante</div>
+                <div class="acct-field" style="margin-bottom:.5rem;"><label style="font-size:10px;">TÍTULO</label>
+                  <input id="et-important-title-es" type="text" placeholder="(Default: Importante)" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:12px;width:100%;box-sizing:border-box;outline:none;"></div>
+                <div class="acct-field"><label style="font-size:10px;">CUERPO</label>
+                  <textarea id="et-important-body-es" rows="3" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 10px;font-size:12px;resize:vertical;outline:none;box-sizing:border-box;" placeholder="(Default: Si tiene pagos mensuales, asegúrese de firmar…)"></textarea></div>
+              </div>
+              <div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.85rem;margin-bottom:.65rem;">
+                <div style="font-size:12px;font-weight:600;margin-bottom:.5rem;">Recursos en Línea</div>
+                <div class="acct-field" style="margin-bottom:.6rem;"><label style="font-size:10px;">TÍTULO DE SECCIÓN</label>
+                  <input id="et-resources-title-es" type="text" placeholder="(Default: Recursos en línea útiles:)" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:12px;width:100%;box-sizing:border-box;outline:none;"></div>
+                <div id="et-resources-list-es" style="margin-bottom:.6rem;"></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:6px;align-items:center;">
+                  <input id="et-new-res-label-es" type="text" placeholder="Etiqueta del enlace" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:12px;outline:none;">
+                  <input id="et-new-res-url-es" type="url" placeholder="https://..." style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:12px;outline:none;">
+                  <button class="btn btn-secondary" style="font-size:11px;padding:5px 10px;white-space:nowrap;" onclick="etAddResourceLinkEs()">Agregar</button>
+                </div>
+              </div>
+              <div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.85rem;margin-bottom:.85rem;">
+                <div style="font-size:12px;font-weight:600;margin-bottom:.5rem;">Línea de Agradecimiento</div>
+                <textarea id="et-thank-you-es" rows="2" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 10px;font-size:12px;resize:vertical;outline:none;box-sizing:border-box;" placeholder="(Default: Gracias nuevamente por confiar en [AgencyName]…)"></textarea>
+                <div style="font-size:11px;color:var(--muted);margin-top:4px;">Use <code>[AgencyName]</code> to insert the agency name.</div>
+              </div>
+            </div><!-- /et-lang-fields-es -->
 
             <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:.75rem;">
               <button class="btn btn-primary" onclick="saveEmailTemplate(this)">Save Email Template</button>
@@ -5554,7 +5594,20 @@ const ET_DEFAULT_RESOURCES_LINKS = [
 ];
 const ET_DEFAULT_THANK_YOU = "Thank you again for trusting [AgencyName]. We look forward to serving you!";
 
-let _etResourcesLinks = [];   // in-editor state for resources links
+const ET_DEFAULT_BODY_PARA1_ES   = "Estamos muy contentos de que sea parte de nuestra familia de State Farm. Nuestro equipo está aquí para apoyarle en cada paso con sus necesidades de seguro y brindarle recursos útiles.";
+const ET_DEFAULT_BODY_PARA2_ES   = "Debe tener una copia de sus tarjetas de identificación en su bandeja de entrada y en su portal en línea.";
+const ET_DEFAULT_IMPORTANT_TITLE_ES = "Importante";
+const ET_DEFAULT_IMPORTANT_BODY_ES  = "Si tiene pagos mensuales, asegúrese de firmar y devolver su formulario de autorización de pago por correo electrónico lo antes posible. Esto garantizará que sus pagos se procesen sin problemas y a tiempo.";
+const ET_DEFAULT_RESOURCES_TITLE_ES = "Recursos en línea útiles:";
+const ET_DEFAULT_RESOURCES_LINKS_ES = [
+  { label: "Administre su póliza: statefarm.com",   url: "https://www.statefarm.com"         },
+  { label: "Presente un reclamo: statefarm.com/claims", url: "https://www.statefarm.com/claims"  },
+  { label: "Pague su factura: statefarm.com/billing",   url: "https://www.statefarm.com/billing"},
+];
+const ET_DEFAULT_THANK_YOU_ES = "Gracias nuevamente por confiar en [AgencyName]. ¡Esperamos poder servirle!";
+
+let _etResourcesLinks   = [];   // in-editor state for resources links (English)
+let _etResourcesLinksEs = [];   // in-editor state for resources links (Spanish)
 
 const LEAD_SOURCES = [
   'Aged Lead Store','Agent Tagged Media','Call In','Contractors List',
@@ -5692,11 +5745,11 @@ function renderSalesAddonSection(acct) {
   document.getElementById('et-agent-name').value       = cfg.agent_name      || '';
   document.getElementById('et-agent-phone').value      = cfg.agent_phone     || '';
   document.getElementById('et-agent-email').value      = cfg.agent_email     || '';
-  document.getElementById('et-greeting').value         = cfg.greeting        || '';
-  document.getElementById('et-footer').value           = cfg.footer          || '';
   document.getElementById('et-internal-email').value   = cfg.internal_email  || '';
   document.getElementById('et-penalty-warning').value  = cfg.penalty_warning || '';
-  // Email body sections — seed defaults if not yet saved
+  // English content fields — seed defaults if not yet saved
+  document.getElementById('et-greeting').value             = cfg.greeting           || '';
+  document.getElementById('et-footer').value               = cfg.footer             || '';
   document.getElementById('et-body-para1').value           = cfg.body_para1         ?? ET_DEFAULT_BODY_PARA1;
   document.getElementById('et-body-para1-enabled').checked = cfg.body_para1_enabled  ?? true;
   document.getElementById('et-body-para2').value           = cfg.body_para2         ?? ET_DEFAULT_BODY_PARA2;
@@ -5710,6 +5763,18 @@ function renderSalesAddonSection(acct) {
   renderEtResourcesList();
   document.getElementById('et-thank-you').value           = cfg.thank_you           ?? ET_DEFAULT_THANK_YOU;
   document.getElementById('et-thank-you-enabled').checked = cfg.thank_you_enabled    ?? true;
+  // Spanish content fields — empty means "use default"
+  document.getElementById('et-greeting-es').value         = cfg.greeting_es         || '';
+  document.getElementById('et-footer-es').value           = cfg.footer_es           || '';
+  document.getElementById('et-body-para1-es').value       = cfg.body_para1_es       || '';
+  document.getElementById('et-body-para2-es').value       = cfg.body_para2_es       || '';
+  document.getElementById('et-important-title-es').value  = cfg.important_title_es  || '';
+  document.getElementById('et-important-body-es').value   = cfg.important_body_es   || '';
+  document.getElementById('et-resources-title-es').value  = cfg.resources_title_es  || '';
+  _etResourcesLinksEs = cfg.resources_links_es ? JSON.parse(JSON.stringify(cfg.resources_links_es)) : [];
+  renderEtResourcesListEs();
+  document.getElementById('et-thank-you-es').value        = cfg.thank_you_es        || '';
+  etSetLang('en');
   // Form items + required fields
   renderFormItemsConfig();
 
@@ -8405,6 +8470,41 @@ function etRemoveResourceLink(i) {
   renderEtResourcesList();
 }
 
+function renderEtResourcesListEs() {
+  const el = document.getElementById('et-resources-list-es');
+  if (!el) return;
+  if (!_etResourcesLinksEs.length) { el.innerHTML = '<div style="font-size:12px;color:var(--muted);margin-bottom:.25rem;">(Default links will be used if empty)</div>'; return; }
+  el.innerHTML = _etResourcesLinksEs.map((lnk, i) =>
+    `<div style="display:grid;grid-template-columns:1fr 1fr auto;gap:6px;align-items:center;margin-bottom:5px;">
+      <input type="text" value="${escHtml(lnk.label)}" oninput="_etResourcesLinksEs[${i}].label=this.value" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:12px;outline:none;">
+      <input type="url"  value="${escHtml(lnk.url)}"   oninput="_etResourcesLinksEs[${i}].url=this.value"   style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:12px;outline:none;">
+      <button class="btn btn-secondary" style="padding:4px 8px;font-size:11px;" onclick="etRemoveResourceLinkEs(${i})">✕</button>
+    </div>`
+  ).join('');
+}
+function etAddResourceLinkEs() {
+  const label = document.getElementById('et-new-res-label-es').value.trim();
+  const url   = document.getElementById('et-new-res-url-es').value.trim();
+  if (!label && !url) return;
+  _etResourcesLinksEs.push({ label, url });
+  document.getElementById('et-new-res-label-es').value = '';
+  document.getElementById('et-new-res-url-es').value   = '';
+  renderEtResourcesListEs();
+}
+function etRemoveResourceLinkEs(i) {
+  _etResourcesLinksEs.splice(i, 1);
+  renderEtResourcesListEs();
+}
+
+function etSetLang(lang) {
+  document.getElementById('et-lang-fields-en').style.display = lang === 'en' ? '' : 'none';
+  document.getElementById('et-lang-fields-es').style.display = lang === 'es' ? '' : 'none';
+  const enBtn = document.getElementById('et-lang-btn-en');
+  const esBtn = document.getElementById('et-lang-btn-es');
+  if (enBtn) { enBtn.style.background = lang === 'en' ? 'var(--accent)' : 'transparent'; enBtn.style.color = lang === 'en' ? '#000' : 'var(--muted)'; }
+  if (esBtn) { esBtn.style.background = lang === 'es' ? 'var(--accent2)' : 'transparent'; esBtn.style.color = lang === 'es' ? '#fff' : 'var(--muted)'; }
+}
+
 async function saveEmailTemplate(btn) {
   btn.disabled = true;
   try {
@@ -8415,10 +8515,11 @@ async function saveEmailTemplate(btn) {
       agent_name:       document.getElementById('et-agent-name').value.trim(),
       agent_phone:      document.getElementById('et-agent-phone').value.trim(),
       agent_email:      document.getElementById('et-agent-email').value.trim(),
-      greeting:         document.getElementById('et-greeting').value.trim(),
-      footer:           document.getElementById('et-footer').value.trim(),
       internal_email:   document.getElementById('et-internal-email').value.trim(),
       penalty_warning:  document.getElementById('et-penalty-warning').value.trim(),
+      // English content
+      greeting:         document.getElementById('et-greeting').value.trim(),
+      footer:           document.getElementById('et-footer').value.trim(),
       body_para1:         document.getElementById('et-body-para1').value.trim(),
       body_para1_enabled: document.getElementById('et-body-para1-enabled').checked,
       body_para2:         document.getElementById('et-body-para2').value.trim(),
@@ -8431,6 +8532,16 @@ async function saveEmailTemplate(btn) {
       resources_links:    _etResourcesLinks,
       thank_you:          document.getElementById('et-thank-you').value.trim(),
       thank_you_enabled:  document.getElementById('et-thank-you-enabled').checked,
+      // Spanish content (empty string = use built-in default)
+      greeting_es:          document.getElementById('et-greeting-es').value.trim(),
+      footer_es:            document.getElementById('et-footer-es').value.trim(),
+      body_para1_es:        document.getElementById('et-body-para1-es').value.trim(),
+      body_para2_es:        document.getElementById('et-body-para2-es').value.trim(),
+      important_title_es:   document.getElementById('et-important-title-es').value.trim(),
+      important_body_es:    document.getElementById('et-important-body-es').value.trim(),
+      resources_title_es:   document.getElementById('et-resources-title-es').value.trim(),
+      resources_links_es:   _etResourcesLinksEs,
+      thank_you_es:         document.getElementById('et-thank-you-es').value.trim(),
     };
     const r = await fetch('/api/checklist-config', {
       method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
@@ -11092,31 +11203,27 @@ ${footerRows}
   return { bodyHtml, fullHtml };
 }
 
-// Spanish translation: rewrites all static template strings; user-configured content stays as-is
+// Spanish email builder: uses agency-configured Spanish text with fallback to built-in Spanish defaults.
+// Customer-specific data (appointment details, agent contact info, agency name) is never translated.
 function buildCustomerEmailHtmlEs(payload) {
-  // Translate fixed UI labels embedded in the email structure
-  const esPayload = Object.assign({}, payload);
-  // Override/wrap the static English labels in buildCustomerEmailHtml with Spanish equivalents
-  // We re-call buildCustomerEmailHtml but inject Spanish overrides for the structural labels
-  const ES = {
-    apptLabel:       'SU PRÓXIMA CITA',
-    bestRegards:     'Atentamente,',
-    importantTitle:  payload.importantTitle || 'Información Importante',
-    resourcesTitle:  payload.resourcesTitle || 'Recursos Útiles',
+  const esPayload = {
+    ...payload,
+    greeting:       payload.greetingEs       || payload.greeting       || '',
+    footer:         payload.footerEs         || payload.footer         || '',
+    bodyPara1:      payload.bodyPara1Es      || ET_DEFAULT_BODY_PARA1_ES,
+    bodyPara2:      payload.bodyPara2Es      || ET_DEFAULT_BODY_PARA2_ES,
+    importantTitle: payload.importantTitleEs || ET_DEFAULT_IMPORTANT_TITLE_ES,
+    importantBody:  payload.importantBodyEs  || ET_DEFAULT_IMPORTANT_BODY_ES,
+    resourcesTitle: payload.resourcesTitleEs || ET_DEFAULT_RESOURCES_TITLE_ES,
+    resourcesLinks: (payload.resourcesLinksEs && payload.resourcesLinksEs.length)
+                      ? payload.resourcesLinksEs
+                      : ET_DEFAULT_RESOURCES_LINKS_ES,
+    thankYou:       payload.thankYouEs       || ET_DEFAULT_THANK_YOU_ES,
   };
-  // Rebuild with Spanish structural labels by temporarily patching the payload
-  const orig = buildCustomerEmailHtml(esPayload);
-
-  // Post-process: replace the hardcoded English structural strings with Spanish
-  let { bodyHtml, fullHtml } = orig;
-  const replacements = [
-    ['YOUR NEXT APPOINTMENT', 'SU PRÓXIMA CITA'],
-    ['>Best regards,<', '>Atentamente,<'],
-  ];
-  for (const [en, es] of replacements) {
-    bodyHtml = bodyHtml.split(en).join(es);
-    fullHtml = fullHtml.split(en).join(es);
-  }
+  let { bodyHtml, fullHtml } = buildCustomerEmailHtml(esPayload);
+  // Translate the two hardcoded structural labels embedded in the HTML template
+  bodyHtml = bodyHtml.split('YOUR NEXT APPOINTMENT').join('SU PRÓXIMA CITA').split('>Best regards,<').join('>Atentamente,<');
+  fullHtml = fullHtml.split('YOUR NEXT APPOINTMENT').join('SU PRÓXIMA CITA').split('>Best regards,<').join('>Atentamente,<');
   return { bodyHtml, fullHtml };
 }
 
