@@ -1761,6 +1761,13 @@
           <div class="acct-section">
             <h3>Checklist Form Items</h3>
             <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Configure each form item that appears on the checklist. Set a description to include it in the customer email when Applied is checked. Toggle Required to block submission until that item is checked Applied or N/A.</p>
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.75rem;">
+              <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">Item Content Language</div>
+              <div style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+                <button id="fi-lang-btn-en" onclick="fiSetLang('en')" style="padding:5px 14px;font-size:12px;font-weight:600;background:var(--accent);color:#000;border:none;cursor:pointer;">English</button>
+                <button id="fi-lang-btn-es" onclick="fiSetLang('es')" style="padding:5px 14px;font-size:12px;font-weight:600;background:transparent;color:var(--muted);border:none;border-left:1px solid var(--border);cursor:pointer;">Español</button>
+              </div>
+            </div>
             <div id="form-items-config"></div>
             <button class="btn btn-primary" style="margin-top:.75rem;" onclick="saveFormItems(this)">Save Form Items</button>
             <div id="fi-msg" style="font-size:13px;margin-top:8px;display:none;"></div>
@@ -8149,19 +8156,38 @@ function renderFormItemsConfig() {
         <span id="fi-arrow-${key}" style="color:var(--muted);font-size:12px;margin-left:2px;">▾</span>
       </div>
       <div id="fi-panel-${key}" style="display:none;padding:.75rem;border-top:1px solid var(--border2);">
-        <div style="margin-bottom:.5rem;">
-          <label style="${secLblStyle}">EMAIL TITLE <span style="font-weight:400;">(heading shown in customer email when Applied)</span></label>
-          <input id="fi-title-${key}" type="text" value="${escHtml(cur.title||'')}" placeholder="${escHtml(label)}" style="${inputStyle}">
+        <!-- English fields -->
+        <div class="fi-lang-block fi-lang-en">
+          <div style="margin-bottom:.5rem;">
+            <label style="${secLblStyle}">EMAIL TITLE <span style="font-weight:400;">(heading shown in customer email when Applied)</span></label>
+            <input id="fi-title-${key}" type="text" value="${escHtml(cur.title||'')}" placeholder="${escHtml(label)}" style="${inputStyle}">
+          </div>
+          <div style="margin-bottom:.5rem;">
+            <label style="${secLblStyle}">DESCRIPTION <span style="font-weight:400;">(body text — leave blank to omit section from email)</span></label>
+            <textarea id="fi-desc-${key}" rows="3" style="${taStyle}">${escHtml(cur.description||'')}</textarea>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 2fr;gap:.5rem;margin-bottom:.25rem;">
+            <div><label style="${secLblStyle}">LINK LABEL</label>
+              <input id="fi-link-label-${key}" type="text" value="${escHtml(cur.link_label||'')}" style="${inputStyle}"></div>
+            <div><label style="${secLblStyle}">LINK URL</label>
+              <input id="fi-link-url-${key}" type="url" value="${escHtml(cur.link_url||'')}" placeholder="https://..." style="${inputStyle}"></div>
+          </div>
         </div>
-        <div style="margin-bottom:.5rem;">
-          <label style="${secLblStyle}">DESCRIPTION <span style="font-weight:400;">(body text — leave blank to omit section from email)</span></label>
-          <textarea id="fi-desc-${key}" rows="3" style="${taStyle}">${escHtml(cur.description||'')}</textarea>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 2fr;gap:.5rem;margin-bottom:.25rem;">
-          <div><label style="${secLblStyle}">LINK LABEL</label>
-            <input id="fi-link-label-${key}" type="text" value="${escHtml(cur.link_label||'')}" style="${inputStyle}"></div>
-          <div><label style="${secLblStyle}">LINK URL</label>
-            <input id="fi-link-url-${key}" type="url" value="${escHtml(cur.link_url||'')}" placeholder="https://..." style="${inputStyle}"></div>
+        <!-- Spanish fields -->
+        <div class="fi-lang-block fi-lang-es" style="display:none;">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:.5rem;">Leave blank to fall back to the English text for this item.</div>
+          <div style="margin-bottom:.5rem;">
+            <label style="${secLblStyle}">TÍTULO EN CORREO <span style="font-weight:400;">(encabezado en correo cuando se aplica)</span></label>
+            <input id="fi-title-es-${key}" type="text" value="${escHtml(cur.title_es||'')}" placeholder="${escHtml(cur.title||label)}" style="${inputStyle}">
+          </div>
+          <div style="margin-bottom:.5rem;">
+            <label style="${secLblStyle}">DESCRIPCIÓN <span style="font-weight:400;">(texto del cuerpo — dejar vacío omite la sección)</span></label>
+            <textarea id="fi-desc-es-${key}" rows="3" style="${taStyle}">${escHtml(cur.description_es||'')}</textarea>
+          </div>
+          <div style="margin-bottom:.25rem;">
+            <label style="${secLblStyle}">ETIQUETA DE ENLACE <span style="font-weight:400;">(URL del enlace es el mismo para ambos idiomas)</span></label>
+            <input id="fi-link-label-es-${key}" type="text" value="${escHtml(cur.link_label_es||'')}" placeholder="${escHtml(cur.link_label||'')}" style="${inputStyle}">
+          </div>
         </div>
         ${secToggles}
       </div>
@@ -8185,6 +8211,17 @@ function toggleFiPanel(key) {
   if (arrow) arrow.textContent = open ? '▴' : '▾';
 }
 
+let _fiLang = 'en';
+function fiSetLang(lang) {
+  _fiLang = lang;
+  document.querySelectorAll('.fi-lang-en').forEach(el => el.style.display = lang === 'en' ? '' : 'none');
+  document.querySelectorAll('.fi-lang-es').forEach(el => el.style.display = lang === 'es' ? '' : 'none');
+  const enBtn = document.getElementById('fi-lang-btn-en');
+  const esBtn = document.getElementById('fi-lang-btn-es');
+  if (enBtn) { enBtn.style.background = lang === 'en' ? 'var(--accent)' : 'transparent'; enBtn.style.color = lang === 'en' ? '#000' : 'var(--muted)'; }
+  if (esBtn) { esBtn.style.background = lang === 'es' ? 'var(--accent2)' : 'transparent'; esBtn.style.color = lang === 'es' ? '#fff' : 'var(--muted)'; }
+}
+
 async function saveFormItems(btn) {
   btn.disabled = true;
   try {
@@ -8192,12 +8229,15 @@ async function saveFormItems(btn) {
     FORM_ITEM_DEFS.forEach(({ key, editable }) => {
       const isWfolder = key === 'wfolder';
       const item = {
-        show:        document.getElementById('fi-show-' + key)?.checked       ?? true,
-        required:    document.getElementById('fi-req-' + key)?.checked        ?? false,
-        title:       document.getElementById('fi-title-' + key)?.value.trim() || '',
-        description: document.getElementById('fi-desc-' + key)?.value.trim()  || '',
-        link_label:  document.getElementById('fi-link-label-' + key)?.value.trim() || '',
-        link_url:    document.getElementById('fi-link-url-' + key)?.value.trim()   || '',
+        show:          document.getElementById('fi-show-' + key)?.checked            ?? true,
+        required:      document.getElementById('fi-req-' + key)?.checked             ?? false,
+        title:         document.getElementById('fi-title-' + key)?.value.trim()      || '',
+        description:   document.getElementById('fi-desc-' + key)?.value.trim()       || '',
+        link_label:    document.getElementById('fi-link-label-' + key)?.value.trim() || '',
+        link_url:      document.getElementById('fi-link-url-' + key)?.value.trim()   || '',
+        title_es:      document.getElementById('fi-title-es-' + key)?.value.trim()      || '',
+        description_es:document.getElementById('fi-desc-es-' + key)?.value.trim()       || '',
+        link_label_es: document.getElementById('fi-link-label-es-' + key)?.value.trim() || '',
       };
       if (!isWfolder) {
         item.req_submitted  = document.getElementById('fi-rsubmit-' + key)?.value || false;
@@ -11063,7 +11103,7 @@ function buildSummaryEmail(payload) {
   return { subject, body };
 }
 
-function buildCustomerEmailHtml(payload) {
+function buildCustomerEmailHtml(payload, formItemsOverride) {
   const fc = payload.formCompletions || {};
   const agencyName = payload.agencyName || 'Russel Williams State Farm';
   const brandColor = payload.brandColor || '#D62311';
@@ -11088,10 +11128,11 @@ function buildCustomerEmailHtml(payload) {
   const thankYouEnabled  = payload.thankYouEnabled  ?? true;
 
   // Build config-driven form item sections
+  const _fiItems = formItemsOverride || _clFormItems;
   let discountHtml = '', discountPlain = '';
   const P2 = 'style="margin:0 0 14px;font-family:Arial,Calibri,Helvetica,sans-serif;font-size:14px;color:#403C3C;line-height:1.7;"';
   FORM_ITEM_DEFS.forEach(({ key, label, editable }) => {
-    const item = _clFormItems[key] || DEFAULT_FORM_ITEMS[key] || {};
+    const item = _fiItems[key] || DEFAULT_FORM_ITEMS[key] || {};
     if (!fc[key]?.applied) return;
     const desc = item.description || '';
     if (!desc) return;
@@ -11220,7 +11261,18 @@ function buildCustomerEmailHtmlEs(payload) {
                       : ET_DEFAULT_RESOURCES_LINKS_ES,
     thankYou:       payload.thankYouEs       || ET_DEFAULT_THANK_YOU_ES,
   };
-  let { bodyHtml, fullHtml } = buildCustomerEmailHtml(esPayload);
+  // Build Spanish form items: use _es fields when set, fall back to English text
+  const esFormItems = {};
+  FORM_ITEM_DEFS.forEach(({ key }) => {
+    const item = _clFormItems[key] || DEFAULT_FORM_ITEMS[key] || {};
+    esFormItems[key] = {
+      ...item,
+      title:       item.title_es       || item.title       || '',
+      description: item.description_es || item.description || '',
+      link_label:  item.link_label_es  || item.link_label  || '',
+    };
+  });
+  let { bodyHtml, fullHtml } = buildCustomerEmailHtml(esPayload, esFormItems);
   // Translate the two hardcoded structural labels embedded in the HTML template
   bodyHtml = bodyHtml.split('YOUR NEXT APPOINTMENT').join('SU PRÓXIMA CITA').split('>Best regards,<').join('>Atentamente,<');
   fullHtml = fullHtml.split('YOUR NEXT APPOINTMENT').join('SU PRÓXIMA CITA').split('>Best regards,<').join('>Atentamente,<');
