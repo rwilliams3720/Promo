@@ -2285,6 +2285,37 @@
         </table>
       </div>
     </div>
+
+    <div class="panel" style="margin-top:1rem;">
+      <div class="panel-title">Access Log</div>
+      <div style="display:flex;gap:10px;margin-bottom:1rem;flex-wrap:wrap;align-items:center;">
+        <button class="btn btn-secondary" onclick="loadAccessLog()">Refresh</button>
+        <select id="al-action" onchange="loadAccessLog()" style="padding:7px 12px;background:var(--deep);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;outline:none;">
+          <option value="all">All Actions</option>
+          <option value="export">Export</option>
+          <option value="edit">Edit</option>
+          <option value="delete">Delete</option>
+        </select>
+        <select id="al-days" onchange="loadAccessLog()" style="padding:7px 12px;background:var(--deep);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;outline:none;">
+          <option value="7">Last 7 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="90">Last 90 days</option>
+          <option value="all">All time</option>
+        </select>
+        <input id="al-actor" type="text" placeholder="Search by email…"
+          style="padding:7px 12px;background:var(--deep);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;outline:none;width:220px;"
+          oninput="clearTimeout(_alSearchTimer);_alSearchTimer=setTimeout(loadAccessLog,400)">
+        <span id="al-count" style="font-size:12px;color:var(--muted);margin-left:auto;"></span>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="admin-tbl" id="al-tbl">
+          <thead><tr>
+            <th>Date / Time</th><th>Account</th><th>Actor</th><th>Action</th><th>Details</th>
+          </tr></thead>
+          <tbody id="al-body"><tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px;">Load the Admin tab to populate.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
 </main>
@@ -2339,6 +2370,8 @@ let _perfSortCol = null; // r[] index: 1=agent 3=placed 4=answered 5=vm 6=missed
 let _perfSortDir = 1;    // 1=asc -1=desc
 let _session  = null;
 let _adminRows = [];
+let _accessLogEntries = [];
+let _alSearchTimer = null;
 let _raceData  = [];
 let _processingToken = null;
 let _analysisAt = null; // ai_analysis_at from accounts table — authoritative per-account timer
@@ -3086,7 +3119,7 @@ function showTab(name, btn) {
   if (btn) btn.classList.add('active');
   if (name === 'race') loadRaceData();
   if (name === 'account') loadAccountTab();
-  if (name === 'adminpanel') loadAdminPanel();
+  if (name === 'adminpanel') { loadAdminPanel(); loadAccessLog(); }
   if (name === 'perf') { showPerfSubTab('callperf'); }
   if (name === 'history') loadHistory();
   if (name === 'analysis') {
@@ -4993,6 +5026,59 @@ function filterAdminTable() {
   const filtered = _adminRows.filter(r =>
     (r.email||'').toLowerCase().includes(q) || (r.company_name||'').toLowerCase().includes(q));
   renderAdminTable(filtered);
+}
+
+async function loadAccessLog() {
+  if (!_isAdmin) return;
+  const action = document.getElementById('al-action')?.value || 'all';
+  const days   = document.getElementById('al-days')?.value   || '30';
+  const actor  = (document.getElementById('al-actor')?.value || '').trim();
+  const params = new URLSearchParams({ action, days });
+  if (actor) params.set('actor', actor);
+  try {
+    const r = await fetch(`/api/access-log?${params}`, { headers: authHeaders() });
+    if (!r.ok) return;
+    const { entries } = await r.json();
+    _accessLogEntries = entries || [];
+    renderAccessLog();
+  } catch { /* non-fatal */ }
+}
+
+function renderAccessLog() {
+  const tbody = document.getElementById('al-body');
+  const count = document.getElementById('al-count');
+  if (!tbody) return;
+  if (count) count.textContent = _accessLogEntries.length ? `${_accessLogEntries.length} entries` : '';
+  if (!_accessLogEntries.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px;">No entries found.</td></tr>';
+    return;
+  }
+  const COLOR = { export: '#00d4ff', edit: '#ff8c42', delete: '#ff4d6d' };
+  tbody.innerHTML = _accessLogEntries.map(e => {
+    const dt      = new Date(e.created_at);
+    const dateStr = dt.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
+                  + ' ' + dt.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' });
+    const account = e.account_company || e.account_email || (e.user_id||'').slice(0,8) || '—';
+    const actor   = e.actor_email     || (e.actor_user_id||'').slice(0,8) || '—';
+    const color   = COLOR[e.action]   || '#aaa';
+    let details = '—';
+    if (e.action === 'export') {
+      const m = e.metadata || {};
+      const period = m.all_year ? `All ${m.year}` : `${String(m.month).padStart(2,'0')}/${m.year}`;
+      details = `${e.row_count ?? '?'} rows · ${period}`;
+    } else if (e.action === 'edit') {
+      details = (e.metadata?.fields || []).join(', ') || (e.record_hash||'').slice(0,8) || '—';
+    } else if (e.action === 'delete') {
+      details = (e.record_hash||'').slice(0,8) || '—';
+    }
+    return `<tr>
+      <td style="white-space:nowrap;font-size:12px;">${dateStr}</td>
+      <td style="font-size:12px;">${account}</td>
+      <td style="font-size:12px;">${actor}</td>
+      <td><span style="background:${color}22;color:${color};padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700;text-transform:uppercase;">${e.action}</span></td>
+      <td style="font-size:12px;color:var(--muted);">${details}</td>
+    </tr>`;
+  }).join('');
 }
 
 async function adminSave(uid, field, value) {
