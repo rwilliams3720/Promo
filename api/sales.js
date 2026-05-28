@@ -110,9 +110,27 @@ async function resolveUser(token) {
       isCapOrCO,
       memberAgentId: member.roster_agent_id || null,
       selfReportConfig: ownerSelfReport,
+      actorEmail: user.email,
     };
   }
-  return { userId: user.id, dataUserId, hasSalesAddon, isMember: false, isCapOrCO: false, memberAgentId: null, selfReportConfig: {} };
+  return { userId: user.id, dataUserId, hasSalesAddon, isMember: false, isCapOrCO: false, memberAgentId: null, selfReportConfig: {}, actorEmail: user.email };
+}
+
+async function logAccess({ actorUserId, actorEmail, dataUserId, action, recordHash, rowCount, metadata }) {
+  try {
+    await supabase.from('access_log').insert({
+      user_id:       dataUserId,
+      actor_user_id: actorUserId,
+      actor_email:   actorEmail  || null,
+      action,
+      resource:      'sales_log',
+      record_hash:   recordHash  || null,
+      row_count:     rowCount    || null,
+      metadata:      metadata    || null,
+    });
+  } catch {
+    // log failure must never break the main operation
+  }
 }
 
 export default async function handler(req, res) {
@@ -260,6 +278,7 @@ export default async function handler(req, res) {
     if (error) return res.status(500).json({ error: error.message });
     const rebuildIds = [...new Set([existing?.agent_id, fields.agent_id].filter(Boolean))];
     await rebuildRaceData(dataUserId, rebuildIds);
+    await logAccess({ actorUserId: ctx.userId, actorEmail: ctx.actorEmail, dataUserId, action: 'edit', recordHash: hash, metadata: { fields: Object.keys(update) } });
     return res.status(200).json({ ok: true });
   }
 
@@ -278,6 +297,7 @@ export default async function handler(req, res) {
 
     if (error) return res.status(500).json({ error: error.message });
     await rebuildRaceData(dataUserId, existing?.agent_id ? [existing.agent_id] : []);
+    await logAccess({ actorUserId: ctx.userId, actorEmail: ctx.actorEmail, dataUserId, action: 'delete', recordHash: hash });
     return res.status(200).json({ ok: true });
   }
 

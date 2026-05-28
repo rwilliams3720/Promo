@@ -10514,6 +10514,11 @@ function renderSalesLog() {
 function downloadSalesLogXlsx() {
   const entries = _filteredSalesEntries();
   if (!entries.length) return;
+  fetch('/api/log-access', {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'export', resource: 'sales_log', row_count: entries.length, metadata: { year: _salesLogYear, month: _salesLogMonth, all_year: _salesLogAllYear } }),
+  }).catch(() => {});
   const rows = entries.map(e => ({
     'Date':          e.sale_date     || '',
     'Agent':         _agentRoster.find(a => a.agent_id === e.agent_id)?.name || e.agent_id || '',
