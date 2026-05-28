@@ -37,6 +37,20 @@ async function fetchAllPages(client, table, columns, userId) {
   return rows;
 }
 
+const ENCRYPTION_KEY = process.env.CUSTOMER_ENCRYPTION_KEY
+  ? Buffer.from(process.env.CUSTOMER_ENCRYPTION_KEY, 'hex')
+  : null;
+
+function encryptField(text) {
+  if (!text) return null;
+  if (!ENCRYPTION_KEY) return text;
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', ENCRYPTION_KEY, iv);
+  const encrypted = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return iv.toString('base64') + ':' + encrypted.toString('base64') + ':' + tag.toString('base64');
+}
+
 // Agent IDs are slugs of the display name: "Jane Smith" → "jane_smith"
 function slugify(name) {
   return String(name).toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '').replace(/^_+|_+$/g, '');
@@ -193,7 +207,7 @@ async function processCallUpload(rows, userId) {
     const logInserts = classified.newLogRows.map(r => ({
       user_id:     userId,
       hash:        r[0],
-      agent_id:    r[1] || null,
+      agent_id:    encryptField(r[1]) || null,
       disposition: r[2],
       talk_secs:   r[3] ? Math.round(r[3] * 60) : null,
       call_dt:     r[4] || null,

@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
+import crypto from 'crypto';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -10,6 +11,23 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM_EMAIL = 'Boat Race <reports@the-boat-race.com>';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+const ENCRYPTION_KEY = process.env.CUSTOMER_ENCRYPTION_KEY
+  ? Buffer.from(process.env.CUSTOMER_ENCRYPTION_KEY, 'hex')
+  : null;
+
+function decryptField(ciphertext) {
+  if (!ciphertext) return null;
+  if (!ENCRYPTION_KEY || !ciphertext.includes(':')) return ciphertext;
+  try {
+    const [ivB64, encB64, tagB64] = ciphertext.split(':');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', ENCRYPTION_KEY, Buffer.from(ivB64, 'base64'));
+    decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
+    return decipher.update(Buffer.from(encB64, 'base64')) + decipher.final('utf8');
+  } catch {
+    return ciphertext;
+  }
+}
 
 
 const SALES_PRODUCTS = ['wl','ul','term','health','auto','fire'];
@@ -202,9 +220,10 @@ async function buildReport(userId, dateStr, dateLabel, acct) {
   let totalCalls = 0, totalAnswered = 0, totalTalkSecs = 0, totalVoicemails = 0;
   for (const row of (calls || [])) {
     if (row.disposition === 'voicemail') { totalVoicemails++; continue; }
-    if (!row.agent_id) continue;
-    if (!callStats[row.agent_id]) callStats[row.agent_id] = { placed: 0, answered: 0, talkSecs: 0 };
-    const s = callStats[row.agent_id];
+    const agentId = decryptField(row.agent_id);
+    if (!agentId) continue;
+    if (!callStats[agentId]) callStats[agentId] = { placed: 0, answered: 0, talkSecs: 0 };
+    const s = callStats[agentId];
     if (row.disposition === 'placed')   { s.placed++;  totalCalls++; }
     if (row.disposition === 'answered') { s.answered++; totalAnswered++; }
     s.talkSecs    += row.talk_secs || 0;

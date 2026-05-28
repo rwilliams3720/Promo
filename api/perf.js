@@ -1,9 +1,27 @@
 import { createClient } from '@supabase/supabase-js';
+import crypto from 'crypto';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
 );
+
+const ENCRYPTION_KEY = process.env.CUSTOMER_ENCRYPTION_KEY
+  ? Buffer.from(process.env.CUSTOMER_ENCRYPTION_KEY, 'hex')
+  : null;
+
+function decryptField(ciphertext) {
+  if (!ciphertext) return null;
+  if (!ENCRYPTION_KEY || !ciphertext.includes(':')) return ciphertext;
+  try {
+    const [ivB64, encB64, tagB64] = ciphertext.split(':');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', ENCRYPTION_KEY, Buffer.from(ivB64, 'base64'));
+    decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
+    return decipher.update(Buffer.from(encB64, 'base64')) + decipher.final('utf8');
+  } catch {
+    return ciphertext;
+  }
+}
 
 const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -57,7 +75,8 @@ export default async function handler(req, res) {
     const vmMap   = {};
 
     for (const row of (logs || [])) {
-      const { agent_id, disposition, talk_secs, call_dt, call_slot } = row;
+      const { disposition, talk_secs, call_dt, call_slot } = row;
+      const agent_id = decryptField(row.agent_id);
       if (!call_dt) continue;
 
       const dtStr = String(call_dt).includes('T') ? String(call_dt).split('T')[0] : String(call_dt);
