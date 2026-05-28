@@ -9,6 +9,8 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 
 const FROM_EMAIL = 'Boat Race <reports@the-boat-race.com>';
 
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
 
 const SALES_PRODUCTS = ['wl','ul','term','health','auto','fire'];
 const PRODUCT_LABELS = { wl:'Whole Life', ul:'Universal Life', term:'Term', health:'Health', auto:'Auto', fire:'Home/Fire' };
@@ -275,9 +277,9 @@ function agentSalesTable(title, agentInfo, stats, periodStart, dateStr) {
         `<td style="padding:6px 8px;border-bottom:1px solid #1e3a5f;text-align:center;font-size:12px;color:${s[p] ? '#e8f4fd' : '#3a5a7a'};">${s[p] || '—'}</td>`
       ).join('');
       return `<tr>
-        <td style="padding:6px 8px;border-bottom:1px solid #1e3a5f;font-size:12px;white-space:nowrap;">${info.name}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #1e3a5f;font-size:12px;white-space:nowrap;">${esc(info.name)}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #1e3a5f;">
-          <span style="background:${teamColor}22;color:${teamColor};padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;text-transform:uppercase;">${info.team}</span>
+          <span style="background:${teamColor}22;color:${teamColor};padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;text-transform:uppercase;">${esc(info.team)}</span>
         </td>
         ${cells}
         <td style="padding:6px 8px;border-bottom:1px solid #1e3a5f;text-align:center;font-size:12px;font-weight:700;color:${rowTotal ? '#ff8c42' : '#3a5a7a'};">${rowTotal || '—'}</td>
@@ -339,9 +341,9 @@ function agentPremiumTable(title, agentInfo, stats, periodStart, dateStr) {
         `<td style="padding:6px 8px;border-bottom:1px solid #1e3a5f;text-align:center;font-size:11px;color:${s[p] ? '#e8f4fd' : '#3a5a7a'};">${fmtCurrency(s[p])}</td>`
       ).join('');
       return `<tr>
-        <td style="padding:6px 8px;border-bottom:1px solid #1e3a5f;font-size:12px;white-space:nowrap;">${info.name}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #1e3a5f;font-size:12px;white-space:nowrap;">${esc(info.name)}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #1e3a5f;">
-          <span style="background:${teamColor}22;color:${teamColor};padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;text-transform:uppercase;">${info.team}</span>
+          <span style="background:${teamColor}22;color:${teamColor};padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;text-transform:uppercase;">${esc(info.team)}</span>
         </td>
         ${cells}
         <td style="padding:6px 8px;border-bottom:1px solid #1e3a5f;text-align:center;font-size:11px;font-weight:700;color:${rowTotal ? '#ff8c42' : '#3a5a7a'};">${fmtCurrency(rowTotal)}</td>
@@ -391,9 +393,9 @@ function agentRows(agentInfo, callStats, salesStats) {
       const teamColor = info.team === 'sales' ? '#00d4ff' : '#00ff94';
       return `
         <tr>
-          <td style="padding:8px 12px;border-bottom:1px solid #1e3a5f;font-size:13px;">${info.name}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #1e3a5f;font-size:13px;">${esc(info.name)}</td>
           <td style="padding:8px 12px;border-bottom:1px solid #1e3a5f;font-size:12px;">
-            <span style="background:${teamColor}22;color:${teamColor};padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;text-transform:uppercase;">${info.team}</span>
+            <span style="background:${teamColor}22;color:${teamColor};padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;text-transform:uppercase;">${esc(info.team)}</span>
           </td>
           <td style="padding:8px 12px;border-bottom:1px solid #1e3a5f;text-align:center;font-size:13px;">${c.placed}</td>
           <td style="padding:8px 12px;border-bottom:1px solid #1e3a5f;text-align:center;font-size:13px;">${c.answered}</td>
@@ -417,7 +419,7 @@ function buildHtml(acct, dateLabel, dateStr, agentInfo, callStats, salesStats, t
   <tr><td style="background:#060e1c;border-radius:16px 16px 0 0;padding:28px 32px;border-bottom:1px solid #1e3a5f;">
     <div style="font-size:28px;font-weight:900;letter-spacing:.04em;color:#e8f4fd;">BOAT <span style="color:#00d4ff;">RACE</span></div>
     <div style="font-size:13px;color:#6b8db5;margin-top:4px;">Daily Performance Report — ${dateLabel}</div>
-    <div style="font-size:13px;color:#6b8db5;margin-top:2px;">${company}</div>
+    <div style="font-size:13px;color:#6b8db5;margin-top:2px;">${esc(company)}</div>
   </td></tr>
 
   <!-- Summary cards — row 1: Placed | Received | Voicemails -->
@@ -492,7 +494,7 @@ function buildHtml(acct, dateLabel, dateStr, agentInfo, callStats, salesStats, t
   <tr><td style="background:#060e1c;border-radius:0 0 16px 16px;padding:20px 32px;border-top:1px solid #1e3a5f;">
     <div style="font-size:11px;color:#3a5a7a;text-align:center;">
       Boat Race Daily Report · West Alpha LLC · 6105 West A St, Ste C, West Linn, OR 97068<br>
-      This report was automatically generated for ${acct.email}
+      This report was automatically generated for ${esc(acct.email)}
     </div>
   </td></tr>
 
