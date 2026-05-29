@@ -93,7 +93,7 @@ export default async function handler(req, res) {
 
     const [{ data: sales }, { data: raceRows }, { data: histMonths }, { data: histWins }] = await Promise.all([
       supabase.from('sales_log')
-        .select('agent_id,product,sale_date')
+        .select('agent_id,product,sale_date,is_cancelled')
         .eq('user_id', dataUserId)
         .gte('sale_date', cutoffStr),
       supabase.from('race_data')
@@ -189,7 +189,9 @@ export default async function handler(req, res) {
     const r90pol = { pol: 0 };
     for (const row of (sales || [])) {
       if (!row.agent_id) continue;
-      if (!agents[row.agent_id]) agents[row.agent_id] = { placed:0, answered:0, talkMin:0, policies:0 };
+      if (!agents[row.agent_id]) agents[row.agent_id] = { placed:0, answered:0, talkMin:0, policies:0, chargebacks:0 };
+      if (!agents[row.agent_id].chargebacks) agents[row.agent_id].chargebacks = 0;
+      if (row.is_cancelled) { agents[row.agent_id].chargebacks++; continue; }
       agents[row.agent_id].policies++;
       r90pol.pol++;
       const dtStr = String(row.sale_date).includes('T') ? String(row.sale_date).split('T')[0] : String(row.sale_date);
@@ -269,7 +271,8 @@ export default async function handler(req, res) {
     const agentText = [
       salesAgentEntries.length ? `-- SALES TEAM (ranked by placed) --\n${salesAgentEntries.map(([id, s]) => {
         const info = agentMeta[id] || { name: id };
-        return `${info.name} (sales): ${s.placed} placed, ${s.answered} answered, ${Math.round(s.talkMin)}min talk, ${s.policies} policies`;
+        const cbNote = s.chargebacks > 0 ? `, ${s.chargebacks} chargeback${s.chargebacks > 1 ? 's' : ''}` : '';
+        return `${info.name} (sales): ${s.placed} placed, ${s.answered} answered, ${Math.round(s.talkMin)}min talk, ${s.policies} policies${cbNote}`;
       }).join('\n')}` : null,
       serviceAgentEntries.length ? `-- SERVICE TEAM (ranked by answered) --\n${serviceAgentEntries.map(([id, s]) => {
         const info = agentMeta[id] || { name: id };

@@ -542,15 +542,19 @@
 
 <!-- Email template preview modal -->
 <div id="et-preview-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
-  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:2rem;max-width:600px;width:calc(100% - 2rem);max-height:80vh;overflow-y:auto;">
-    <div style="font-family:'Bebas Neue',sans-serif;font-size:1.4rem;letter-spacing:.04em;margin-bottom:1rem;color:var(--accent);">Email Preview</div>
-    <div style="background:var(--deep);border:1px solid var(--border);border-radius:8px;padding:1rem;margin-bottom:1rem;">
-      <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">SUBJECT</div>
-      <div id="et-preview-subject" style="font-size:13px;font-weight:600;margin-bottom:1rem;"></div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">BODY</div>
-      <div id="et-preview-body" style="font-size:12px;line-height:1.6;"></div>
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;max-width:600px;width:calc(100% - 2rem);max-height:85vh;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:1.25rem 1.5rem 1rem;border-bottom:1px solid var(--border2);flex-shrink:0;">
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:1.4rem;letter-spacing:.04em;color:var(--accent);">Email Preview</div>
+      <button class="btn btn-secondary" style="padding:4px 14px;font-size:13px;" onclick="document.getElementById('et-preview-modal').style.display='none'">Close</button>
     </div>
-    <button class="btn btn-secondary" onclick="document.getElementById('et-preview-modal').style.display='none'">Close</button>
+    <div style="overflow-y:auto;padding:1.25rem 1.5rem 1.5rem;">
+      <div style="background:var(--deep);border:1px solid var(--border);border-radius:8px;padding:1rem;">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">SUBJECT</div>
+        <div id="et-preview-subject" style="font-size:13px;font-weight:600;margin-bottom:1rem;"></div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">BODY</div>
+        <div id="et-preview-body" style="font-size:12px;line-height:1.6;"></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -815,6 +819,7 @@
       <button class="acct-stab"        id="perf-stab-salesperf"   onclick="showPerfSubTab('salesperf',this)"   style="font-size:13px;">Sales Performance</button>
       <button class="acct-stab"        id="perf-stab-commissions" onclick="showPerfSubTab('commissions',this)" style="font-size:13px;">Commissions</button>
       <button class="acct-stab"        id="perf-stab-goals"       onclick="showPerfSubTab('goals',this)"       style="font-size:13px;">Goals</button>
+      <button class="acct-stab"        id="perf-stab-chargebacks" onclick="showPerfSubTab('chargebacks',this)" style="font-size:13px;">Chargeback Report</button>
     </div>
 
     <!-- Call Performance sub-pane -->
@@ -902,6 +907,13 @@
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:.6rem;">
           <select id="sl-month-sel" onchange="onSalesLogMonthChange()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;"></select>
           <select id="sl-year-sel" onchange="onSalesLogMonthChange()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;"></select>
+          <select id="sl-quarter-mode" onchange="onSalesLogQuarterChange()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;" title="Switch to quarterly view">
+            <option value="">Month View</option>
+            <option value="1">Q1 (Jan–Mar)</option>
+            <option value="2">Q2 (Apr–Jun)</option>
+            <option value="3">Q3 (Jul–Sep)</option>
+            <option value="4">Q4 (Oct–Dec)</option>
+          </select>
           <select id="sl-location-filter" onchange="onSalesLogLocationChange()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;display:none;">
             <option value="all">All Locations</option>
           </select>
@@ -915,7 +927,7 @@
           <label style="font-size:12px;color:var(--text);display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;user-select:none;"><input type="checkbox" id="sl-show-hidden" onchange="onSalesLogFilterChange()"> Show hidden</label>
           <button class="btn btn-secondary" style="margin-left:auto;padding:4px 12px;font-size:12px;white-space:nowrap;" onclick="downloadSalesLogXlsx()">↓ Download .xlsx</button>
         </div>
-        <input id="sales-log-search" type="text" placeholder="Search customer, agent, product, subcategory…" oninput="filterSalesLog()" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;box-sizing:border-box;margin-bottom:.75rem;">
+        <input id="sales-log-search" type="text" placeholder="Search customer, agent, product, subcategory, date (YYYY-MM-DD)…" oninput="filterSalesLog()" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;box-sizing:border-box;margin-bottom:.75rem;">
         <div id="checklist-subs-list" style="font-size:13px;color:var(--muted);">Loading…</div>
       </div>
       </div><!-- /perf-saleslog-content -->
@@ -1127,6 +1139,58 @@
         </div>
       </div>
     </div><!-- /perf-sub-goals -->
+
+    <!-- Chargeback Report sub-pane -->
+    <div id="perf-sub-chargebacks" style="display:none">
+      <div id="perf-chargebacks-teaser" style="display:none">
+        <div class="panel" style="text-align:center;padding:3rem 2rem;">
+          <div style="font-size:2rem;margin-bottom:1rem;">📋</div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:1.6rem;letter-spacing:.04em;margin-bottom:.75rem;">Chargeback Report</div>
+          <p style="font-size:14px;color:var(--muted);max-width:480px;margin:0 auto 1.5rem;line-height:1.7;">
+            Track policy cancellations and chargebacks — view ratios, see at-risk premium, and monitor trends by agent. Available with the Sales Tracking add-on.
+          </p>
+          <button class="btn btn-primary" onclick="goToAccountTab('billing','sales-addon-section')">Add to Account — $25/mo</button>
+        </div>
+      </div>
+      <div id="perf-chargebacks-content">
+        <div class="panel">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:1rem;">
+            <div class="panel-title" style="margin:0">Chargeback Report</div>
+            <div style="display:flex;gap:0;margin-left:auto;">
+              <button class="acct-stab active" id="cb-mode-month"   onclick="setCbMode('month',this)"   style="font-size:12px;">Month</button>
+              <button class="acct-stab"        id="cb-mode-quarter" onclick="setCbMode('quarter',this)" style="font-size:12px;">Quarter</button>
+              <button class="acct-stab"        id="cb-mode-year"    onclick="setCbMode('year',this)"    style="font-size:12px;">Year</button>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:1rem;">
+            <div id="cb-range-month" style="display:flex;gap:6px;align-items:center;">
+              <select id="cb-month-sel"  onchange="loadChargebackReport()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;"></select>
+              <select id="cb-year-sel"   onchange="loadChargebackReport()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;"></select>
+            </div>
+            <div id="cb-range-quarter" style="display:none;gap:6px;align-items:center;">
+              <select id="cb-quarter-sel"  onchange="loadChargebackReport()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;">
+                <option value="1">Q1 (Jan–Mar)</option><option value="2">Q2 (Apr–Jun)</option>
+                <option value="3">Q3 (Jul–Sep)</option><option value="4">Q4 (Oct–Dec)</option>
+              </select>
+              <select id="cb-quarter-year" onchange="loadChargebackReport()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;"></select>
+            </div>
+            <div id="cb-range-year" style="display:none;gap:6px;align-items:center;">
+              <select id="cb-year-only"  onchange="loadChargebackReport()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;"></select>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:1rem;" id="cb-filter-row" style="display:none;">
+            <select id="cb-agent-filter" onchange="onCbFilterChange()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;">
+              <option value="all">All Agents</option>
+            </select>
+            <select id="cb-location-filter" onchange="onCbFilterChange()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;">
+              <option value="all">All Locations</option>
+            </select>
+          </div>
+          <div id="cb-stats-row" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:1rem;"></div>
+          <div id="cb-list" style="font-size:13px;color:var(--muted);">Select a period to load.</div>
+        </div>
+      </div>
+    </div><!-- /perf-sub-chargebacks -->
 
   </div>
 
@@ -2384,6 +2448,8 @@ let _dataUserId       = null;   // use for all data queries (= _ownerUserId || _
 let _managedMemberIds = [];     // for captains/COs: member IDs they manage
 let _managedAgentIds  = [];     // derived: roster_agent_id values of managed members
 let _allMembersList   = [];     // all loaded member rows, for manager picker
+let _memberOrgTree   = [];      // built from /api/member-org for owner/captain
+let _memberOrgLoaded = false;
 
 const PLAN_PRICES = { basic: 25, pro: 35, premium: 50 };
 const PLAN_FEATURES = {
@@ -3051,7 +3117,7 @@ function showManageSubTab(name, btn) {
 }
 
 function showPerfSubTab(name, btn) {
-  ['callperf','saleslog','salesperf','commissions','goals'].forEach(n => {
+  ['callperf','saleslog','salesperf','commissions','goals','chargebacks'].forEach(n => {
     const p = document.getElementById('perf-sub-' + n);
     if (p) p.style.display = n === name ? '' : 'none';
   });
@@ -3100,6 +3166,15 @@ function showPerfSubTab(name, btn) {
   }
 
   if (name === 'goals') loadGoalsTab();
+
+  if (name === 'chargebacks') {
+    const hasSales = _hasSalesAddon || _isAdmin;
+    const teaser  = document.getElementById('perf-chargebacks-teaser');
+    const content = document.getElementById('perf-chargebacks-content');
+    if (teaser)  teaser.style.display  = hasSales ? 'none' : '';
+    if (content) content.style.display = hasSales ? '' : 'none';
+    if (hasSales) loadChargebackReport();
+  }
 }
 
 function goToAccountTab(pane, targetId) {
@@ -3120,7 +3195,11 @@ function showTab(name, btn) {
   if (name === 'race') loadRaceData();
   if (name === 'account') loadAccountTab();
   if (name === 'adminpanel') { loadAdminPanel(); loadAccessLog(); }
-  if (name === 'perf') { showPerfSubTab('callperf'); }
+  if (name === 'perf') {
+    _applyPerfMemberGating();
+    const memberLimited = _isMember && !['captain','chief_officer'].includes(_memberRole);
+    showPerfSubTab(memberLimited ? 'chargebacks' : 'callperf');
+  }
   if (name === 'history') loadHistory();
   if (name === 'analysis') {
     const analysisFullAccess = _isAdmin || (_currentPlan === 'premium' && !_trialExpired && ['paid','deferred'].includes(_acctStatus));
@@ -5236,7 +5315,7 @@ function getAllowedTabs() {
     case 'captain':       return ['race','scoring','manage','perf','analysis','history'];
     case 'chief_officer': return ['race','scoring','manage','perf','history'];
     case 'bosun': {
-      const bosunTabs = ['race','history'];
+      const bosunTabs = ['race','history','perf'];
       if (_selfReportConfig?.activities_enabled || _selfReportConfig?.sales_enabled) bosunTabs.push('manage');
       return bosunTabs;
     }
@@ -5247,6 +5326,14 @@ function getAllowedTabs() {
     }
     default:              return ['race'];
   }
+}
+
+function _applyPerfMemberGating() {
+  const memberLimited = _isMember && !['captain','chief_officer'].includes(_memberRole);
+  ['callperf','saleslog','salesperf','commissions'].forEach(sub => {
+    const btn = document.getElementById(`perf-stab-${sub}`);
+    if (btn) btn.style.display = memberLimited ? 'none' : '';
+  });
 }
 
 function applyMemberTabGating() {
@@ -5411,6 +5498,7 @@ function renderMemberRow(m) {
       <td style="padding:6px 8px;border-bottom:1px solid var(--border2);font-family:'DM Mono',monospace;font-size:12px;">${escHtml(m.email)}</td>
       <td style="padding:6px 8px;border-bottom:1px solid var(--border2);">
         <select onchange="onMemberRoleChange('${m.id}',this)" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:3px 6px;font-size:12px;outline:none;">${roleOpts}</select>
+        <div id="role-desc-${m.id}" style="font-size:11px;color:var(--muted);margin-top:3px;max-width:220px;">${ROLE_DESC[m.role] || ''}</div>
       </td>
       <td style="padding:6px 8px;border-bottom:1px solid var(--border2);">
         <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:${statusColor};">${m.status}</span>
@@ -5609,7 +5697,9 @@ async function removeMember(memberId, btn) {
 }
 
 function onMemberRoleChange(memberId, sel) {
-  const row = document.getElementById(`custom-tabs-row-${memberId}`);
+  const row  = document.getElementById(`custom-tabs-row-${memberId}`);
+  const desc = document.getElementById(`role-desc-${memberId}`);
+  if (desc) desc.textContent = ROLE_DESC[sel.value] || '';
   if (sel.value === 'custom') {
     if (row) row.style.display = '';
   } else {
@@ -5989,7 +6079,7 @@ async function saveRosterName(id, agentId, triggerEl) {
   const r = await fetch('/api/agent-roster', {
     method: 'PATCH',
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id, name: newName }),
+    body: JSON.stringify({ id, agent_id: agentId, name: newName }),
   });
   if (r.ok) {
     const a = _agentRoster.find(x => x.id === id);
@@ -8067,20 +8157,39 @@ function renderLocationsList() {
               Enabled
             </label>
           </div>
-          <div id="loc-goals-fields-${safeId}" style="display:${l.goals_enabled ? 'grid' : 'none'};grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem;">
-            <div><label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px;">Policy Count Goal</label>
-              <input id="loc-goal-count-${safeId}" type="number" min="0" value="${l.goal_count||''}" placeholder="e.g. 50" style="${_locInputSt()}"></div>
-            <div><label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px;">Premium Goal ($)</label>
-              <input id="loc-goal-prem-${safeId}" type="number" min="0" value="${l.goal_premium||''}" placeholder="e.g. 100000" style="${_locInputSt()}"></div>
-          </div>
-          <div id="loc-act-goals-${safeId}" style="display:${l.goals_enabled ? '' : 'none'};margin-top:.4rem;padding-top:.4rem;border-top:1px solid var(--border2);">
-            <div style="font-size:11px;color:var(--muted);margin-bottom:.4rem;">Activity Goals (per month)</div>
-            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.4rem;">
-              ${_activityTypes.filter(at => at.active !== false).map(at => {
-                const currentGoal = (l.activity_goals || {})[at.id] || '';
-                return `<div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px;">${escHtml(at.name)}</label>
-                  <input id="loc-act-goal-${safeId}-${escHtml(at.id)}" type="number" min="0" value="${currentGoal}" placeholder="—" style="${_locInputSt()}"></div>`;
-              }).join('')}
+          <div id="loc-goals-fields-${safeId}" style="display:${l.goals_enabled ? '' : 'none'}">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem;">
+              <div><label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px;">Monthly Policy Goal</label>
+                <input id="loc-goal-count-${safeId}" type="number" min="0" value="${l.goal_count||''}" placeholder="e.g. 50" style="${_locInputSt()}"></div>
+              <div><label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px;">Monthly Premium Goal ($)</label>
+                <input id="loc-goal-prem-${safeId}" type="number" min="0" value="${l.goal_premium||''}" placeholder="e.g. 100000" style="${_locInputSt()}"></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem;">
+              <div><label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px;">Annual Policy Goal</label>
+                <input id="loc-goal-count-ann-${safeId}" type="number" min="0" value="${l.goal_count_annual||''}" placeholder="e.g. 600" style="${_locInputSt()}"></div>
+              <div><label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px;">Annual Premium Goal ($)</label>
+                <input id="loc-goal-prem-ann-${safeId}" type="number" min="0" value="${l.goal_premium_annual||''}" placeholder="e.g. 1200000" style="${_locInputSt()}"></div>
+            </div>
+            <div style="margin-bottom:.5rem;">
+              <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.35rem;">Visible in Goals Tab to</div>
+              <div style="display:flex;flex-wrap:wrap;gap:.5rem;">${(() => {
+                const vis = l.goals_visibility || ['all'];
+                return [['all','Everyone'],['captain','Captain'],['chief_officer','Chief Officer'],['bosun','Bosun'],['custom','Custom']].map(([val, lbl]) =>
+                  `<label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;white-space:nowrap;">
+                    <input type="checkbox" class="loc-vis-${safeId}" value="${val}" ${vis.includes(val) ? 'checked' : ''} onchange="onLocVisChange('${safeId}')">
+                    ${lbl}</label>`
+                ).join('');
+              })()}</div>
+            </div>
+            <div id="loc-act-goals-${safeId}" style="margin-top:.4rem;padding-top:.4rem;border-top:1px solid var(--border2);">
+              <div style="font-size:11px;color:var(--muted);margin-bottom:.4rem;">Activity Goals (per month)</div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.4rem;">
+                ${_activityTypes.filter(at => at.active !== false).map(at => {
+                  const currentGoal = (l.activity_goals || {})[at.id] || '';
+                  return `<div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px;">${escHtml(at.name)}</label>
+                    <input id="loc-act-goal-${safeId}-${escHtml(at.id)}" type="number" min="0" value="${currentGoal}" placeholder="—" style="${_locInputSt()}"></div>`;
+                }).join('')}
+              </div>
             </div>
           </div>
         </div>
@@ -8100,10 +8209,8 @@ function toggleLocationEdit(id) {
 }
 
 async function toggleLocationGoals(id, enabled) {
-  const fields   = document.getElementById('loc-goals-fields-' + id);
-  const actGoals = document.getElementById('loc-act-goals-' + id);
-  if (fields)   fields.style.display   = enabled ? 'grid' : 'none';
-  if (actGoals) actGoals.style.display = enabled ? '' : 'none';
+  const fields = document.getElementById('loc-goals-fields-' + id);
+  if (fields) fields.style.display = enabled ? '' : 'none';
   const loc = _salesLocations.find(l => l.id === id);
   if (loc) loc.goals_enabled = enabled;
   await fetch('/api/checklist-config', {
@@ -8113,12 +8220,26 @@ async function toggleLocationGoals(id, enabled) {
   });
 }
 
+function onLocVisChange(id) {
+  const boxes = [...document.querySelectorAll(`.loc-vis-${id}`)];
+  const allBox = boxes.find(b => b.value === 'all');
+  if (allBox?.checked) {
+    boxes.filter(b => b.value !== 'all').forEach(b => { b.checked = false; });
+  } else {
+    if (allBox) allBox.checked = false;
+  }
+}
+
 async function saveLocationDetails(id, btn) {
   const address    = (document.getElementById('loc-addr-' + id)?.value  || '').trim();
   const phone      = (document.getElementById('loc-phone-' + id)?.value || '').trim();
   const hours      = (document.getElementById('loc-hours-' + id)?.value || '').trim();
-  const goal_count   = document.getElementById('loc-goal-count-' + id)?.value || null;
-  const goal_premium = document.getElementById('loc-goal-prem-' + id)?.value  || null;
+  const goal_count         = document.getElementById('loc-goal-count-' + id)?.value     || null;
+  const goal_premium       = document.getElementById('loc-goal-prem-' + id)?.value      || null;
+  const goal_count_annual  = document.getElementById('loc-goal-count-ann-' + id)?.value || null;
+  const goal_premium_annual= document.getElementById('loc-goal-prem-ann-' + id)?.value  || null;
+  const visBoxes = [...document.querySelectorAll(`.loc-vis-${id}:checked`)].map(b => b.value);
+  const goals_visibility = visBoxes.length ? visBoxes : ['all'];
   const actGoals = {};
   (_activityTypes || []).filter(at => at.active !== false).forEach(at => {
     const v = document.getElementById(`loc-act-goal-${id}-${at.id}`)?.value;
@@ -8129,10 +8250,10 @@ async function saveLocationDetails(id, btn) {
     const r = await fetch('/api/checklist-config', {
       method: 'PATCH',
       headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ locationUpdates: [{ action: 'update_details', id, address, phone, hours, goal_count, goal_premium, activity_goals: actGoals }] }),
+      body: JSON.stringify({ locationUpdates: [{ action: 'update_details', id, address, phone, hours, goal_count, goal_premium, goal_count_annual, goal_premium_annual, goals_visibility, activity_goals: actGoals }] }),
     });
     const loc = _salesLocations.find(l => l.id === id);
-    if (loc) { loc.address = address; loc.phone = phone; loc.hours = hours; loc.goal_count = goal_count ? parseInt(goal_count) : null; loc.goal_premium = goal_premium ? parseFloat(goal_premium) : null; loc.activity_goals = actGoals; }
+    if (loc) { loc.address = address; loc.phone = phone; loc.hours = hours; loc.goal_count = goal_count ? parseInt(goal_count) : null; loc.goal_premium = goal_premium ? parseFloat(goal_premium) : null; loc.goal_count_annual = goal_count_annual ? parseInt(goal_count_annual) : null; loc.goal_premium_annual = goal_premium_annual ? parseFloat(goal_premium_annual) : null; loc.goals_visibility = goals_visibility; loc.activity_goals = actGoals; }
     const msgEl = document.getElementById('loc-save-msg-' + id);
     if (msgEl) {
       msgEl.textContent = r.ok ? 'Saved' : 'Error saving';
@@ -8703,15 +8824,21 @@ function previewEmailTemplate() {
     thankYou:         document.getElementById('et-thank-you').value.trim(),
     thankYouEnabled:  document.getElementById('et-thank-you-enabled').checked,
   };
+  const firstLoc = (_salesLocations || []).find(l => l.active !== false);
+  const previewFormCompletions = { wfolder: { applied: true } };
+  (_checklistFormCfg || []).forEach(item => {
+    previewFormCompletions[item.form_key] = { applied: item.active !== false };
+  });
   const dummyPayload = {
     ...cfg,
     customerName: 'Jo Smith',
     subDate: new Date().toISOString().slice(0,10),
     apptDate: new Date(Date.now() + 86400000).toISOString().slice(0,10),
     apptTime: '10:00',
-    meetingType: 'In Person',
-    location: null,
-    formCompletions: { wfolder: { applied: true }, GSD: { applied: true }, DSS: { applied: true }, SCD: { applied: false }, DTD: { applied: false }, SFPP: { applied: false } },
+    meetingType: firstLoc ? 'In Person' : 'Virtual',
+    apptLocation: firstLoc ? firstLoc.name : null,
+    location: firstLoc ? firstLoc.name : null,
+    formCompletions: previewFormCompletions,
     sales: [],
   };
   const { bodyHtml } = buildCustomerEmailHtml(dummyPayload);
@@ -9360,6 +9487,7 @@ async function loadGoalsTab() {
   if (!el) return;
   syncGoalsFilterButtons();
   el.innerHTML = '<div style="color:var(--muted);font-size:13px;text-align:center;padding:2rem;">Loading…</div>';
+  await loadMemberOrgTree();
   try {
     const r = await fetch('/api/agent-goals?withActuals=1', { headers: authHeaders() });
     const d = await r.json();
@@ -9388,77 +9516,179 @@ function setGoalsFilter(filter) {
   renderGoalsTab();
 }
 
+async function loadMemberOrgTree() {
+  if (_memberOrgLoaded) return;
+  if (_isMember && _memberRole !== 'captain') return;
+  try {
+    const r = await fetch('/api/member-org', { headers: authHeaders() });
+    if (!r.ok) return;
+    const members = await r.json();
+    const byId = {};
+    members.forEach(m => { byId[m.id] = { ...m, agentId: m.roster_agent_id, subordinates: [] }; });
+    const tree = [];
+    members.forEach(m => {
+      if (m.managed_by && byId[m.managed_by]) byId[m.managed_by].subordinates.push(byId[m.id]);
+      else tree.push(byId[m.id]);
+    });
+    _memberOrgTree   = tree;
+    _memberOrgLoaded = true;
+  } catch(e) { console.warn('loadMemberOrgTree:', e); }
+}
+
+function _getOrgGroups() {
+  if (!_memberOrgLoaded || !_memberOrgTree.length) return null;
+  const coNodes = _memberOrgTree.filter(n => n.role === 'chief_officer');
+  if (!coNodes.length) return null;
+  const agentName = id => _agentRoster.find(a => a.agent_id === id)?.name || id;
+  const assigned = new Set();
+  const groups = coNodes.map(co => {
+    const subIds = co.subordinates.map(s => s.agentId).filter(Boolean);
+    const coId   = co.agentId;
+    const ids    = [...(coId ? [coId] : []), ...subIds];
+    ids.forEach(id => assigned.add(id));
+    return { label: coId ? agentName(coId) : co.email, coAgentId: coId, agentIds: ids, isUnassigned: false };
+  });
+  const unassigned = (_agentRoster || [])
+    .filter(a => a.active !== false && !assigned.has(a.agent_id))
+    .map(a => a.agent_id);
+  if (unassigned.length) groups.push({ label: 'Unassigned', coAgentId: null, agentIds: unassigned, isUnassigned: true });
+  return groups.length ? groups : null;
+}
+
+function _renderAgencyGoalsSection() {
+  const myRole = _isMember ? _memberRole : 'owner';
+  const visibleLocs = (_salesLocations || []).filter(l => {
+    if (!l.goals_enabled) return false;
+    if (!l.goal_count && !l.goal_premium && !l.goal_count_annual && !l.goal_premium_annual) return false;
+    const vis = l.goals_visibility;
+    if (!vis || !vis.length || vis.includes('all')) return true;
+    return vis.includes(myRole);
+  });
+  if (!visibleLocs.length) return '';
+  const now = new Date();
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const monthLabel = MONTHS[now.getMonth()] + ' ' + now.getFullYear();
+  const yearLabel  = String(now.getFullYear());
+  const cards = visibleLocs.map(l => {
+    const items = [];
+    if (l.goal_count)         items.push(`<div style="font-size:12px;"><span style="color:var(--muted);">Monthly Policy Goal (${monthLabel}):</span> <strong>${Number(l.goal_count).toLocaleString()}</strong></div>`);
+    if (l.goal_premium)       items.push(`<div style="font-size:12px;margin-top:3px;"><span style="color:var(--muted);">Monthly Premium Goal (${monthLabel}):</span> <strong>$${Number(l.goal_premium).toLocaleString()}</strong></div>`);
+    if (l.goal_count_annual)  items.push(`<div style="font-size:12px;margin-top:3px;"><span style="color:var(--muted);">Annual Policy Goal (${yearLabel}):</span> <strong>${Number(l.goal_count_annual).toLocaleString()}</strong></div>`);
+    if (l.goal_premium_annual) items.push(`<div style="font-size:12px;margin-top:3px;"><span style="color:var(--muted);">Annual Premium Goal (${yearLabel}):</span> <strong>$${Number(l.goal_premium_annual).toLocaleString()}</strong></div>`);
+    if (!items.length) return '';
+    return `<div style="background:var(--deep);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;margin-bottom:8px;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:6px;">${escHtml(l.name)}</div>
+      ${items.join('')}
+    </div>`;
+  }).filter(Boolean).join('');
+  if (!cards) return '';
+  return `<div style="margin-bottom:1.5rem;border:1px solid var(--border2);border-radius:10px;padding:.85rem;">
+    <div style="font-size:13px;font-weight:700;color:var(--accent2);margin-bottom:.75rem;">Agency Goals</div>
+    ${cards}
+  </div>`;
+}
+
 function renderGoalsTab() {
   const el = document.getElementById('goals-content');
   if (!el) return;
   const PT = { monthly:'Monthly', quarterly:'Quarterly', semi_annual:'Semi-Annual', annual:'Annual' };
   const ML = { wl:'WL', ul:'UL', term:'Term', health:'Health', auto:'Auto', fire:'Fire', policies:'Total Policies', premium:'Premium ($)' };
+
+  const agencyHtml = _renderAgencyGoalsSection();
+
   let filtered = _goalsViewFilter === 'all'
     ? _agentGoals
     : _agentGoals.filter(g => g.period_type === _goalsViewFilter);
-  // Captain/CO with managed agents only see goals for their managed agents
   if (_isMember && _managedAgentIds.length > 0) {
     filtered = filtered.filter(g => _managedAgentIds.includes(g.agent_id));
   }
-  if (!filtered.length) {
+
+  if (!filtered.length && !agencyHtml) {
     el.innerHTML = '<div style="color:var(--muted);font-size:13px;text-align:center;padding:2rem;">No goals found. Set goals in <button class="btn btn-secondary" style="padding:2px 8px;font-size:12px;" onclick="goToAccountTab(\'sales\',\'ma-agents-section\')">Account → Sales → Team</button></div>';
     return;
   }
+
   const byAgent = {};
   for (const g of filtered) {
     if (!byAgent[g.agent_id]) byAgent[g.agent_id] = [];
     byAgent[g.agent_id].push(g);
   }
-  const agentName = id => (_agentRoster.find(x => x.agent_id === id)?.name) || id;
-  el.innerHTML = Object.entries(byAgent).map(([agentId, goals]) => {
-    const name  = agentName(agentId);
-    const cards = [...goals].sort((a,b) => b.period_start > a.period_start ? 1 : -1).map(g => {
-      const badge = g.is_public
-        ? '<span style="font-size:10px;background:rgba(0,229,180,.12);color:var(--accent2);border-radius:3px;padding:1px 6px;">Public</span>'
-        : '<span style="font-size:10px;background:rgba(255,255,255,.06);color:var(--muted);border-radius:3px;padding:1px 6px;">Private</span>';
-      const recBadge = g.is_recurring
-        ? '<span style="font-size:10px;background:rgba(123,97,255,.15);color:#a78bfa;border-radius:3px;padding:1px 6px;">↻ Recurring</span>'
-        : '';
-      const metrics = Object.entries(g.goals || {}).filter(([,v]) => v);
-      if (!metrics.length) return '';
-      const rows = metrics.map(([key, target]) => {
-        const raw    = g.actuals?.[key];
-        const actual = typeof raw === 'number' ? raw : null;
-        const label  = key.startsWith('activity_')
-          ? (_activityTypes.find(t => 'activity_'+t.id === key)?.name || key)
-          : (ML[key] || key);
-        const numTgt = parseFloat(target) || 0;
-        const pct    = actual !== null && numTgt > 0 ? Math.min(100, Math.round(actual/numTgt*100)) : null;
-        const col    = pct === null ? 'var(--muted)' : pct>=100 ? 'var(--accent2)' : pct>=70 ? '#fbbf24' : 'var(--danger)';
-        const dispA  = actual === null ? '—' : key==='premium' ? '$'+Math.round(actual).toLocaleString() : actual;
-        const dispT  = key === 'premium' ? '$'+parseFloat(target).toLocaleString() : target;
-        return `<div style="margin-bottom:8px;">
-          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">
-            <span>${escHtml(label)}</span>
-            <span style="color:${col};">${dispA} / ${dispT}${pct!==null?' ('+pct+'%)':''}</span>
-          </div>
-          <div style="height:5px;background:var(--border2);border-radius:3px;overflow:hidden;">
-            ${pct!==null?`<div style="height:5px;width:${pct}%;background:${col};border-radius:3px;transition:width .3s;"></div>`:''}
-          </div>
-        </div>`;
-      }).join('');
-      const displayLabel = g.is_recurring ? currentPeriodLabel(g.period_type) : g.period_label;
-      const range        = g.is_recurring ? currentPeriodRange(g.period_type) : { start: g.period_start, end: g.period_end };
-      return `<div style="background:var(--deep);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;margin-bottom:8px;">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
-          <span style="font-size:13px;font-weight:600;">${escHtml(displayLabel)}</span>
-          <span style="font-size:11px;color:var(--muted);">${PT[g.period_type]||g.period_type}</span>
-          ${badge}${recBadge}
-          <span style="font-size:10px;color:var(--muted);margin-left:auto;">${range.start} – ${range.end}</span>
+
+  const renderGoalCards = (goals) => [...goals].sort((a,b) => b.period_start > a.period_start ? 1 : -1).map(g => {
+    const badge = g.is_public
+      ? '<span style="font-size:10px;background:rgba(0,229,180,.12);color:var(--accent2);border-radius:3px;padding:1px 6px;">Public</span>'
+      : '<span style="font-size:10px;background:rgba(255,255,255,.06);color:var(--muted);border-radius:3px;padding:1px 6px;">Private</span>';
+    const recBadge = g.is_recurring
+      ? '<span style="font-size:10px;background:rgba(123,97,255,.15);color:#a78bfa;border-radius:3px;padding:1px 6px;">↻ Recurring</span>'
+      : '';
+    const metrics = Object.entries(g.goals || {}).filter(([,v]) => v);
+    if (!metrics.length) return '';
+    const rows = metrics.map(([key, target]) => {
+      const raw    = g.actuals?.[key];
+      const actual = typeof raw === 'number' ? raw : null;
+      const label  = key.startsWith('activity_')
+        ? (_activityTypes.find(t => 'activity_'+t.id === key)?.name || key)
+        : (ML[key] || key);
+      const numTgt = parseFloat(target) || 0;
+      const pct    = actual !== null && numTgt > 0 ? Math.min(100, Math.round(actual/numTgt*100)) : null;
+      const col    = pct === null ? 'var(--muted)' : pct>=100 ? 'var(--accent2)' : pct>=70 ? '#fbbf24' : 'var(--danger)';
+      const dispA  = actual === null ? '—' : key==='premium' ? '$'+Math.round(actual).toLocaleString() : actual;
+      const dispT  = key === 'premium' ? '$'+parseFloat(target).toLocaleString() : target;
+      return `<div style="margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">
+          <span>${escHtml(label)}</span>
+          <span style="color:${col};">${dispA} / ${dispT}${pct!==null?' ('+pct+'%)':''}</span>
         </div>
-        ${rows}
+        <div style="height:5px;background:var(--border2);border-radius:3px;overflow:hidden;">
+          ${pct!==null?`<div style="height:5px;width:${pct}%;background:${col};border-radius:3px;transition:width .3s;"></div>`:''}
+        </div>
       </div>`;
     }).join('');
-    return `<div style="margin-bottom:1.5rem;">
-      <div style="font-size:14px;font-weight:700;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid var(--border2);">${escHtml(name)}</div>
-      ${cards || '<div style="color:var(--muted);font-size:12px;">No goals for this filter.</div>'}
+    const displayLabel = g.is_recurring ? currentPeriodLabel(g.period_type) : g.period_label;
+    const range        = g.is_recurring ? currentPeriodRange(g.period_type) : { start: g.period_start, end: g.period_end };
+    return `<div style="background:var(--deep);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+        <span style="font-size:13px;font-weight:600;">${escHtml(displayLabel)}</span>
+        <span style="font-size:11px;color:var(--muted);">${PT[g.period_type]||g.period_type}</span>
+        ${badge}${recBadge}
+        <span style="font-size:10px;color:var(--muted);margin-left:auto;">${range.start} – ${range.end}</span>
+      </div>
+      ${rows}
     </div>`;
   }).join('');
+
+  const renderAgentBlock = (agentId, indent) => {
+    const goals = byAgent[agentId];
+    if (!goals?.length) return '';
+    const name  = (_agentRoster.find(x => x.agent_id === agentId)?.name) || agentId;
+    const cards = renderGoalCards(goals);
+    return `<div style="margin-bottom:1rem;${indent ? 'margin-left:1.5rem;padding-left:.75rem;border-left:2px solid var(--border2);' : ''}">
+      <div style="font-size:${indent ? '13' : '14'}px;font-weight:700;margin-bottom:.5rem;padding-bottom:.4rem;border-bottom:1px solid var(--border2);">${escHtml(name)}</div>
+      ${cards || ''}
+    </div>`;
+  };
+
+  const groups = _getOrgGroups();
+  let agentGoalsHtml;
+
+  if (groups) {
+    agentGoalsHtml = groups.map(group => {
+      const memberBlocks = group.agentIds.map(id => renderAgentBlock(id, id !== group.coAgentId)).join('');
+      if (!memberBlocks.trim()) return '';
+      const hdrStyle = group.isUnassigned
+        ? 'font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.75rem;'
+        : 'font-size:13px;font-weight:700;color:var(--accent);margin-bottom:.75rem;display:flex;align-items:center;gap:6px;';
+      const hdrLabel = group.isUnassigned ? 'Unassigned' : `Chief Officer: ${escHtml(group.label)}`;
+      return `<div style="margin-bottom:1.25rem;border:1px solid var(--border2);border-radius:10px;padding:.85rem;">
+        <div style="${hdrStyle}">${hdrLabel}</div>
+        ${memberBlocks}
+      </div>`;
+    }).join('');
+  } else {
+    agentGoalsHtml = Object.entries(byAgent).map(([agentId]) => renderAgentBlock(agentId, false)).join('');
+  }
+
+  el.innerHTML = agencyHtml + (agentGoalsHtml || (agencyHtml ? '' : '<div style="color:var(--muted);font-size:13px;text-align:center;padding:2rem;">No agent goals for this filter.</div>'));
 }
 
 // ── Manual entry (Manage tab) ─────────────────────────────────────────────────
@@ -9748,10 +9978,16 @@ function _buildSlEditForm(e) {
       <label style="font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer;">
         <input id="sl-split-${h}" type="checkbox"${splitChk} onchange="slToggleTeammate(this,'${h}')"> Split Sale
       </label>
-      <div id="sl-teammate-row-${h}" style="display:${e.split_sale ? '' : 'none'};flex:1;display:flex;gap:.75rem;align-items:flex-end;flex-wrap:wrap;">
+      <div id="sl-teammate-row-${h}" style="display:${e.split_sale ? 'flex' : 'none'};flex:1;gap:.75rem;align-items:flex-end;flex-wrap:wrap;">
         <div>
           <span style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">TEAMMATE</span>
-          <input id="sl-teammate-${h}" type="text" value="${escHtml(e.teammate || '')}" placeholder="Teammate name" style="${si};max-width:200px;">
+          <select id="sl-teammate-${h}" style="${ss};max-width:200px;">${(() => {
+            const active = _agentRoster.filter(a => a.active !== false);
+            const inRoster = active.some(a => a.agent_id === e.teammate);
+            const extra = (e.teammate && !inRoster) ? `<option value="${escHtml(e.teammate)}" selected>${escHtml(e.teammate)}</option>` : '';
+            return '<option value="">— Select —</option>' + extra +
+              active.map(a => `<option value="${escHtml(a.agent_id)}"${a.agent_id === e.teammate ? ' selected' : ''}>${escHtml(a.name)}</option>`).join('');
+          })()}</select>
         </div>
         <div>
           <span style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">PRIMARY %</span>
@@ -9858,6 +10094,8 @@ let _salesLogMonth        = new Date().getMonth() + 1;
 let _salesLogYear         = new Date().getFullYear();
 let _salesLogAllYear      = false;
 let _salesLogIssuedFilter = 'all';
+let _salesLogCustomFrom   = null; // YYYY-MM-DD when quarterly mode active
+let _salesLogCustomTo     = null;
 let _spEntries   = [];
 let _spMetric    = 'count';
 let _spDateMode  = 'month';
@@ -9886,6 +10124,28 @@ function initSalesLogControls() {
 function onSalesLogMonthChange() {
   _salesLogMonth = parseInt(document.getElementById('sl-month-sel')?.value) || _salesLogMonth;
   _salesLogYear  = parseInt(document.getElementById('sl-year-sel')?.value)  || _salesLogYear;
+  _salesLogCustomFrom = null; _salesLogCustomTo = null;
+  const qsel = document.getElementById('sl-quarter-mode');
+  if (qsel) qsel.value = '';
+  loadSalesLog();
+}
+
+function onSalesLogQuarterChange() {
+  const q = parseInt(document.getElementById('sl-quarter-mode')?.value) || 0;
+  const monthSel = document.getElementById('sl-month-sel');
+  _salesLogYear = parseInt(document.getElementById('sl-year-sel')?.value) || _salesLogYear;
+  if (q) {
+    if (monthSel) monthSel.disabled = true;
+    const startM = (q - 1) * 3 + 1;
+    const endM   = q * 3;
+    const last   = new Date(_salesLogYear, endM, 0).getDate();
+    _salesLogCustomFrom = `${_salesLogYear}-${String(startM).padStart(2,'0')}-01`;
+    _salesLogCustomTo   = `${_salesLogYear}-${String(endM).padStart(2,'0')}-${String(last).padStart(2,'0')}`;
+  } else {
+    if (monthSel) monthSel.disabled = false;
+    _salesLogCustomFrom = null;
+    _salesLogCustomTo   = null;
+  }
   loadSalesLog();
 }
 function onSalesLogFilterChange() { loadSalesLog(); }
@@ -9911,11 +10171,9 @@ async function loadSalesLog() {
   try {
     const showUnissued = document.getElementById('sl-show-unissued')?.checked ? '1' : '0';
     const showHidden   = document.getElementById('sl-show-hidden')?.checked   ? '1' : '0';
-    const params = new URLSearchParams({
-      month: _salesLogMonth, year: _salesLogYear,
-      includeUnissued: showUnissued, includeHidden: showHidden,
-      ...((_salesLogAllYear) ? { allYear: '1' } : {}),
-    });
+    const params = _salesLogCustomFrom
+      ? new URLSearchParams({ fromDate: _salesLogCustomFrom, toDate: _salesLogCustomTo, includeUnissued: showUnissued, includeHidden: showHidden })
+      : new URLSearchParams({ month: _salesLogMonth, year: _salesLogYear, includeUnissued: showUnissued, includeHidden: showHidden, ...((_salesLogAllYear) ? { allYear: '1' } : {}) });
     const r = await fetch(`/api/sales?${params}`, { headers: authHeaders() });
     const d = await r.json();
     _salesLogEntries = d.entries || [];
@@ -9941,6 +10199,232 @@ function _populateSlLocationFilter() {
     + locs.map(l => `<option value="${escHtml(l)}">${escHtml(l)}</option>`).join('');
   if (locs.includes(cur)) sel.value = cur;
   else { sel.value = 'all'; _salesLogLocationFilter = 'all'; }
+}
+
+// ── Chargeback Report ──────────────────────────────────────────────────────────
+let _cbMode           = 'month';
+let _cbMonth          = new Date().getMonth() + 1;
+let _cbYear           = new Date().getFullYear();
+let _cbQuarter        = Math.ceil((new Date().getMonth() + 1) / 3);
+let _cbAllEntries     = [];
+let _cbEntries        = [];
+let _cbSortCol        = 'chargeback_date';
+let _cbSortDir        = -1;
+let _cbAgentFilter    = 'all';
+let _cbLocationFilter = 'all';
+
+function _initCbControls() {
+  const curYear  = new Date().getFullYear();
+  const yearOpts = [curYear-2, curYear-1, curYear].map(y => `<option value="${y}">${y}</option>`).join('');
+  const MONTHS   = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const monthSel = document.getElementById('cb-month-sel');
+  if (monthSel && !monthSel.options.length) {
+    monthSel.innerHTML = MONTHS.map((m,i) => `<option value="${i+1}">${m}</option>`).join('');
+    monthSel.value = _cbMonth;
+  }
+  ['cb-year-sel','cb-quarter-year','cb-year-only'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && !el.options.length) { el.innerHTML = yearOpts; el.value = _cbYear; }
+  });
+  const qSel = document.getElementById('cb-quarter-sel');
+  if (qSel) qSel.value = _cbQuarter;
+}
+
+function setCbMode(mode, btn) {
+  _cbMode = mode;
+  document.querySelectorAll('#perf-sub-chargebacks .acct-stab').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  document.getElementById('cb-range-month').style.display   = mode === 'month'   ? 'flex' : 'none';
+  document.getElementById('cb-range-quarter').style.display = mode === 'quarter' ? 'flex' : 'none';
+  document.getElementById('cb-range-year').style.display    = mode === 'year'    ? 'flex' : 'none';
+  loadChargebackReport();
+}
+
+function _cbDateRange() {
+  if (_cbMode === 'month') {
+    const y = parseInt(document.getElementById('cb-year-sel')?.value)  || _cbYear;
+    const m = parseInt(document.getElementById('cb-month-sel')?.value) || _cbMonth;
+    const last = new Date(y, m, 0).getDate();
+    return { fromDate: `${y}-${String(m).padStart(2,'0')}-01`, toDate: `${y}-${String(m).padStart(2,'0')}-${String(last).padStart(2,'0')}` };
+  }
+  if (_cbMode === 'quarter') {
+    const y  = parseInt(document.getElementById('cb-quarter-year')?.value) || _cbYear;
+    const q  = parseInt(document.getElementById('cb-quarter-sel')?.value)  || _cbQuarter;
+    const sm = (q - 1) * 3 + 1;
+    const em = q * 3;
+    const last = new Date(y, em, 0).getDate();
+    return { fromDate: `${y}-${String(sm).padStart(2,'0')}-01`, toDate: `${y}-${String(em).padStart(2,'0')}-${String(last).padStart(2,'0')}` };
+  }
+  const y = parseInt(document.getElementById('cb-year-only')?.value) || _cbYear;
+  return { fromDate: `${y}-01-01`, toDate: `${y}-12-31` };
+}
+
+async function loadChargebackReport() {
+  _initCbControls();
+  const listEl = document.getElementById('cb-list');
+  if (!listEl) return;
+  listEl.innerHTML = '<span style="color:var(--muted);">Loading…</span>';
+  await loadMemberOrgTree();
+  try {
+    const { fromDate, toDate } = _cbDateRange();
+    const params = new URLSearchParams({ fromDate, toDate, includeHidden: '1' });
+    const r = await fetch(`/api/sales?${params}`, { headers: authHeaders() });
+    const d = await r.json();
+    _cbAllEntries = d.entries || [];
+    _cbEntries    = _cbAllEntries.filter(e => e.is_cancelled);
+    const memberLimited = _isMember && !['captain','chief_officer'].includes(_memberRole);
+    _cbAgentFilter    = (memberLimited && _memberAgentId) ? _memberAgentId : 'all';
+    _cbLocationFilter = 'all';
+    _cbPopulateFilters();
+    renderChargebackReport();
+  } catch(err) {
+    if (listEl) listEl.innerHTML = `<span style="color:var(--danger);font-size:13px;">Error: ${err.message}</span>`;
+  }
+}
+
+function _cbPopulateFilters() {
+  const filterRow = document.getElementById('cb-filter-row');
+  const agentSel  = document.getElementById('cb-agent-filter');
+  const locSel    = document.getElementById('cb-location-filter');
+  if (!agentSel || !locSel) return;
+
+  const agents = [...new Set(_cbEntries.map(e => e.agent_id).filter(Boolean))].sort((a, b) => {
+    const na = _agentRoster.find(x => x.agent_id === a)?.name || a;
+    const nb = _agentRoster.find(x => x.agent_id === b)?.name || b;
+    return na.localeCompare(nb);
+  });
+  const locs = [...new Set(_cbEntries.map(e => e.location).filter(Boolean))].sort();
+
+  const memberLimited = _isMember && !['captain','chief_officer'].includes(_memberRole);
+  if (memberLimited && _memberAgentId) {
+    const agentName = _agentRoster.find(x => x.agent_id === _memberAgentId)?.name || _memberAgentId;
+    agentSel.innerHTML = `<option value="${escHtml(_memberAgentId)}">${escHtml(agentName)}</option>`;
+    agentSel.value = _memberAgentId;
+    agentSel.disabled = true;
+  } else {
+    agentSel.innerHTML = '<option value="all">All Agents</option>' +
+      agents.map(id => {
+        const name = _agentRoster.find(x => x.agent_id === id)?.name || id;
+        return `<option value="${escHtml(id)}">${escHtml(name)}</option>`;
+      }).join('');
+    agentSel.value = _cbAgentFilter;
+    agentSel.disabled = false;
+  }
+
+  locSel.innerHTML = '<option value="all">All Locations</option>' +
+    locs.map(l => `<option value="${escHtml(l)}">${escHtml(l)}</option>`).join('');
+  locSel.value = _cbLocationFilter;
+
+  if (filterRow) filterRow.style.display = (_cbEntries.length > 0) ? 'flex' : 'none';
+}
+
+function onCbFilterChange() {
+  _cbAgentFilter    = document.getElementById('cb-agent-filter')?.value    || 'all';
+  _cbLocationFilter = document.getElementById('cb-location-filter')?.value || 'all';
+  renderChargebackReport();
+}
+
+function setCbSort(col) {
+  if (_cbSortCol === col) _cbSortDir *= -1;
+  else { _cbSortCol = col; _cbSortDir = -1; }
+  renderChargebackReport();
+}
+
+function renderChargebackReport() {
+  const listEl  = document.getElementById('cb-list');
+  const statsEl = document.getElementById('cb-stats-row');
+  if (!listEl) return;
+
+  const matchesFilter = e =>
+    (_cbAgentFilter    === 'all' || e.agent_id === _cbAgentFilter) &&
+    (_cbLocationFilter === 'all' || (e.location || '') === _cbLocationFilter);
+
+  const filteredAll = _cbAllEntries.filter(matchesFilter);
+  const filtered    = _cbEntries.filter(matchesFilter);
+
+  const total    = filteredAll.length;
+  const cbCount  = filtered.length;
+  const cbRate   = total > 0 ? (cbCount / total * 100).toFixed(1) : '0.0';
+  const cbPrem   = filtered.reduce((s, e) => s + (parseFloat(e.written_premium) || 0), 0);
+  const rateColor = parseFloat(cbRate) > 10 ? '#ff6b6b' : parseFloat(cbRate) > 5 ? '#fbbf24' : 'var(--accent2)';
+
+  if (statsEl) {
+    statsEl.innerHTML = `
+      <div class="stat-card" style="padding:.75rem 1rem;min-width:110px;">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Chargebacks</div>
+        <div style="font-size:1.4rem;font-weight:700;color:#ff6b6b;">${cbCount}</div>
+        <div style="font-size:11px;color:var(--muted);">of ${total} policies</div>
+      </div>
+      <div class="stat-card" style="padding:.75rem 1rem;min-width:110px;">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Chargeback Rate</div>
+        <div style="font-size:1.4rem;font-weight:700;color:${rateColor};">${cbRate}%</div>
+      </div>
+      <div class="stat-card" style="padding:.75rem 1rem;min-width:110px;">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Premium at Risk</div>
+        <div style="font-size:1.4rem;font-weight:700;color:#ff6b6b;">$${cbPrem.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})}</div>
+      </div>`;
+  }
+
+  if (!cbCount) {
+    listEl.innerHTML = '<span style="color:var(--accent2);font-size:13px;">No chargebacks in this period.</span>';
+    return;
+  }
+
+  const cbSortFn = (a, b) => {
+    let av, bv;
+    if (_cbSortCol === 'chargeback_date') { av = a.chargeback_date || a.sale_date || ''; bv = b.chargeback_date || b.sale_date || ''; return _cbSortDir * av.localeCompare(bv); }
+    if (_cbSortCol === 'sale_date')       { return _cbSortDir * (a.sale_date || '').localeCompare(b.sale_date || ''); }
+    if (_cbSortCol === 'agent')           { av = _agentRoster.find(x => x.agent_id === a.agent_id)?.name || a.agent_id || ''; bv = _agentRoster.find(x => x.agent_id === b.agent_id)?.name || b.agent_id || ''; return _cbSortDir * av.localeCompare(bv); }
+    if (_cbSortCol === 'product')         { return _cbSortDir * labelForCat(a.product).localeCompare(labelForCat(b.product)); }
+    if (_cbSortCol === 'premium')         { return _cbSortDir * ((parseFloat(a.written_premium)||0) - (parseFloat(b.written_premium)||0)); }
+    return 0;
+  };
+
+  const th = (col, label) => {
+    const arrow = _cbSortCol === col ? (_cbSortDir === 1 ? ' ▲' : ' ▼') : '';
+    return `<th style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:4px 8px;text-align:left;cursor:pointer;user-select:none;white-space:nowrap;" onclick="setCbSort('${col}')">${label}${arrow}</th>`;
+  };
+
+  const renderCbRow = e => {
+    const ag = _agentRoster.find(a => a.agent_id === e.agent_id)?.name || e.agent_id || '—';
+    const pr = e.written_premium ? '$' + Number(e.written_premium).toFixed(2) : '—';
+    return `<tr style="border-bottom:1px solid var(--border2);">
+      <td style="padding:6px 8px;font-size:12px;color:#ff6b6b;">${e.chargeback_date || '—'}</td>
+      <td style="padding:6px 8px;font-size:12px;color:var(--muted);">${e.sale_date || '—'}</td>
+      <td style="padding:6px 8px;font-size:13px;font-weight:600;">${escHtml(ag)}</td>
+      <td style="padding:6px 8px;font-size:12px;">${escHtml(labelForCat(e.product))}${e.subcategory ? '<span style="color:var(--muted);font-size:11px;"> · ' + escHtml(e.subcategory) + '</span>' : ''}</td>
+      <td style="padding:6px 8px;font-size:12px;color:var(--muted);">${escHtml(e.customer_name || '—')}</td>
+      <td style="padding:6px 8px;font-size:12px;color:var(--danger);">${pr}</td>
+    </tr>`;
+  };
+
+  const theadHtml = `<thead><tr>${th('chargeback_date','CB Date')}${th('sale_date','Sale Date')}${th('agent','Agent')}${th('product','Product')}<th style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:4px 8px;">Customer</th>${th('premium','Premium')}</tr></thead>`;
+
+  const orgGroups = _getOrgGroups();
+  if (orgGroups && _cbAgentFilter === 'all') {
+    // org chart sections — one table per CO group
+    const agentToGroup = {};
+    orgGroups.forEach(g => g.agentIds.forEach(id => { agentToGroup[id] = g; }));
+    listEl.innerHTML = orgGroups.map(group => {
+      const groupEntries = filtered.filter(e => group.agentIds.includes(e.agent_id));
+      if (!groupEntries.length) return '';
+      const sorted = [...groupEntries].sort(cbSortFn);
+      const hdrColor = group.isUnassigned ? 'var(--muted)' : 'var(--accent)';
+      const hdrLabel = group.isUnassigned ? 'Unassigned' : `Chief Officer: ${escHtml(group.label)}`;
+      const gCount = groupEntries.length;
+      const gPrem  = groupEntries.reduce((s, e) => s + (parseFloat(e.written_premium) || 0), 0);
+      return `<div style="margin-bottom:1.25rem;">
+        <div style="font-size:12px;font-weight:700;color:${hdrColor};padding:.35rem .5rem;background:rgba(255,255,255,.04);border-radius:5px;margin-bottom:.4rem;display:flex;align-items:center;gap:8px;">
+          ${hdrLabel}
+          <span style="font-size:11px;font-weight:400;color:var(--muted);">${gCount} chargeback${gCount !== 1 ? 's' : ''} · $${gPrem.toLocaleString('en-US',{maximumFractionDigits:0})}</span>
+        </div>
+        <table style="width:100%;border-collapse:collapse;">${theadHtml}<tbody>${sorted.map(renderCbRow).join('')}</tbody></table>
+      </div>`;
+    }).filter(Boolean).join('');
+  } else {
+    const sorted = [...filtered].sort(cbSortFn);
+    listEl.innerHTML = `<table style="width:100%;border-collapse:collapse;">${theadHtml}<tbody>${sorted.map(renderCbRow).join('')}</tbody></table>`;
+  }
 }
 
 function _renderSlScorecard(entries) {
@@ -10503,7 +10987,9 @@ function _filteredSalesEntries() {
         || agName.toLowerCase().includes(q)
         || (e.product || '').toLowerCase().includes(q)
         || labelForCat(e.product).toLowerCase().includes(q)
-        || (e.subcategory || '').toLowerCase().includes(q);
+        || (e.subcategory || '').toLowerCase().includes(q)
+        || (e.sale_date || '').includes(q)
+        || (e.issued_date || '').includes(q);
   });
 }
 
@@ -10515,10 +11001,10 @@ function renderSalesLog() {
 
   // Determine "in scope" boundary
   const yearStr = String(_salesLogYear);
-  const fromDate = `${_salesLogYear}-${String(_salesLogMonth).padStart(2,'0')}-01`;
+  const fromDate = _salesLogCustomFrom || `${_salesLogYear}-${String(_salesLogMonth).padStart(2,'0')}-01`;
   const lastDay  = new Date(_salesLogYear, _salesLogMonth, 0).getDate();
-  const toDate   = `${_salesLogYear}-${String(_salesLogMonth).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
-  const inScope  = _salesLogAllYear
+  const toDate   = _salesLogCustomTo   || `${_salesLogYear}-${String(_salesLogMonth).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+  const inScope  = (_salesLogAllYear && !_salesLogCustomFrom)
     ? (e) => (e.sale_date || '').startsWith(yearStr + '-')
     : (e) => e.sale_date >= fromDate && e.sale_date <= toDate;
 
@@ -10629,7 +11115,9 @@ function downloadSalesLogXlsx() {
   XLSX.utils.book_append_sheet(wb, ws, 'Sales Log');
   const filename = _salesLogAllYear
     ? `sales-log-${_salesLogYear}.xlsx`
-    : `sales-log-${_salesLogYear}-${String(_salesLogMonth).padStart(2,'0')}.xlsx`;
+    : _salesLogCustomFrom
+      ? `sales-log-${_salesLogCustomFrom.slice(0,7)}-to-${_salesLogCustomTo.slice(0,7)}.xlsx`
+      : `sales-log-${_salesLogYear}-${String(_salesLogMonth).padStart(2,'0')}.xlsx`;
   XLSX.writeFile(wb, filename);
 }
 

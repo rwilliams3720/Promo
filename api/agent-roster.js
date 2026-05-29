@@ -85,7 +85,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    const { id, name, active, commission_structure_id } = req.body || {};
+    const { id, name, active, commission_structure_id, agent_id: bodyAgentId } = req.body || {};
     if (!id) return res.status(400).json({ error: 'id required' });
     const update = {};
     if (name !== undefined) update.name = name;
@@ -97,6 +97,9 @@ export default async function handler(req, res) {
       .eq('user_id', userId)
       .eq('id', id);
     if (error) return res.status(500).json({ error: error.message });
+    if (name !== undefined && bodyAgentId) {
+      await supabase.from('race_data').update({ name }).eq('user_id', userId).eq('agent_id', bodyAgentId);
+    }
     return res.status(200).json({ ok: true });
   }
 
