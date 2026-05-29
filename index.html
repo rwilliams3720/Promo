@@ -6037,7 +6037,10 @@ function renderAgentRoster() {
     })() : '';
     return `<div style="margin-bottom:.5rem;padding:.5rem;background:var(--card2);border:1px solid var(--border2);border-radius:8px;">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        <input type="checkbox" ${a.active !== false ? 'checked' : ''} onchange="toggleAgentRoster('${escHtml(a.id)}', this.checked)" title="Active in dropdowns">
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;user-select:none;">
+          <input type="checkbox" ${a.active !== false ? 'checked' : ''} onchange="toggleAgentRoster('${escHtml(a.id)}', this.checked)">
+          <span style="font-size:11px;color:var(--muted);white-space:nowrap;">Active</span>
+        </label>
         <span id="rn-label-${safeId}" style="font-size:13px;font-weight:600;flex:1;">${escHtml(a.name)}</span>
         <button onclick="startEditRosterName('${escHtml(a.id)}','${safeId}')" style="background:none;border:none;color:var(--muted);padding:0 2px;cursor:pointer;font-size:14px;line-height:1;" title="Rename">&#x270E;</button>
         <span style="font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;">${escHtml(a.agent_id)}</span>
