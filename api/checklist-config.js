@@ -123,7 +123,7 @@ export default async function handler(req, res) {
       supabase.from('sales_subcategories').select('*').eq('user_id', dataUserId).order('scoring_category').order('sort_order'),
     ]);
     const { data: agentData }    = await supabase.from('agent_roster').select('id, agent_id, name, active, commission_structure_id, commission_all_must_qualify').eq('user_id', dataUserId).order('name');
-    const { data: locationData } = await supabase.from('sales_locations').select('id, name, active, sort_order, address, phone, hours, goal_count, goal_premium, goals_enabled, activity_goals, goal_count_annual, goal_premium_annual, goals_visibility').eq('user_id', dataUserId).order('sort_order').order('created_at');
+    const { data: locationData } = await supabase.from('sales_locations').select('id, name, active, sort_order, address, phone, hours, goal_count, goal_premium, goals_enabled, activity_goals, goal_count_annual, goal_premium_annual, goals_visibility, product_goals_monthly, product_goals_annual').eq('user_id', dataUserId).order('sort_order').order('created_at');
     const { data: lsRow }        = await supabase.from('accounts').select('lead_sources').eq('user_id', dataUserId).single();
     const { data: agentStructData } = await supabase
       .from('agent_commission_structures')
@@ -354,9 +354,11 @@ export default async function handler(req, res) {
             goal_count:   upd.goal_count   != null ? (parseInt(upd.goal_count)   || null) : undefined,
             goal_premium: upd.goal_premium != null ? (parseFloat(upd.goal_premium) || null) : undefined,
           };
-          if (upd.goal_count_annual   !== undefined) detailsUpdate.goal_count_annual   = upd.goal_count_annual   != null ? (parseInt(upd.goal_count_annual)   || null) : null;
-          if (upd.goal_premium_annual !== undefined) detailsUpdate.goal_premium_annual = upd.goal_premium_annual != null ? (parseFloat(upd.goal_premium_annual) || null) : null;
-          if (upd.goals_visibility    !== undefined) detailsUpdate.goals_visibility    = Array.isArray(upd.goals_visibility) ? upd.goals_visibility : ['all'];
+          if (upd.goal_count_annual      !== undefined) detailsUpdate.goal_count_annual      = upd.goal_count_annual   != null ? (parseInt(upd.goal_count_annual)   || null) : null;
+          if (upd.goal_premium_annual    !== undefined) detailsUpdate.goal_premium_annual    = upd.goal_premium_annual != null ? (parseFloat(upd.goal_premium_annual) || null) : null;
+          if (upd.goals_visibility       !== undefined) detailsUpdate.goals_visibility       = Array.isArray(upd.goals_visibility) ? upd.goals_visibility : ['all'];
+          if (upd.product_goals_monthly  !== undefined) detailsUpdate.product_goals_monthly  = upd.product_goals_monthly  || {};
+          if (upd.product_goals_annual   !== undefined) detailsUpdate.product_goals_annual   = upd.product_goals_annual   || {};
           if (upd.activity_goals !== undefined) detailsUpdate.activity_goals = upd.activity_goals || {};
           ({ error: locErr } = await supabase.from('sales_locations').update(detailsUpdate).eq('id', upd.id).eq('user_id', user.id));
         } else if (upd.action === 'update_activity_goals') {

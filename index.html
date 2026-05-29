@@ -8170,6 +8170,25 @@ function renderLocationsList() {
               <div><label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px;">Annual Premium Goal ($)</label>
                 <input id="loc-goal-prem-ann-${safeId}" type="number" min="0" value="${l.goal_premium_annual||''}" placeholder="e.g. 1200000" style="${_locInputSt()}"></div>
             </div>
+            ${(() => {
+              const PKEYS = ['wl','ul','term','health','auto','fire'];
+              const prods = activeCats().filter(c => PKEYS.includes(c.key));
+              if (!prods.length) return '';
+              const moGoals  = l.product_goals_monthly || {};
+              const annGoals = l.product_goals_annual  || {};
+              const inputGrid = (prefix, goals) => `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:.4rem;">${
+                prods.map(c => `<div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px;">${escHtml(c.label)}</label>
+                  <input id="loc-pg-${prefix}-${safeId}-${c.key}" type="number" min="0" value="${goals[c.key]||''}" placeholder="—" style="${_locInputSt()}"></div>`).join('')
+              }</div>`;
+              return `<div style="padding-top:.4rem;border-top:1px solid var(--border2);margin-bottom:.5rem;">
+                <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.35rem;">Monthly Product Goals</div>
+                ${inputGrid('mo', moGoals)}
+              </div>
+              <div style="margin-bottom:.5rem;">
+                <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.35rem;">Annual Product Goals</div>
+                ${inputGrid('ann', annGoals)}
+              </div>`;
+            })()}
             <div style="margin-bottom:.5rem;">
               <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.35rem;">Visible in Goals Tab to</div>
               <div style="display:flex;flex-wrap:wrap;gap:.5rem;">${(() => {
@@ -8240,6 +8259,15 @@ async function saveLocationDetails(id, btn) {
   const goal_premium_annual= document.getElementById('loc-goal-prem-ann-' + id)?.value  || null;
   const visBoxes = [...document.querySelectorAll(`.loc-vis-${id}:checked`)].map(b => b.value);
   const goals_visibility = visBoxes.length ? visBoxes : ['all'];
+  const PKEYS = ['wl','ul','term','health','auto','fire'];
+  const policyProds = activeCats().filter(c => PKEYS.includes(c.key));
+  const product_goals_monthly = {}, product_goals_annual = {};
+  policyProds.forEach(c => {
+    const mv = document.getElementById(`loc-pg-mo-${id}-${c.key}`)?.value;
+    if (mv && parseFloat(mv) > 0) product_goals_monthly[c.key] = parseFloat(mv);
+    const av = document.getElementById(`loc-pg-ann-${id}-${c.key}`)?.value;
+    if (av && parseFloat(av) > 0) product_goals_annual[c.key] = parseFloat(av);
+  });
   const actGoals = {};
   (_activityTypes || []).filter(at => at.active !== false).forEach(at => {
     const v = document.getElementById(`loc-act-goal-${id}-${at.id}`)?.value;
@@ -8250,10 +8278,10 @@ async function saveLocationDetails(id, btn) {
     const r = await fetch('/api/checklist-config', {
       method: 'PATCH',
       headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ locationUpdates: [{ action: 'update_details', id, address, phone, hours, goal_count, goal_premium, goal_count_annual, goal_premium_annual, goals_visibility, activity_goals: actGoals }] }),
+      body: JSON.stringify({ locationUpdates: [{ action: 'update_details', id, address, phone, hours, goal_count, goal_premium, goal_count_annual, goal_premium_annual, goals_visibility, product_goals_monthly, product_goals_annual, activity_goals: actGoals }] }),
     });
     const loc = _salesLocations.find(l => l.id === id);
-    if (loc) { loc.address = address; loc.phone = phone; loc.hours = hours; loc.goal_count = goal_count ? parseInt(goal_count) : null; loc.goal_premium = goal_premium ? parseFloat(goal_premium) : null; loc.goal_count_annual = goal_count_annual ? parseInt(goal_count_annual) : null; loc.goal_premium_annual = goal_premium_annual ? parseFloat(goal_premium_annual) : null; loc.goals_visibility = goals_visibility; loc.activity_goals = actGoals; }
+    if (loc) { loc.address = address; loc.phone = phone; loc.hours = hours; loc.goal_count = goal_count ? parseInt(goal_count) : null; loc.goal_premium = goal_premium ? parseFloat(goal_premium) : null; loc.goal_count_annual = goal_count_annual ? parseInt(goal_count_annual) : null; loc.goal_premium_annual = goal_premium_annual ? parseFloat(goal_premium_annual) : null; loc.goals_visibility = goals_visibility; loc.product_goals_monthly = product_goals_monthly; loc.product_goals_annual = product_goals_annual; loc.activity_goals = actGoals; }
     const msgEl = document.getElementById('loc-save-msg-' + id);
     if (msgEl) {
       msgEl.textContent = r.ok ? 'Saved' : 'Error saving';
@@ -9557,9 +9585,11 @@ function _getOrgGroups() {
 
 function _renderAgencyGoalsSection() {
   const myRole = _isMember ? _memberRole : 'owner';
+  const PROD_LABELS = { wl:'WL', ul:'UL', term:'Term', health:'Health', auto:'Auto', fire:'Fire' };
+  const hasGoals = l => l.goal_count || l.goal_premium || l.goal_count_annual || l.goal_premium_annual ||
+    Object.keys(l.product_goals_monthly || {}).length || Object.keys(l.product_goals_annual || {}).length;
   const visibleLocs = (_salesLocations || []).filter(l => {
-    if (!l.goals_enabled) return false;
-    if (!l.goal_count && !l.goal_premium && !l.goal_count_annual && !l.goal_premium_annual) return false;
+    if (!l.goals_enabled || !hasGoals(l)) return false;
     const vis = l.goals_visibility;
     if (!vis || !vis.length || vis.includes('all')) return true;
     return vis.includes(myRole);
@@ -9569,12 +9599,21 @@ function _renderAgencyGoalsSection() {
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const monthLabel = MONTHS[now.getMonth()] + ' ' + now.getFullYear();
   const yearLabel  = String(now.getFullYear());
+  const prodRow = (goals, period) => {
+    const entries = Object.entries(goals || {}).filter(([,v]) => v);
+    if (!entries.length) return '';
+    return `<div style="font-size:12px;margin-top:3px;"><span style="color:var(--muted);">${period} Product Goals:</span> ${entries.map(([k,v]) => `${PROD_LABELS[k]||k}: <strong>${Number(v).toLocaleString()}</strong>`).join(' · ')}</div>`;
+  };
   const cards = visibleLocs.map(l => {
     const items = [];
     if (l.goal_count)         items.push(`<div style="font-size:12px;"><span style="color:var(--muted);">Monthly Policy Goal (${monthLabel}):</span> <strong>${Number(l.goal_count).toLocaleString()}</strong></div>`);
     if (l.goal_premium)       items.push(`<div style="font-size:12px;margin-top:3px;"><span style="color:var(--muted);">Monthly Premium Goal (${monthLabel}):</span> <strong>$${Number(l.goal_premium).toLocaleString()}</strong></div>`);
-    if (l.goal_count_annual)  items.push(`<div style="font-size:12px;margin-top:3px;"><span style="color:var(--muted);">Annual Policy Goal (${yearLabel}):</span> <strong>${Number(l.goal_count_annual).toLocaleString()}</strong></div>`);
+    const moProds = prodRow(l.product_goals_monthly, `Monthly (${monthLabel})`);
+    if (moProds) items.push(moProds);
+    if (l.goal_count_annual)   items.push(`<div style="font-size:12px;margin-top:3px;"><span style="color:var(--muted);">Annual Policy Goal (${yearLabel}):</span> <strong>${Number(l.goal_count_annual).toLocaleString()}</strong></div>`);
     if (l.goal_premium_annual) items.push(`<div style="font-size:12px;margin-top:3px;"><span style="color:var(--muted);">Annual Premium Goal (${yearLabel}):</span> <strong>$${Number(l.goal_premium_annual).toLocaleString()}</strong></div>`);
+    const annProds = prodRow(l.product_goals_annual, `Annual (${yearLabel})`);
+    if (annProds) items.push(annProds);
     if (!items.length) return '';
     return `<div style="background:var(--deep);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;margin-bottom:8px;">
       <div style="font-size:13px;font-weight:600;margin-bottom:6px;">${escHtml(l.name)}</div>
