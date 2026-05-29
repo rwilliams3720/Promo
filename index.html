@@ -3316,7 +3316,14 @@ function calcScore(ag) {
 }
 
 function renderRace(data) {
-  if (!data.length) {
+  // Filter to active roster agents only; if roster not loaded yet, show all
+  let activeData = data;
+  if (_agentRoster.length > 0) {
+    const activeIds = new Set(_agentRoster.filter(a => a.active !== false).map(a => a.agent_id));
+    activeData = data.filter(ag => activeIds.has(ag.agent_id));
+  }
+
+  if (!activeData.length) {
     document.getElementById('race-list').innerHTML = '<p style="color:var(--muted);font-size:13px">No race data yet. Upload a call log to begin.</p>';
     document.getElementById('stats-row').innerHTML = '';
     document.getElementById('podium').innerHTML = '';
@@ -3325,10 +3332,12 @@ function renderRace(data) {
     return;
   }
 
-  const agents = data.map((ag, i) => {
+  const agents = activeData.map((ag, i) => {
     if (!AGENT_COLORS[ag.agent_id]) AGENT_COLORS[ag.agent_id] = COLORS[Object.keys(AGENT_COLORS).length % COLORS.length];
+    // Use roster name as source of truth — updates immediately when renamed
+    const rosterName = _agentRoster.find(a => a.agent_id === ag.agent_id)?.name;
     const sc = calcScore(ag);
-    return { ...ag, ...sc, color: AGENT_COLORS[ag.agent_id] };
+    return { ...ag, name: rosterName || ag.name, ...sc, color: AGENT_COLORS[ag.agent_id] };
   });
 
   agents.sort((a, b) => b.total - a.total);
@@ -3659,7 +3668,9 @@ function buildTeamToggleUI() {
   const grid = document.getElementById('team-assign-grid');
   if (!grid) return;
   if (!_raceData.length) { grid.innerHTML = '<p style="font-size:13px;color:var(--muted)">Load race data first.</p>'; return; }
-  grid.innerHTML = [..._raceData].sort((a,b) => a.name.localeCompare(b.name)).map(ag => `
+  const _activeRaceIds = _agentRoster.length > 0 ? new Set(_agentRoster.filter(a => a.active !== false).map(a => a.agent_id)) : null;
+  const _visibleRace   = _activeRaceIds ? _raceData.filter(ag => _activeRaceIds.has(ag.agent_id)) : _raceData;
+  grid.innerHTML = [..._visibleRace].sort((a,b) => a.name.localeCompare(b.name)).map(ag => `
     <div class="team-assign-row">
       <span class="team-assign-name">${ag.name}</span>
       <div class="team-toggle">
