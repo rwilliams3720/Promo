@@ -99,6 +99,11 @@ Browser (index.html, served by Vercel)
   ↓ POST /api/analysis-credits  (Authorization: Bearer <jwt>)
     → action=charge_run: deducts $3 from credit_balance; 402 if insufficient
     → action=checkout: creates Stripe one-time Checkout session ($5/$10/$20 via price_data); Stripe initialized lazily inside branch only
+  ↓ GET /api/member-org  (Authorization: Bearer <jwt>)
+    → owner path: returns all active account_members for the authenticated owner
+    → captain-member path: returns all active account_members for the captain's owner
+    → returns: [{ id, email, role, roster_agent_id, managed_by }]
+    → used by frontend to build org chart tree for Goals tab + Chargeback Report grouping
 ```
 
 ## Key Files
@@ -128,15 +133,8 @@ Browser (index.html, served by Vercel)
 | `api/commission-structures.js` | CRUD for commission_structures table |
 | `api/bonus-activities.js` | Activity type + entry CRUD with approval workflow and call-log auto-aggregation |
 | `api/analysis-credits.js` | Credit wallet: GET balance, POST charge_run ($3 deduct), POST checkout (Stripe one-time payment) |
+| `api/member-org.js` | Returns full org member list for owner or captain; used to build org chart tree |
 | `setup.sql` | Full migration — run once in Supabase SQL Editor |
-| `members-migration.sql` | Directive 1 migration — account_members table + RLS policies |
-| `directive2-migration.sql` | Directive 2 migration — sales tracking tables + accounts columns |
-| `agent-roster-migration.sql` | agent_roster table + RLS + seed from race_data |
-| `lead-sources-migration.sql` | Adds `lead_sources (jsonb)` column to accounts |
-| `credits-migration.sql` | Adds `credit_balance numeric` and `credit_waived boolean` columns to accounts |
-| `member-analysis-migration.sql` | Team Member Analysis columns on accounts including `member_analysis_agents_set_at` |
-| `split-sale-migration.sql` | Adds `sale_weight numeric DEFAULT 1` to sales_log; back-fills 0.5 for existing split sales |
-| `commission-bank-migration.sql` | Adds `commission_bank_config jsonb` to accounts; creates `commission_bank` ledger table |
 | `vercel.json` | Builds + routes |
 | `package.json` | Dependencies: `@supabase/supabase-js`, `xlsx` |
 
@@ -205,8 +203,13 @@ Added by `commission-bank-migration.sql`:
 `commission_bank_config (jsonb default '{}')` — shape: `{ enabled, cap_per_period, interest_rate, interest_period }`. Managed in Account → Sales → Commissions sub-tab.
 
 ### account_members columns
-`id (uuid PK), owner_user_id, member_user_id (nullable until accepted), email, role ('captain'|'chief_officer'|'bosun'|'custom'), custom_tabs (jsonb), status ('invited'|'active'|'removed'), invite_token (unique, nullable after accept), invite_expires_at, created_at`
+`id (uuid PK), owner_user_id, member_user_id (nullable until accepted), email, role ('captain'|'chief_officer'|'bosun'|'custom'), custom_tabs (jsonb), status ('invited'|'active'|'removed'), invite_token (unique, nullable after accept), invite_expires_at, created_at, managed_by (uuid FK → account_members.id ON DELETE SET NULL)`
 UNIQUE(owner_user_id, email)
+
+`managed_by` — links a member to their direct manager (captain or CO). Used to build the org chart tree in `loadMemberOrgTree()`. Added by:
+```sql
+ALTER TABLE account_members ADD COLUMN IF NOT EXISTS managed_by uuid REFERENCES account_members(id) ON DELETE SET NULL;
+```
 
 ### race_data columns
 `user_id, agent_id, name, team, wl, ul, term, health, auto, fire, placed, answered, missed, voicemail, talk_min, avg_min, race_wide_missed, race_wide_voicemail, last_updated`
@@ -249,6 +252,22 @@ UNIQUE(user_id, agent_id, commission_structure_id). Supports multiple independen
 
 ### sales_subcategories columns
 `id (uuid), user_id, scoring_category, label, is_financial_service (boolean), active (boolean), sort_order (smallint), is_default (boolean)`. ~40 defaults seeded on first access. Filterable by scoring_category in dropdowns.
+
+### sales_locations columns
+`id (uuid PK), user_id, name (text), active (boolean), sort_order (smallint), created_at, address (text), phone (text), hours (text)`
+
+Goal columns — **pending SQL migration** (run in Supabase SQL editor):
+```sql
+ALTER TABLE sales_locations ADD COLUMN IF NOT EXISTS goal_count_annual    integer;
+ALTER TABLE sales_locations ADD COLUMN IF NOT EXISTS goal_premium_annual  numeric;
+ALTER TABLE sales_locations ADD COLUMN IF NOT EXISTS goals_visibility     jsonb DEFAULT '["all"]'::jsonb;
+ALTER TABLE sales_locations ADD COLUMN IF NOT EXISTS product_goals_monthly jsonb DEFAULT '{}'::jsonb;
+ALTER TABLE sales_locations ADD COLUMN IF NOT EXISTS product_goals_annual  jsonb DEFAULT '{}'::jsonb;
+```
+
+`goals_visibility` — JSONB array of roles that can see this location's goals in the Goals tab. Values: `'all'`, `'captain'`, `'chief_officer'`, `'bosun'`, `'custom'`. "All" is mutually exclusive with role-specific values.
+
+`product_goals_monthly` / `product_goals_annual` — JSONB objects keyed by scoring category (`wl`, `ul`, `term`, `health`, `auto`, `fire`) with numeric goal values.
 
 ### call_log columns
 `user_id, hash, agent_id, disposition, talk_secs, call_dt (DATE), call_slot (SMALLINT 0–47)`
@@ -310,6 +329,8 @@ Shows last 200 manual + checklist entries. Gated by `_hasSalesAddon || _isAdmin`
 
 `_salesLogEntries` module-level array holds the fetched entries; `filterSalesLog()` → `renderSalesLog()` re-renders without re-fetching.
 
+**Date filter modes**: Monthly | Quarterly (Q1–Q4) | **Specific Dates** — the "Specific Dates" option shows two `<input type="date">` fields (`#sl-date-from`, `#sl-date-to`). `onSalesLogSpecificDateChange()` sets `_salesLogCustomFrom`/`_salesLogCustomTo` and calls `loadSalesLog()` when both dates are valid and from ≤ to. `_slHideSpecificRange()` restores the month/year selectors when switching away.
+
 ### Sales Scorecard
 `_renderSlScorecard(entries)`: when "All Locations" filter is active, aggregates cumulative goals across all `goals_enabled` locations and shows color-coded progress pills alongside per-product scorecards.
 
@@ -340,6 +361,13 @@ The customer email sent after a checklist form submission supports full Spanish.
 
 `buildCustomerEmailHtml` accepts an optional `formItemsOverride` second parameter to avoid global state mutation; `buildCustomerEmailHtmlEs` uses this to pass the derived Spanish items map.
 
+**Outlook copy-paste compatibility**: `buildCustomerEmailHtml` produces `fullHtml` as an array joined with `\n` (not a template literal). Before writing to the clipboard blob, `bodyHtml` is compacted via `bodyHtml.replace(/>\s+</g, '><')` to strip whitespace text nodes between table elements. The `fullHtml` wrapper includes:
+- `xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office"` on `<html>`
+- `<!--[if gte mso 9]><xml><o:OfficeDocumentSettings>...</o:OfficeDocumentSettings></xml><![endif]-->`
+- `-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%` on `<body>`
+
+These match the original `sales-checklist1` repo's output exactly. Do not revert to a template literal for `fullHtml` — it reintroduces whitespace nodes that Outlook renders as extra line spacing.
+
 ### Checklist Form Items — Spanish Fields
 
 Each form item (GSD, DSS, SCD, etc.) has an English | Español tab panel in Account → Sales → Email → Form Items. `fiSetLang(lang)` toggles `.fi-lang-en` / `.fi-lang-es` CSS classes across all item panels simultaneously.
@@ -357,8 +385,42 @@ Checks `is_admin` and sets `hasSalesAddon = true` for admins. Members must be ca
 ### api/sales.js — Date Range Params
 `GET /api/sales` supports optional `fromDate` and `toDate` query params (YYYY-MM-DD). Used by `spLoad()` in Sales Performance for custom date ranges.
 
+### Agency Goals (Goals tab)
+
+`_renderAgencyGoalsSection()` — renders location goals at the top of the Goals tab. Reads `_salesLocations`, filters by `goals_enabled = true` and `goals_visibility` matching the current user's role. Shows:
+- Monthly policy goal / monthly premium goal
+- Annual policy goal / annual premium goal
+- Per-product monthly goals (WL/UL/Term/Health/Auto/Fire)
+- Per-product annual goals
+
+Visibility is set per-location in Account → Sales → Locations → Goals section. Checkboxes: Everyone (mutual exclusive with role-specific) / Captain / Chief Officer / Bosun / Custom. `onLocVisChange(id)` handles mutual exclusion.
+
+`saveLocationDetails()` reads all goal fields and sends `goal_count_annual`, `goal_premium_annual`, `goals_visibility`, `product_goals_monthly`, `product_goals_annual` to `PATCH /api/checklist-config` action `update_details`. **Requires the 5 `sales_locations` goal columns to exist in Supabase** (see pending migration above).
+
+### Org Chart / Member Hierarchy
+
+**State variables**:
+```js
+let _memberOrgTree   = [];    // built tree of member nodes with .subordinates arrays
+let _memberOrgLoaded = false; // guard to avoid duplicate fetches
+```
+
+**`loadMemberOrgTree()`** — fetches `GET /api/member-org`, builds parent-child tree using `managed_by` FK. Members with no `managed_by` become roots. Called before rendering Goals tab and Chargeback Report when the user is an owner or captain.
+
+**`_getOrgGroups()`** — returns CO-grouped sections for display, or `null` when no COs exist:
+```js
+[{ label, coAgentId, agentIds: [coId, ...subordinateIds], isUnassigned: false }]
+```
+Appends an "Unassigned" group for any active roster agents not assigned under any CO.
+
+**`renderGoalsTab()`** uses org groups to render a CO header → CO's own goals → indented subordinate goals. Falls back to flat display when `_getOrgGroups()` returns null.
+
 ### Agent Roster
 `agent_roster` is the canonical source for manual entry agent dropdowns. `agent_id` in roster must match `agent_id` in `race_data` for manual sales to roll up correctly. `refreshAgentDropdowns()` is called automatically after every add, edit, or delete operation to keep all live dropdowns in sync without a page reload.
+
+**Active filter on race tab**: `renderRace(data)` filters `race_data` to only agents where `agent_roster.active !== false`. Agents marked inactive are excluded from the leaderboard and scoring grid. `buildTeamToggleUI()` applies the same filter. `_agentRoster` is the source of truth — if roster is empty (no sales add-on), all agents show.
+
+**Name resolution on race tab**: `renderRace` resolves display names from `_agentRoster.find(a => a.agent_id === ag.agent_id)?.name` — not from `race_data.name`. This ensures renames show immediately without requiring a new data upload. `api/agent-roster.js` PATCH also syncs `race_data.name` on rename for consistency.
 
 Debug query:
 ```sql
@@ -497,16 +559,28 @@ const heatmapAllowed = _isAdmin || (['pro','premium'].includes(_currentPlan) && 
 
 ## Performance Tab Structure
 
-The Performance tab has 4 sub-tabs controlled by `showPerfSubTab(name, btn)`:
+The Performance tab has 5 sub-tabs controlled by `showPerfSubTab(name, btn)`:
 
 | Sub-tab | Button ID | Pane ID | Contents | Gating |
 |---------|-----------|---------|----------|--------|
 | Call Performance | `#perf-stab-callperf` | `#perf-sub-callperf` | Perf table + heatmap | Pro/Premium plan |
-| Sales Log | `#perf-stab-saleslog` | `#perf-sub-saleslog` | `#checklist-subs-panel` | `_hasSalesAddon \|\| _isAdmin` |
+| Sales Log | `#perf-stab-saleslog` | `#perf-sub-saleslog` | Sales log entries | `_hasSalesAddon \|\| _isAdmin` |
 | Sales Performance | `#perf-stab-salesperf` | `#perf-sub-salesperf` | SP chart panels | `_hasSalesAddon \|\| _isAdmin` |
+| Chargebacks | `#perf-stab-chargebacks` | `#perf-sub-chargebacks` | Chargeback report | `_hasSalesAddon \|\| _isAdmin` |
 | Commissions | `#perf-stab-commissions` | `#perf-sub-commissions` | Agent commissions table | `_hasCommissionsAddon \|\| _isAdmin` |
 
-`showTab('perf')` calls `showPerfSubTab('callperf')` directly.
+`showTab('perf')` calls `_applyPerfMemberGating()` then:
+- Captain/CO members → defaults to `callperf`
+- Bosun/custom members → defaults to `chargebacks` (callperf, saleslog, salesperf, commissions tabs are hidden via `_applyPerfMemberGating()`)
+
+**`_applyPerfMemberGating()`** — hides callperf/saleslog/salesperf/commissions sub-tab buttons for members who are not captain or chief_officer. Bosun members only see the Chargebacks sub-tab, auto-filtered to their own agent (agent dropdown locked, disabled).
+
+### Chargeback Report
+
+`renderChargebackReport()` — shows chargeback stats with org chart grouping when no agent filter is active:
+- Groups results by CO, with each CO's subordinates nested beneath them
+- Falls back to a single flat table when a specific agent is filtered or no org groups exist
+- Bosun members: `loadChargebackReport()` pre-sets `_cbAgentFilter` to their own `_memberAgentId`; `_cbPopulateFilters()` locks the dropdown to their agent only
 
 ### Call Performance Table — Sortable Columns
 
@@ -858,6 +932,19 @@ Returns `{ supabaseUrl, supabaseKey }`. Returns HTTP 500 if env vars missing.
 12. Run `member-analysis-migration.sql` (Team Member Analysis columns — **must include `member_analysis_agents_set_at`**)
 13. Run `split-sale-migration.sql` (adds `sale_weight` to sales_log)
 14. Run `commission-bank-migration.sql` (adds `commission_bank_config` to accounts + creates `commission_bank` table)
+
+### Location goals + org chart migrations (pending — not yet run)
+```sql
+-- 5 new columns on sales_locations for agency goals feature
+ALTER TABLE sales_locations ADD COLUMN IF NOT EXISTS goal_count_annual     integer;
+ALTER TABLE sales_locations ADD COLUMN IF NOT EXISTS goal_premium_annual   numeric;
+ALTER TABLE sales_locations ADD COLUMN IF NOT EXISTS goals_visibility      jsonb DEFAULT '["all"]'::jsonb;
+ALTER TABLE sales_locations ADD COLUMN IF NOT EXISTS product_goals_monthly jsonb DEFAULT '{}'::jsonb;
+ALTER TABLE sales_locations ADD COLUMN IF NOT EXISTS product_goals_annual  jsonb DEFAULT '{}'::jsonb;
+
+-- managed_by for org chart hierarchy on account_members
+ALTER TABLE account_members ADD COLUMN IF NOT EXISTS managed_by uuid REFERENCES account_members(id) ON DELETE SET NULL;
+```
 
 ### Commissions + Activity Bonuses migration
 ```sql
