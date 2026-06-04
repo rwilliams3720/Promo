@@ -189,6 +189,11 @@ async function computeActuals(goals, dataUserId) {
       const typeId = key.replace('activity_', '');
       actuals[key] = agActs.filter(a => a.activity_type_id === typeId).reduce((s, a) => s + (a.count || 0), 0);
     }
+    if (Array.isArray(goal.goals.combined_groups)) {
+      for (const grp of goal.goals.combined_groups) {
+        actuals['combined_' + grp.id] = agSales.filter(s => (grp.products || []).includes(s.product)).length;
+      }
+    }
     return { ...goal, actuals };
   });
 }

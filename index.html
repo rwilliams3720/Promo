@@ -318,6 +318,14 @@
     .modal-box{padding:1.25rem;}
     /* Sales entry form: collapse grid */
     .ms-row{flex-wrap:wrap;}
+    /* Manual entry row grids: stack columns on mobile */
+    .manual-sale-row > div[style*="grid-template-columns"]{display:flex!important;flex-wrap:wrap;gap:.5rem!important;}
+    .manual-sale-row > div[style*="grid-template-columns"] > div{flex:1 1 140px;min-width:0;}
+    /* What-If Calculator product rows: stack on mobile */
+    .wi-product-row{display:flex!important;flex-wrap:wrap;gap:.4rem;}
+    .wi-product-row > div{flex:1 1 120px;min-width:0;}
+    /* Admin notes: flexible width */
+    .admin-notes{width:100%;max-width:180px;}
   }
   .plan-tier{background:var(--card2);border:2px solid var(--border2);border-radius:12px;padding:14px 12px;cursor:pointer;transition:border-color .2s;text-align:center;}
   .plan-tier:hover{border-color:var(--accent);}
@@ -9909,7 +9917,48 @@ function buildGoalMetricsHtml(agentId, existingGoals) {
       </div>`);
     }
   }
-  return rows.join('');
+  // Combined groups section
+  const combinedGroups = existingGoals.combined_groups || [];
+  const cgHtml = `<div id="gf-combined-groups-${escHtml(agentId)}" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border2);">
+    <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;">Combined Goals <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;">(group products into one target)</span></div>
+    <div id="gf-cg-rows-${escHtml(agentId)}">${combinedGroups.map((g,i) => _buildCgRow(agentId,i,g,cats)).join('')}</div>
+    <button onclick="_addCgRow('${escHtml(agentId)}')" style="font-size:11px;background:none;border:1px solid var(--border2);color:var(--muted);border-radius:4px;padding:2px 8px;cursor:pointer;margin-top:2px;">+ Add Combined Goal</button>
+  </div>`;
+  return rows.join('') + cgHtml;
+}
+
+function _buildCgRow(agentId, idx, grp, cats) {
+  const sid = escHtml(agentId);
+  const sel = grp?.products || [];
+  return `<div id="gf-cg-${sid}-${idx}" style="display:flex;gap:6px;align-items:flex-start;margin-bottom:5px;padding:5px 7px;background:var(--deep);border-radius:5px;border:1px solid var(--border2);">
+    <div style="flex:1;">
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:4px;">
+        <input id="gf-cg-lbl-${sid}-${idx}" type="text" placeholder="Label (e.g. Auto+Fire)" value="${escHtml(grp?.label||'')}" style="flex:1;min-width:90px;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 5px;font-size:11px;outline:none;">
+        <input id="gf-cg-tgt-${sid}-${idx}" type="number" min="0" placeholder="target" value="${grp?.target||''}" style="width:55px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 4px;font-size:11px;outline:none;">
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">${
+        cats.map(c => `<label style="font-size:10px;display:flex;align-items:center;gap:3px;cursor:pointer;white-space:nowrap;"><input type="checkbox" id="gf-cg-p-${sid}-${idx}-${c.key}" ${sel.includes(c.key)?'checked':''}> ${escHtml(c.label||c.key)}</label>`).join('')
+      }</div>
+    </div>
+    <button onclick="_removeCgRow('${sid}',${idx})" style="background:none;border:none;color:var(--muted);font-size:15px;cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0;">×</button>
+  </div>`;
+}
+
+function _addCgRow(agentId) {
+  const cats = (_productTypes.length ? _productTypes : DEFAULT_SCORING_CATS).filter(c => ['wl','ul','term','health','auto','fire'].includes(c.key));
+  const container = document.getElementById('gf-cg-rows-' + agentId);
+  if (!container) return;
+  const idx = container.children.length;
+  container.insertAdjacentHTML('beforeend', _buildCgRow(agentId, idx, null, cats));
+}
+
+function _removeCgRow(agentId, idx) {
+  const el = document.getElementById(`gf-cg-${agentId}-${idx}`);
+  if (el) el.remove();
+  // Re-index remaining rows so save logic finds them sequentially
+  const container = document.getElementById('gf-cg-rows-' + agentId);
+  if (!container) return;
+  [...container.children].forEach((row, i) => { row.id = `gf-cg-${agentId}-${i}`; });
 }
 
 function showGoalForm(agentId, existingGoalId) {
@@ -9981,6 +10030,20 @@ async function saveGoalForm(agentId, existingGoalId) {
     if (cb?.checked && inp?.value) goals['activity_' + t.id] = parseFloat(inp.value) || 0;
   }
 
+  // Collect combined groups
+  const _cgCats = (_productTypes.length ? _productTypes : DEFAULT_SCORING_CATS).filter(c => ['wl','ul','term','health','auto','fire'].includes(c.key));
+  const cgContainer = document.getElementById(`gf-cg-rows-${agentId}`);
+  if (cgContainer) {
+    const groups = [];
+    [...cgContainer.children].forEach((row, i) => {
+      const label   = document.getElementById(`gf-cg-lbl-${agentId}-${i}`)?.value?.trim() || '';
+      const target  = parseFloat(document.getElementById(`gf-cg-tgt-${agentId}-${i}`)?.value) || 0;
+      const products = _cgCats.filter(c => document.getElementById(`gf-cg-p-${agentId}-${i}-${c.key}`)?.checked).map(c => c.key);
+      if (products.length >= 2 && target > 0) groups.push({ id: 'cg' + i, label: label || products.join('+'), products, target });
+    });
+    if (groups.length) goals.combined_groups = groups;
+  }
+
   if (!Object.keys(goals).length) {
     if (msgEl) { msgEl.style.display=''; msgEl.textContent='Add at least one metric target.'; }
     return;
@@ -10043,14 +10106,18 @@ function renderAgentRosterGoalsSection(a) {
   const PT  = { monthly:'Monthly', quarterly:'Quarterly', semi_annual:'Semi-Annual', annual:'Annual' };
   const ML  = { wl:'WL', ul:'UL', term:'Term', health:'Health', auto:'Auto', fire:'Fire', policies:'Policies', premium:'Premium' };
   const goalRows = agGoals.map(g => {
-    const keys = Object.keys(g.goals||{}).filter(k => g.goals[k]);
-    const summary = keys.slice(0,4).map(k => {
+    const keys = Object.keys(g.goals||{}).filter(k => g.goals[k] && k !== 'combined_groups');
+    const cgPills = (g.goals.combined_groups || []).map(grp => {
+      const act = g.actuals?.['combined_' + grp.id] ?? '—';
+      return `${escHtml(grp.label||grp.id)}:${act}/${grp.target}`;
+    });
+    const summary = [...keys.slice(0,4).map(k => {
       if (k.startsWith('activity_')) {
         const at = _activityTypes.find(t => 'activity_'+t.id === k);
         return `${at ? at.name : k}:${g.goals[k]}`;
       }
       return `${ML[k]||k}:${g.goals[k]}`;
-    }).join(' · ');
+    }), ...cgPills].join(' · ');
     const badge = g.is_public
       ? '<span style="font-size:9px;background:rgba(0,229,180,.12);color:var(--accent2);border-radius:3px;padding:1px 5px;margin-left:4px;">Public</span>'
       : '<span style="font-size:9px;background:rgba(255,255,255,.06);color:var(--muted);border-radius:3px;padding:1px 5px;margin-left:4px;">Private</span>';
@@ -10106,7 +10173,7 @@ function renderRaceGoalsRow(ag) {
   const PROD = { wl:'WL', ul:'UL', term:'T', health:'H', auto:'A', fire:'F' };
   const items = [];
   for (const [key, target] of Object.entries(agGoal.goals || {})) {
-    if (!target) continue;
+    if (!target || key === 'combined_groups') continue;
     let actual = 0, label = '';
     if (PROD[key])       { actual = ag[key] || 0; label = PROD[key]; }
     else if (key === 'policies') {
@@ -10116,6 +10183,13 @@ function renderRaceGoalsRow(ag) {
     const pct = target > 0 ? Math.min(100, Math.round(actual / target * 100)) : 0;
     const col = pct >= 100 ? 'var(--accent2)' : pct >= 70 ? '#fbbf24' : 'var(--muted)';
     items.push({ label, actual, target, pct, col });
+  }
+  for (const grp of (agGoal.goals.combined_groups || [])) {
+    if (!grp.target) continue;
+    const actual = agGoal.actuals?.['combined_' + grp.id] ?? 0;
+    const pct = grp.target > 0 ? Math.min(100, Math.round(actual / grp.target * 100)) : 0;
+    const col = pct >= 100 ? 'var(--accent2)' : pct >= 70 ? '#fbbf24' : 'var(--muted)';
+    items.push({ label: grp.label || grp.id, actual, target: grp.target, pct, col });
   }
   if (!items.length) return '';
   const lock = !agGoal.is_public ? ' <span style="font-size:9px;opacity:.7;">🔒</span>' : '';
@@ -10284,8 +10358,9 @@ function renderGoalsTab() {
     const recBadge = g.is_recurring
       ? '<span style="font-size:10px;background:rgba(123,97,255,.15);color:#a78bfa;border-radius:3px;padding:1px 6px;">↻ Recurring</span>'
       : '';
-    const metrics = Object.entries(g.goals || {}).filter(([,v]) => v);
-    if (!metrics.length) return '';
+    const metrics = Object.entries(g.goals || {}).filter(([k,v]) => v && k !== 'combined_groups');
+    const hasCombined = (g.goals.combined_groups || []).length > 0;
+    if (!metrics.length && !hasCombined) return '';
     const rows = metrics.map(([key, target]) => {
       const raw    = g.actuals?.[key];
       const actual = typeof raw === 'number' ? raw : null;
@@ -10306,7 +10381,26 @@ function renderGoalsTab() {
           ${pct!==null?`<div style="height:5px;width:${pct}%;background:${col};border-radius:3px;transition:width .3s;"></div>`:''}
         </div>
       </div>`;
-    }).join('');
+    });
+    for (const grp of (g.goals.combined_groups || [])) {
+      if (!grp.target) continue;
+      const raw    = g.actuals?.['combined_' + grp.id];
+      const actual = typeof raw === 'number' ? raw : null;
+      const numTgt = grp.target;
+      const pct    = actual !== null && numTgt > 0 ? Math.min(100, Math.round(actual/numTgt*100)) : null;
+      const col    = pct === null ? 'var(--muted)' : pct>=100 ? 'var(--accent2)' : pct>=70 ? '#fbbf24' : 'var(--danger)';
+      const dispA  = actual === null ? '—' : actual;
+      rows.push(`<div style="margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">
+          <span>${escHtml(grp.label||grp.id)} <span style="font-size:10px;color:var(--muted);">(combined)</span></span>
+          <span style="color:${col};">${dispA} / ${numTgt}${pct!==null?' ('+pct+'%)':''}</span>
+        </div>
+        <div style="height:5px;background:var(--border2);border-radius:3px;overflow:hidden;">
+          ${pct!==null?`<div style="height:5px;width:${pct}%;background:${col};border-radius:3px;transition:width .3s;"></div>`:''}
+        </div>
+      </div>`);
+    }
+    const rowsHtml = rows.join('');
     const displayLabel = g.is_recurring ? currentPeriodLabel(g.period_type) : g.period_label;
     const range        = g.is_recurring ? currentPeriodRange(g.period_type) : { start: g.period_start, end: g.period_end };
     return `<div style="background:var(--deep);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;margin-bottom:8px;">
@@ -10316,7 +10410,7 @@ function renderGoalsTab() {
         ${badge}${recBadge}
         <span style="font-size:10px;color:var(--muted);margin-left:auto;">${range.start} – ${range.end}</span>
       </div>
-      ${rows}
+      ${rowsHtml}
     </div>`;
   }).join('');
 
