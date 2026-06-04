@@ -27,11 +27,34 @@ async function rebuildRaceData(dataUserId, agentIds) {
   }));
   await supabase.from('race_data').upsert(ensureRows, { onConflict: 'user_id,agent_id', ignoreDuplicates: true });
 
-  const { data: salesRows } = await supabase
-    .from('sales_log')
-    .select('agent_id, product, sale_weight')
+  // Scope to current race month so historical sales don't inflate live race totals
+  const { data: cfgRow } = await supabase
+    .from('race_config')
+    .select('value')
     .eq('user_id', dataUserId)
-    .in('agent_id', ids);
+    .eq('key', 'current_month')
+    .single();
+  const currentMonth = cfgRow?.value || '';
+  let fromDate = null, toDate = null;
+  if (currentMonth) {
+    const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const parts = currentMonth.trim().split(' ');
+    let idx = MONTH_NAMES.indexOf(parts[0]);
+    if (idx === -1) idx = ABBR.indexOf(parts[0]);
+    const yr = parseInt(parts[1]);
+    if (idx !== -1 && !isNaN(yr)) {
+      fromDate = `${yr}-${String(idx + 1).padStart(2, '0')}-01`;
+      const nextMo = idx === 11 ? 1 : idx + 2;
+      const nextYr = idx === 11 ? yr + 1 : yr;
+      toDate = `${nextYr}-${String(nextMo).padStart(2, '0')}-01`;
+    }
+  }
+
+  let q = supabase.from('sales_log').select('agent_id, product, sale_weight').eq('user_id', dataUserId).eq('is_cancelled', false).in('agent_id', ids);
+  if (fromDate) q = q.gte('sale_date', fromDate);
+  if (toDate)   q = q.lt('sale_date', toDate);
+  const { data: salesRows } = await q;
 
   const totals = {};
   for (const id of ids) totals[id] = { wl: 0, ul: 0, term: 0, health: 0, auto: 0, fire: 0 };
@@ -82,7 +105,7 @@ function decryptField(ciphertext) {
   }
 }
 
-async function resolveUser(token) {
+async function resolveUser(token, { readOnly = false } = {}) {
   const { data: { user }, error } = await supabase.auth.getUser(token);
   if (error || !user) return null;
   const { data: acct } = await supabase.from('accounts').select('has_sales_addon, sales_entry_mode, is_admin').eq('user_id', user.id).single();
@@ -100,8 +123,11 @@ async function resolveUser(token) {
     dataUserId = member.owner_user_id;
     const { data: ownerAcct } = await supabase.from('accounts').select('has_sales_addon, is_admin, self_report_config').eq('user_id', dataUserId).single();
     const ownerSelfReport = ownerAcct?.self_report_config || {};
-    if (!isCapOrCO && !ownerSelfReport.sales_enabled) return null;
+    // sales_enabled gates self-report submissions; read-only (salesperf view) is allowed for any active member
+    if (!isCapOrCO && !ownerSelfReport.sales_enabled && !readOnly) return null;
     hasSalesAddon = (ownerAcct?.has_sales_addon || ownerAcct?.is_admin || ownerSelfReport.sales_enabled) ?? false;
+    // For read-only members, inherit hasSalesAddon from owner account directly
+    if (readOnly && !hasSalesAddon) hasSalesAddon = !!(ownerAcct?.has_sales_addon || ownerAcct?.is_admin);
     return {
       userId: user.id,
       dataUserId,
@@ -140,7 +166,7 @@ export default async function handler(req, res) {
   const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
-  const ctx = await resolveUser(token);
+  const ctx = await resolveUser(token, { readOnly: req.method === 'GET' });
   if (!ctx) return res.status(401).json({ error: 'Invalid token or insufficient access' });
   if (!ctx.hasSalesAddon) return res.status(403).json({ error: 'Sales tracking add-on required' });
 
@@ -160,7 +186,7 @@ export default async function handler(req, res) {
     if (req.query.fromDate) fromDate = req.query.fromDate;
     if (req.query.toDate)   toDate   = req.query.toDate;
 
-    const COLS = 'hash, agent_id, product, subcategory, sale_date, issued_date, written_premium, source, customer_name, lead_source, period, auto_issued, split_sale, split_ratio, teammate, checklist_id, hidden, location, is_cancelled, chargeback_date';
+    const COLS = 'hash, agent_id, product, subcategory, sale_date, issued_date, written_premium, issued_premium, source, customer_name, lead_source, period, auto_issued, split_sale, split_ratio, teammate, checklist_id, hidden, location, is_cancelled, chargeback_date';
 
     // Selected month
     let q1 = supabase.from('sales_log').select(COLS)
@@ -169,6 +195,8 @@ export default async function handler(req, res) {
       .gte('sale_date', fromDate)
       .lte('sale_date', toDate)
       .order('sale_date', { ascending: false });
+    // Non-captain/CO members see only their own agent's entries
+    if (ctx.isMember && !ctx.isCapOrCO && ctx.memberAgentId) q1 = q1.eq('agent_id', ctx.memberAgentId);
     if (includeHidden !== '1') q1 = q1.or('hidden.is.null,hidden.eq.false');
 
     const { data: monthData, error } = await q1;
@@ -184,6 +212,7 @@ export default async function handler(req, res) {
         .or(`sale_date.lt.${fromDate},sale_date.gt.${toDate}`)
         .order('sale_date', { ascending: false })
         .limit(100);
+      if (ctx.isMember && !ctx.isCapOrCO && ctx.memberAgentId) q2 = q2.eq('agent_id', ctx.memberAgentId);
       if (includeHidden !== '1') q2 = q2.or('hidden.is.null,hidden.eq.false');
       const { data: d2 } = await q2;
       unissuedData = d2 || [];
@@ -198,7 +227,7 @@ export default async function handler(req, res) {
 
   // ── POST: create manual entry ─────────────────────────────────────────────
   if (req.method === 'POST') {
-    let { agentId, product, subcategory, saleDate, issuedDate, writtenPremium, customerName,
+    let { agentId, product, subcategory, saleDate, issuedDate, writtenPremium, issuedPremium, customerName,
           leadSource, period, autoIssued, splitSale, splitRatio, teammate, location, saleWeight } = req.body || {};
 
     // Non-captain/CO members can only submit for themselves
@@ -223,6 +252,7 @@ export default async function handler(req, res) {
       sale_date:       saleDate,
       issued_date:     resolvedIssuedDate,
       written_premium: writtenPremium ? parseFloat(writtenPremium) : null,
+      issued_premium:  issuedPremium  ? parseFloat(issuedPremium)  : null,
       source:          'manual',
       customer_name:   encryptField(customerName || '') || null,
       lead_source:     leadSource     || null,
@@ -251,7 +281,7 @@ export default async function handler(req, res) {
 
     const { data: existing } = await supabase.from('sales_log').select('agent_id').eq('user_id', dataUserId).eq('hash', hash).single();
 
-    const allowed = ['agent_id','product','subcategory','sale_date','issued_date','written_premium',
+    const allowed = ['agent_id','product','subcategory','sale_date','issued_date','written_premium','issued_premium',
                      'customer_name','lead_source','period','auto_issued','split_sale','split_ratio','teammate','hidden','location',
                      'is_cancelled','chargeback_date','sale_weight'];
     const update = {};
@@ -260,6 +290,7 @@ export default async function handler(req, res) {
     }
     if (update.customer_name !== undefined) update.customer_name = encryptField(update.customer_name) || null;
     if (update.written_premium) update.written_premium = parseFloat(update.written_premium);
+    if (update.issued_premium != null) update.issued_premium = update.issued_premium ? parseFloat(update.issued_premium) : null;
     if (update.split_ratio != null) update.split_ratio = parseFloat(update.split_ratio) || null;
     if (fields.is_cancelled !== undefined) update.is_cancelled = !!fields.is_cancelled;
     if (fields.chargeback_date !== undefined) update.chargeback_date = fields.chargeback_date || null;

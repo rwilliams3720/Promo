@@ -3657,7 +3657,7 @@ function renderSalesTile() {
 
   if (locationActive) {
     // Location drill-down: aggregate manual/checklist entries for the selected location
-    const entries = _salesTileEntries.filter(e => e.location === _salesTileLocation);
+    const entries = _salesTileEntries.filter(e => e.location === _salesTileLocation && !e.is_cancelled);
     for (const e of entries) {
       if (!e.agent_id || SKIP.has(e.product)) continue;
       if (!agentMap[e.agent_id]) {
@@ -5720,6 +5720,7 @@ async function setRaceMonth() {
     .from('sales_log')
     .select('agent_id, product, sale_weight')
     .eq('user_id', _dataUserId)
+    .eq('is_cancelled', false)
     .gte('sale_date', from)
     .lt('sale_date', to);
 
@@ -5792,6 +5793,7 @@ async function recalcSales(btn) {
       .from('sales_log')
       .select('agent_id, product, sale_weight')
       .eq('user_id', _dataUserId)
+      .eq('is_cancelled', false)
       .gte('sale_date', from)
       .lt('sale_date', to);
 

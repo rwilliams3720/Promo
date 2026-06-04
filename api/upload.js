@@ -51,6 +51,19 @@ function encryptField(text) {
   return iv.toString('base64') + ':' + encrypted.toString('base64') + ':' + tag.toString('base64');
 }
 
+function decryptField(ciphertext) {
+  if (!ciphertext) return null;
+  if (!ENCRYPTION_KEY || !ciphertext.includes(':')) return ciphertext;
+  try {
+    const [ivB64, encB64, tagB64] = ciphertext.split(':');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', ENCRYPTION_KEY, Buffer.from(ivB64, 'base64'));
+    decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
+    return decipher.update(Buffer.from(encB64, 'base64')) + decipher.final('utf8');
+  } catch {
+    return ciphertext;
+  }
+}
+
 // Agent IDs are slugs of the display name: "Jane Smith" → "jane_smith"
 function slugify(name) {
   return String(name).toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '').replace(/^_+|_+$/g, '');
@@ -117,7 +130,7 @@ export default async function handler(req, res) {
 
     const result = fileType === 'sales'
       ? await processSalesUpload(rows, userId, columnMap)
-      : await processCallUpload(rows, userId);
+      : await processCallUpload(rows, userId, { confirmNewMonth: !!(body.confirmNewMonth) });
 
     return res.json(result);
   } catch (err) {
@@ -146,7 +159,7 @@ function parseFile(buffer) {
 
 
 // ─── CALL UPLOAD ────────────────────────────────────────────────
-async function processCallUpload(rows, userId) {
+async function processCallUpload(rows, userId, opts = {}) {
   let hasHeader = false;
   for (let r = 0; r < Math.min(rows.length, 20); r++) {
     if (rows[r].join('|').includes('Call Direction')) { hasHeader = true; break; }
@@ -167,6 +180,9 @@ async function processCallUpload(rows, userId) {
   if (dataMonth && storedMonth) {
     const cmp = compareMonths(dataMonth, storedMonth);
     if (cmp > 0) {
+      if (!opts.confirmNewMonth) {
+        return { needsMonthConfirm: true, uploadedMonth: dataMonth, currentMonth: storedMonth };
+      }
       await archiveToHistorical(storedMonth, userId);
       await resetRaceScores(userId);
       await supabase.from('race_config').upsert(
@@ -213,8 +229,12 @@ async function processCallUpload(rows, userId) {
       call_dt:     r[4] || null,
       call_slot:   r[5] != null ? r[5] : null,
     }));
-    const { error: logErr } = await supabase.from('call_log').upsert(logInserts, { onConflict: 'user_id,hash', ignoreDuplicates: true });
-    if (logErr) return { success: false, error: 'call_log write failed: ' + logErr.message };
+    // Chunk into 500-row batches to stay within Supabase payload limits
+    const BATCH = 500;
+    for (let i = 0; i < logInserts.length; i += BATCH) {
+      const { error: logErr } = await supabase.from('call_log').upsert(logInserts.slice(i, i + BATCH), { onConflict: 'user_id,hash', ignoreDuplicates: true });
+      if (logErr) return { success: false, error: 'call_log write failed: ' + logErr.message };
+    }
   }
 
   // Seed race_data rows for any newly discovered agents
@@ -235,27 +255,55 @@ async function processCallUpload(rows, userId) {
 
   const allLog = await fetchAllPages(supabase, 'call_log', 'agent_id,disposition,talk_secs,call_dt', userId);
   const allLogRows = allLog.map(r => [
-    '', r.agent_id || '', r.disposition, r.talk_secs ? r.talk_secs / 60 : 0, r.call_dt || '', ''
+    '', decryptField(r.agent_id) || '', r.disposition, r.talk_secs ? r.talk_secs / 60 : 0, r.call_dt || '', ''
   ]);
   const totals = aggregateFromLog(allLogRows, agentMeta);
 
   const now = new Date().toISOString();
-  for (const id in totals.agents) {
-    const s = totals.agents[id];
-    await supabase.from('race_data').update({
-      placed:       s.placed,
-      answered:     s.answered,
-      talk_min:     s.talkMin,
-      avg_min:      s.avgMin,
-      last_updated: now,
-    }).eq('user_id', userId).eq('agent_id', id);
+  await Promise.all([
+    ...Object.entries(totals.agents).map(([id, s]) =>
+      supabase.from('race_data').update({
+        placed:       s.placed,
+        answered:     s.answered,
+        talk_min:     s.talkMin,
+        avg_min:      s.avgMin,
+        last_updated: now,
+      }).eq('user_id', userId).eq('agent_id', id)
+    ),
+    supabase.from('race_data').update({
+      race_wide_missed:    totals.raceWide.missed,
+      race_wide_voicemail: totals.raceWide.voicemails,
+      last_updated:        now,
+    }).eq('user_id', userId),
+  ]);
+
+  // Re-apply any sales that already exist in sales_log for the current race month
+  // (covers manual/checklist entries logged before or after the call upload)
+  const { data: cfgRowPost } = await supabase.from('race_config')
+    .select('value').eq('user_id', userId).eq('key', 'current_month').single();
+  const currentRaceMonth = cfgRowPost?.value || dataMonth || '';
+  const salesRange = currentRaceMonth ? monthLabelToDateRange(currentRaceMonth) : null;
+  if (salesRange) {
+    const { data: salesRows } = await supabase.from('sales_log')
+      .select('agent_id, product, sale_weight')
+      .eq('user_id', userId)
+      .eq('is_cancelled', false)
+      .gte('sale_date', salesRange.from)
+      .lt('sale_date', salesRange.to);
+    if (salesRows?.length) {
+      const salesTotals = {};
+      for (const r of salesRows) {
+        const cat = r.product;
+        if (!r.agent_id || cat === 'other' || cat === 'deposit' || cat === 'skip') continue;
+        if (!salesTotals[r.agent_id]) salesTotals[r.agent_id] = { wl:0, ul:0, term:0, health:0, auto:0, fire:0 };
+        if (salesTotals[r.agent_id][cat] !== undefined) salesTotals[r.agent_id][cat] += (r.sale_weight ?? 1);
+      }
+      await Promise.all(Object.entries(salesTotals).map(([agentId, cats]) =>
+        supabase.from('race_data').update({ ...cats, last_updated: now })
+          .eq('user_id', userId).eq('agent_id', agentId)
+      ));
+    }
   }
-  // Apply race-wide deductions to all agents for this account
-  await supabase.from('race_data').update({
-    race_wide_missed:    totals.raceWide.missed,
-    race_wide_voicemail: totals.raceWide.voicemails,
-    last_updated:        now,
-  }).eq('user_id', userId);
 
   triggerDailyReport(userId);
   return {
@@ -377,27 +425,40 @@ async function processSalesUpload(rows, userId, columnMap) {
     await supabase.from('agent_roster').upsert(rosterRows, { onConflict: 'user_id,agent_id', ignoreDuplicates: true });
   }
 
-  const allSales = await fetchAllPages(supabase, 'sales_log', 'agent_id,product', userId);
-  const allSalesRows = allSales.map(r => ['', r.agent_id || 'skip', r.product || 'other', '', '']);
-  const agentTotals  = aggregateSalesFromLog(allSalesRows);
+  // Rebuild race_data sales from the CURRENT race month, not the uploaded month.
+  // If uploading a historical month, we must not overwrite what the live race already has.
+  const { data: cfgRowSales } = await supabase.from('race_config')
+    .select('value').eq('user_id', userId).eq('key', 'current_month').single();
+  const currentRaceMonth = cfgRowSales?.value || salesMonth || '';
+  const raceRange = currentRaceMonth ? monthLabelToDateRange(currentRaceMonth) : null;
 
   const now = new Date().toISOString();
-  for (const id in agentTotals) {
-    const s = agentTotals[id];
-    await supabase.from('race_data').update({
-      wl: s.wl, ul: s.ul, term: s.term, health: s.health, auto: s.auto, fire: s.fire,
-      last_updated: now,
-    }).eq('user_id', userId).eq('agent_id', id);
-  }
+  if (raceRange) {
+    const { data: raceSalesRows } = await supabase.from('sales_log')
+      .select('agent_id,product,sale_date')
+      .eq('user_id', userId)
+      .gte('sale_date', raceRange.from)
+      .lt('sale_date', raceRange.to);
+    const allSalesRows = (raceSalesRows || []).map(r => ['', r.agent_id || 'skip', r.product || 'other', '', '']);
+    const agentTotals  = aggregateSalesFromLog(allSalesRows);
 
-  // Zero out sales for any race_data agent that no longer has sales in any month
-  const { data: allRaceAgents } = await supabase.from('race_data').select('agent_id').eq('user_id', userId);
-  for (const row of (allRaceAgents || [])) {
-    if (!agentTotals[row.agent_id]) {
+    for (const id in agentTotals) {
+      const s = agentTotals[id];
       await supabase.from('race_data').update({
-        wl: 0, ul: 0, term: 0, health: 0, auto: 0, fire: 0,
+        wl: s.wl, ul: s.ul, term: s.term, health: s.health, auto: s.auto, fire: s.fire,
         last_updated: now,
-      }).eq('user_id', userId).eq('agent_id', row.agent_id);
+      }).eq('user_id', userId).eq('agent_id', id);
+    }
+
+    // Zero out any race_data agent with no sales in the current race month
+    const { data: allRaceAgents } = await supabase.from('race_data').select('agent_id').eq('user_id', userId);
+    for (const row of (allRaceAgents || [])) {
+      if (!agentTotals[row.agent_id]) {
+        await supabase.from('race_data').update({
+          wl: 0, ul: 0, term: 0, health: 0, auto: 0, fire: 0,
+          last_updated: now,
+        }).eq('user_id', userId).eq('agent_id', row.agent_id);
+      }
     }
   }
 
@@ -418,11 +479,15 @@ async function processSalesUpload(rows, userId, columnMap) {
 // ignoreDuplicates preserves existing name/team set by prior uploads or user
 async function ensureRaceDataRows(userId, discoveredAgents) {
   if (!discoveredAgents || !Object.keys(discoveredAgents).length) return { error: null };
-  const rows = Object.entries(discoveredAgents).map(([id, name]) => ({
+  const agentIds = Object.keys(discoveredAgents);
+  const { data: rosterRows } = await supabase.from('agent_roster').select('agent_id, team').eq('user_id', userId).in('agent_id', agentIds);
+  const teamMap = {};
+  for (const r of (rosterRows || [])) teamMap[r.agent_id] = r.team;
+  const rows = agentIds.map(id => ({
     user_id:             userId,
     agent_id:            id,
-    name,
-    team:                'sales',
+    name:                discoveredAgents[id],
+    team:                teamMap[id] || 'sales',
     wl: 0, ul: 0, term: 0, health: 0, auto: 0, fire: 0,
     placed: 0, answered: 0, missed: 0, voicemail: 0,
     talk_min: 0, avg_min: 0,
@@ -491,20 +556,50 @@ async function archiveCallStatsToHistorical(month, totals, userId) {
   const rwMissed = totals.raceWide.missed;
   const rwVm     = totals.raceWide.voicemails;
 
-  const scored = Object.values(totals.agents).map(s => {
-    const svc    = s.team === 'service';
+  const agentEntries = Object.values(totals.agents);
+
+  // Read per-agent sales from sales_log (authoritative ledger) scoped to this month
+  const salesByAgent = {};
+  const moIdx = MONTH_NAMES.indexOf(month.split(' ')[0]);
+  const yr    = parseInt(month.split(' ')[1]);
+  if (moIdx >= 0 && yr > 0) {
+    const monthStart  = `${yr}-${String(moIdx + 1).padStart(2, '0')}-01`;
+    const nextMoYr    = moIdx === 11 ? yr + 1 : yr;
+    const nextMoNum   = moIdx === 11 ? 1 : moIdx + 2;
+    const nextMoStart = `${nextMoYr}-${String(nextMoNum).padStart(2, '0')}-01`;
+    const { data: saleRows } = await supabase.from('sales_log')
+      .select('agent_id, product, sale_weight')
+      .eq('user_id', userId)
+      .eq('is_cancelled', false)
+      .gte('sale_date', monthStart)
+      .lt('sale_date', nextMoStart);
+    for (const r of (saleRows || [])) {
+      const cat = r.product;
+      if (!r.agent_id || cat === 'other' || cat === 'deposit' || cat === 'skip') continue;
+      if (!salesByAgent[r.agent_id]) salesByAgent[r.agent_id] = { wl:0, ul:0, term:0, health:0, auto:0, fire:0 };
+      if (salesByAgent[r.agent_id][cat] !== undefined) salesByAgent[r.agent_id][cat] += (r.sale_weight ?? 1);
+    }
+  }
+
+  const scored = agentEntries.map(s => {
+    const sl  = salesByAgent[s.id] || {};
+    const svc = s.team === 'service';
+    const wl = sl.wl||0, ul = sl.ul||0, term = sl.term||0;
+    const health = sl.health||0, auto = sl.auto||0, fire = sl.fire||0;
+    const polPts  = wl*sc.wl + ul*sc.ul + term*sc.term + health*sc.health + auto*sc.auto + fire*sc.fire;
     const callPts = s.placed*(svc?sc.placed_service:sc.placed_sales)+s.answered*(svc?sc.answered_service:sc.answered_sales)+s.talkMin*sc.talk_per_min+s.avgMin*sc.avg_min;
-    const gross  = Math.round(callPts);
+    const gross  = Math.round(polPts + callPts);
     const deduct = Math.round(rwMissed*sc.missed_deduct + rwVm*sc.voicemail_deduct);
-    return { ...s, gross, deduct, total: Math.max(0, gross + deduct) };
+    return { ...s, wl, ul, term, health, auto, fire, gross, deduct, total: Math.max(0, gross + deduct) };
   }).sort((a, b) => b.total - a.total);
 
+  // Upsert: update existing agents' call stats (preserving sales), insert new agents
   await supabase.from('historical_wins').delete().eq('user_id', userId).eq('month', month);
   await supabase.from('historical_wins').insert(scored.map((s, i) => ({
     user_id: userId,
     month, rank: i+1, agent_id: s.id, name: s.name, team: s.team,
     total_score: s.total, gross_score: s.gross, deductions: s.deduct,
-    wl:0, ul:0, term:0, health:0, auto:0, fire:0,
+    wl: s.wl, ul: s.ul, term: s.term, health: s.health, auto: s.auto, fire: s.fire,
     placed: s.placed, answered: s.answered, missed: 0, voicemail: 0,
     talk_min: s.talkMin, avg_min: s.avgMin,
     race_wide_missed: rwMissed, race_wide_voicemail: rwVm,
@@ -517,22 +612,9 @@ async function archiveCallStatsToHistorical(month, totals, userId) {
   const answered = Object.values(totals.agents).reduce((s, a) => s + (a.answered|| 0), 0);
   const talkMin  = Object.values(totals.agents).reduce((s, a) => s + (a.talkMin || 0), 0);
 
-  // Check if sales for this month were already uploaded and count them
-  const moIdx = MONTH_NAMES.indexOf(month.split(' ')[0]);
-  const yr    = parseInt(month.split(' ')[1]);
-  let policies = 0;
-  if (moIdx >= 0 && yr > 0) {
-    const monthStart = `${yr}-${String(moIdx + 1).padStart(2, '0')}-01`;
-    const nextMoYr   = moIdx === 11 ? yr + 1 : yr;
-    const nextMoNum  = moIdx === 11 ? 1 : moIdx + 2;
-    const nextMoStart = `${nextMoYr}-${String(nextMoNum).padStart(2, '0')}-01`;
-    const { count } = await supabase.from('sales_log')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .gte('sale_date', monthStart)
-      .lt('sale_date', nextMoStart);
-    policies = count || 0;
-  }
+  // Count sales from the same ledger query already used above
+  const policies = Object.values(salesByAgent).reduce((s, ag) =>
+    s + (ag.wl||0) + (ag.ul||0) + (ag.term||0) + (ag.health||0) + (ag.auto||0) + (ag.fire||0), 0);
 
   await supabase.from('historical_months').upsert({
     user_id: userId, month: abbrevMonth,
@@ -543,6 +625,22 @@ async function archiveCallStatsToHistorical(month, totals, userId) {
   }, { onConflict: 'user_id,month' });
 }
 
+// Parses "January 2026" or "Jan 2026" → { from: '2026-01-01', to: '2026-02-01' }
+function monthLabelToDateRange(label) {
+  const ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const parts = (label || '').trim().split(' ');
+  if (parts.length !== 2) return null;
+  const [mon, yr] = parts;
+  const year = parseInt(yr);
+  if (isNaN(year)) return null;
+  let idx = MONTH_NAMES.indexOf(mon);
+  if (idx === -1) idx = ABBR.indexOf(mon);
+  if (idx === -1) return null;
+  const from = `${year}-${String(idx + 1).padStart(2, '0')}-01`;
+  const to   = idx === 11 ? `${year + 1}-01-01` : `${year}-${String(idx + 2).padStart(2, '0')}-01`;
+  return { from, to };
+}
+
 async function resetRaceScores(userId) {
   await supabase.from('race_data').update({
     wl:0, ul:0, term:0, health:0, auto:0, fire:0,
@@ -550,7 +648,7 @@ async function resetRaceScores(userId) {
     talk_min:0, avg_min:0, race_wide_missed:0, race_wide_voicemail:0,
   }).eq('user_id', userId);
   await supabase.from('call_log').delete().eq('user_id', userId);
-  await supabase.from('sales_log').delete().eq('user_id', userId);
+  // sales_log is a permanent ledger — never deleted on archive/reset
 }
 
 
