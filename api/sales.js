@@ -168,7 +168,10 @@ export default async function handler(req, res) {
 
   const ctx = await resolveUser(token, { readOnly: req.method === 'GET' });
   if (!ctx) return res.status(401).json({ error: 'Invalid token or insufficient access' });
-  if (!ctx.hasSalesAddon) return res.status(403).json({ error: 'Sales tracking add-on required' });
+  // Members can always view their own sales (GET) even without the sales add-on
+  if (!ctx.hasSalesAddon && !(ctx.isMember && req.method === 'GET')) {
+    return res.status(403).json({ error: 'Sales tracking add-on required' });
+  }
 
   const { dataUserId } = ctx;
 
@@ -276,10 +279,17 @@ export default async function handler(req, res) {
 
   // ── PATCH: update a manual entry ──────────────────────────────────────────
   if (req.method === 'PATCH') {
+    if (ctx.isMember && !ctx.isCapOrCO && !ctx.selfReportConfig?.sales_log_edit_enabled) {
+      return res.status(403).json({ error: 'Editing sales is not enabled for your account' });
+    }
     const { hash, ...fields } = req.body || {};
     if (!hash) return res.status(400).json({ error: 'hash required' });
 
     const { data: existing } = await supabase.from('sales_log').select('agent_id').eq('user_id', dataUserId).eq('hash', hash).single();
+    // Non-captain/CO members can only edit their own entries
+    if (ctx.isMember && !ctx.isCapOrCO && ctx.memberAgentId && existing?.agent_id !== ctx.memberAgentId) {
+      return res.status(403).json({ error: 'You can only edit your own entries' });
+    }
 
     const allowed = ['agent_id','product','subcategory','sale_date','issued_date','written_premium','issued_premium',
                      'customer_name','lead_source','period','auto_issued','split_sale','split_ratio','teammate','hidden','location',
@@ -315,10 +325,17 @@ export default async function handler(req, res) {
 
   // ── DELETE: remove a manual entry ─────────────────────────────────────────
   if (req.method === 'DELETE') {
+    if (ctx.isMember && !ctx.isCapOrCO && !ctx.selfReportConfig?.sales_log_edit_enabled) {
+      return res.status(403).json({ error: 'Editing sales is not enabled for your account' });
+    }
     const hash = req.query.hash;
     if (!hash) return res.status(400).json({ error: 'hash required' });
 
     const { data: existing } = await supabase.from('sales_log').select('agent_id').eq('user_id', dataUserId).eq('hash', hash).single();
+    // Non-captain/CO members can only delete their own entries
+    if (ctx.isMember && !ctx.isCapOrCO && ctx.memberAgentId && existing?.agent_id !== ctx.memberAgentId) {
+      return res.status(403).json({ error: 'You can only delete your own entries' });
+    }
 
     const { error } = await supabase
       .from('sales_log')

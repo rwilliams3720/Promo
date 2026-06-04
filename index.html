@@ -2250,6 +2250,20 @@
                 </div>
               </div>
 
+              <!-- Sales log edit toggle -->
+              <div style="background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:.85rem 1rem;">
+                <div style="display:flex;align-items:center;justify-content:space-between;">
+                  <div>
+                    <div style="font-size:13px;font-weight:600;">Allow Members to Edit Sales Log</div>
+                    <div style="font-size:12px;color:var(--muted);margin-top:2px;">Members can edit and delete their own entries in the Sales Log. All members can view their own log regardless of this setting.</div>
+                  </div>
+                  <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                    <input type="checkbox" id="sr-sales-log-edit">
+                    <span style="font-size:12px;color:var(--muted);">Enabled</span>
+                  </label>
+                </div>
+              </div>
+
             </div>
 
             <div style="display:flex;gap:8px;align-items:center;margin-top:1rem;">
@@ -3257,7 +3271,8 @@ function showPerfSubTab(name, btn) {
   }
 
   if (name === 'saleslog' || name === 'salesperf') {
-    const hasSales = _hasSalesAddon || _isAdmin;
+    // Members always get the sales log (scoped to their own entries server-side)
+    const hasSales = _hasSalesAddon || _isAdmin || (_isMember && name === 'saleslog');
     const teaser  = document.getElementById('perf-' + name + '-teaser');
     const content = document.getElementById('perf-' + name + '-content');
     if (teaser)  teaser.style.display  = hasSales ? 'none' : '';
@@ -5864,7 +5879,7 @@ function _applyPerfMemberGating() {
     const btn = document.getElementById(`perf-stab-${sub}`);
     if (!btn) return;
     // Non-captain/CO members see salesperf + commissions (both scoped to their own agent server-side)
-    if (memberLimited) { btn.style.display = (sub === 'salesperf' || sub === 'commissions') ? '' : 'none'; return; }
+    if (memberLimited) { btn.style.display = (sub === 'salesperf' || sub === 'commissions' || sub === 'saleslog') ? '' : 'none'; return; }
     btn.style.display = '';
   });
 }
@@ -7699,6 +7714,7 @@ function renderSelfReportSettings() {
   setChk('sr-activities-enabled', cfg.activities_enabled);
   setChk('sr-sales-enabled',      cfg.sales_enabled);
   setChk('sr-requires-approval',  cfg.requires_approval);
+  setChk('sr-sales-log-edit',     cfg.sales_log_edit_enabled);
   setChk('sr-req-act-notes',      cfg.req_act_notes);
   const rf = cfg.req_sales_fields || {};
   setChk('sr-req-customer-name', rf.customer_name);
@@ -7725,10 +7741,11 @@ function onSrConfigChange() {
 async function saveSelfReportConfig(btn) {
   btn.disabled = true;
   const cfg = {
-    activities_enabled: document.getElementById('sr-activities-enabled')?.checked || false,
-    sales_enabled:      document.getElementById('sr-sales-enabled')?.checked      || false,
-    requires_approval:  document.getElementById('sr-requires-approval')?.checked  || false,
-    req_act_notes:      document.getElementById('sr-req-act-notes')?.checked      || false,
+    activities_enabled:    document.getElementById('sr-activities-enabled')?.checked  || false,
+    sales_enabled:         document.getElementById('sr-sales-enabled')?.checked       || false,
+    requires_approval:     document.getElementById('sr-requires-approval')?.checked   || false,
+    sales_log_edit_enabled: document.getElementById('sr-sales-log-edit')?.checked    || false,
+    req_act_notes:         document.getElementById('sr-req-act-notes')?.checked       || false,
     req_sales_fields: {
       customer_name:   document.getElementById('sr-req-customer-name')?.checked  || false,
       written_premium: document.getElementById('sr-req-premium')?.checked        || false,
@@ -11773,7 +11790,7 @@ function renderSalesLog() {
     return;
   }
 
-  const canEdit = _isAdmin || !_isMember || ['captain', 'chief_officer'].includes(_memberRole);
+  const canEdit = _isAdmin || !_isMember || ['captain', 'chief_officer'].includes(_memberRole) || !!_selfReportConfig?.sales_log_edit_enabled;
 
   const renderRow = (e) => {
     const cat      = labelForCat(e.product);
