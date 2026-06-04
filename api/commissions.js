@@ -483,38 +483,73 @@ export default async function handler(req, res) {
       const cbList           = chargebacks[agent.agent_id] || [];
       const chargeback_total = Math.round(cbList.reduce((s, c) => s + c.commission, 0) * 100) / 100;
       const agentBonus       = bonusEarned[agent.agent_id] || 0;
-      const net_earned       = Math.round((res.earned + agentBonus - chargeback_total) * 100) / 100;
-      const recalculated     = paid != null && Math.abs(parseFloat(paid.amount_paid) - net_earned) > 0.01;
+
+      // Prior balance from commission_bank:
+      //   > 0 → banked savings (bank-enabled accounts)
+      //   < 0 → carry-forward debt from a prior month (any account type)
+      const priorBalance     = priorBankBalance[agent.agent_id] || 0;
+      const carry_forward_in = Math.min(0, priorBalance);          // prior debt: 0 or negative
+      const bankBalanceIn    = bankEnabled ? Math.max(0, priorBalance) : 0; // savings: positive (bank only)
+
+      // Net before carry-forward — can be negative when chargebacks exceed earnings
+      const gross_net  = Math.round((res.earned + agentBonus - chargeback_total) * 100) / 100;
+      // Apply incoming carry-forward debt to this month's net
+      const net_earned = Math.round((gross_net + carry_forward_in) * 100) / 100;
+
+      let carry_forward_out = 0; // debt to push into next month (0 or negative)
 
       // Commission bank projection
       let bank_summary = null;
       if (bankEnabled) {
-        const balanceBefore = priorBankBalance[agent.agent_id] || 0;
-        const interest      = Math.round(balanceBefore * (bankRate / 12) * 100) / 100; // monthly interest
-        const availableTotal = net_earned + balanceBefore + interest;
-
+        const interest = Math.round(bankBalanceIn * (bankRate / 12) * 100) / 100;
         let paid_out, banked, drawdown;
+
         if (bankCap != null) {
           if (net_earned >= bankCap) {
-            // Earned over cap — pay cap, bank the rest
             paid_out = bankCap;
             banked   = Math.round((net_earned - bankCap) * 100) / 100;
             drawdown = 0;
           } else {
-            // Earned under cap — draw from bank to top up (if balance available)
+            // Under cap — draw from bank; if net is negative the deficit grows accordingly
             const deficit = bankCap - net_earned;
-            drawdown = Math.min(deficit, balanceBefore + interest);
+            drawdown  = Math.min(deficit, bankBalanceIn + interest);
+            paid_out  = Math.round((net_earned + drawdown) * 100) / 100;
+            banked    = 0;
+          }
+        } else {
+          if (net_earned >= 0) {
+            paid_out = net_earned;
+            banked   = 0;
+            drawdown = 0;
+          } else {
+            // Negative net — drain bank to cover as much as possible
+            const needed = -net_earned;
+            drawdown = Math.min(needed, bankBalanceIn + interest);
             paid_out = Math.round((net_earned + drawdown) * 100) / 100;
             banked   = 0;
           }
-        } else {
-          paid_out = net_earned;
-          banked   = 0;
-          drawdown = 0;
         }
-        const balanceAfter = Math.round((balanceBefore + interest + banked - drawdown) * 100) / 100;
-        bank_summary = { balance_before: balanceBefore, interest, banked, drawdown, paid_out, balance_after: balanceAfter, cap: bankCap };
+
+        // If bank couldn't fully cover, remainder carries to next month
+        if (paid_out < 0) {
+          carry_forward_out = Math.round(paid_out * 100) / 100;
+          paid_out = 0;
+        }
+
+        // Balance after: positive = remaining savings; negative = outstanding debt (stored for next-month carry-forward)
+        const rawBalanceAfter = Math.round((bankBalanceIn + interest + banked - drawdown) * 100) / 100;
+        const balanceAfter    = carry_forward_out < 0 ? carry_forward_out : Math.max(0, rawBalanceAfter);
+        bank_summary = { balance_before: bankBalanceIn, interest, banked, drawdown, paid_out, balance_after: balanceAfter, cap: bankCap };
+      } else {
+        // No bank — negative net carries forward; agent receives $0 this month
+        if (net_earned < 0) {
+          carry_forward_out = net_earned; // negative debt
+        }
       }
+
+      // Compare recorded payment against expected payout to detect recalculation
+      const expectedPaid = bank_summary ? bank_summary.paid_out : Math.max(0, net_earned);
+      const recalculated = paid != null && Math.abs(parseFloat(paid.amount_paid) - expectedPaid) > 0.01;
 
       return {
         agent_id:          agent.agent_id,
@@ -530,7 +565,9 @@ export default async function handler(req, res) {
         bonus_earned:      agentBonus,
         chargebacks:       cbList,
         chargeback_total,
-        net_earned,
+        carry_forward_in,   // prior debt applied this month (0 or negative)
+        carry_forward_out,  // debt to carry into next month (0 or negative)
+        net_earned,         // gross_net + carry_forward_in (can be negative)
         recalculated,
         bank_summary,
       };

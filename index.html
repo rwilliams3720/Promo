@@ -292,6 +292,33 @@
   /* PLAN TIERS */
   .plan-tier-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:1.2rem;}
   @media(max-width:600px){.plan-tier-grid{grid-template-columns:1fr;}}
+
+  /* ── MOBILE ── */
+  @media(max-width:768px){
+    main{padding:1rem .75rem 3.5rem;}
+    .header h1{font-size:2.2rem;}
+    .tabs{width:100%;overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;padding:3px;}
+    .tab{padding:7px 12px;font-size:13px;white-space:nowrap;}
+    .panel{padding:14px 14px;}
+    .stat-val{font-size:1.6rem;}
+    .acct-stab{padding:8px 10px;font-size:12px;white-space:nowrap;}
+    #acct-subtab-nav{overflow-x:auto;flex-wrap:nowrap!important;-webkit-overflow-scrolling:touch;padding:0 .5rem;}
+    /* All wide tables get a scroll wrapper via overflow-x on their parent panel */
+    .tbl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+    #comm-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+    #checklist-subs-list table{min-width:600px;}
+    #checklist-subs-list{overflow-x:auto;}
+    /* Race rows — compress score column on small screens */
+    .race-row{grid-template-columns:28px 1fr 160px 56px;gap:6px;}
+    /* Sales performance: stack charts vertically */
+    #sp-charts-grid{grid-template-columns:1fr!important;}
+    /* Commission table row actions: stack buttons */
+    #comm-table-wrap td:last-child{display:flex;flex-wrap:wrap;gap:3px;}
+    /* Heatmap: already has overflow-x:auto wrapper */
+    .modal-box{padding:1.25rem;}
+    /* Sales entry form: collapse grid */
+    .ms-row{flex-wrap:wrap;}
+  }
   .plan-tier{background:var(--card2);border:2px solid var(--border2);border-radius:12px;padding:14px 12px;cursor:pointer;transition:border-color .2s;text-align:center;}
   .plan-tier:hover{border-color:var(--accent);}
   .plan-tier.plan-selected{border-color:var(--accent);background:rgba(0,212,255,.06);}
@@ -710,6 +737,13 @@
           <button id="btn-refresh-data" class="btn btn-secondary" onclick="refreshRaceData(this)">Refresh Data</button>
           <button class="btn btn-danger" onclick="confirmArchive()">Archive Month &amp; Reset</button>
         </div>
+        <div style="margin-top:.75rem;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <label style="font-size:12px;color:var(--muted);">Current race month:</label>
+          <input type="month" id="set-race-month-input" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;font-size:13px;outline:none;">
+          <button class="btn btn-secondary" style="font-size:12px;padding:4px 12px;" onclick="setRaceMonth()">Set Month</button>
+          <button class="btn btn-secondary" style="font-size:12px;padding:4px 12px;" onclick="recalcSales(this)">Recalculate Sales</button>
+          <span id="set-race-month-msg" style="font-size:12px;"></span>
+        </div>
       </div>
 
       <!-- Activity Log panel in Manage tab (gated: commissions add-on or admin) -->
@@ -962,7 +996,9 @@
             <button class="acct-stab"        id="sp-mode-custom" onclick="spSetMode('custom',this)">Custom</button>
           </div>
           <div id="sp-range-month" style="display:flex;align-items:center;gap:6px;">
+            <button onclick="spNavMonth(-1)" title="Previous month" style="background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:2px 8px;font-size:14px;cursor:pointer;line-height:1.4;">&#8249;</button>
             <input type="month" id="sp-month-input" onchange="spRangeChanged()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;font-size:13px;outline:none;">
+            <button onclick="spNavMonth(1)" title="Next month" style="background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:2px 8px;font-size:14px;cursor:pointer;line-height:1.4;">&#8250;</button>
           </div>
           <div id="sp-range-year" style="display:none;align-items:center;gap:6px;">
             <select id="sp-year-input" onchange="spRangeChanged()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;font-size:13px;outline:none;"></select>
@@ -976,6 +1012,9 @@
             <button class="acct-stab active" id="sp-metric-count"   onclick="spSetMetric('count',this)">Count</button>
             <button class="acct-stab"        id="sp-metric-premium" onclick="spSetMetric('premium',this)">Premium</button>
           </div>
+          <select id="sp-location-filter" onchange="onSpLocationChange()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;display:none;">
+            <option value="all">All Locations</option>
+          </select>
         </div>
         <!-- Summary line -->
         <div id="sp-summary" style="font-size:13px;color:var(--muted);margin-bottom:.4rem;min-height:1.4em;"></div>
@@ -1001,6 +1040,8 @@
           </div>
         </div>
       </div>
+      <!-- Sales Overview — always visible regardless of entry mode -->
+      <div id="sales-overview-bottom"></div>
       </div><!-- /perf-salesperf-content -->
     </div>
 
@@ -1207,6 +1248,7 @@
       <button class="acct-stab active" id="analysis-stab-trends" onclick="showAnalysisSubTab('trends',this)" style="font-size:13px;">Team Trends</button>
       <button class="acct-stab" id="analysis-stab-members" onclick="showAnalysisSubTab('members',this)" style="font-size:13px;">Team Member Analysis</button>
       <button class="acct-stab" id="analysis-stab-leadsources" onclick="showAnalysisSubTab('leadsources',this)" style="font-size:13px;">Lead Sources</button>
+      <button class="acct-stab" id="analysis-stab-premaccuracy" onclick="showAnalysisSubTab('premaccuracy',this)" style="font-size:13px;">Submitted Premium</button>
     </div>
 
     <!-- Sub-pane: Team Trends -->
@@ -1273,6 +1315,23 @@
       </div>
     </div>
 
+    <!-- Sub-pane: Premium Accuracy -->
+    <div id="analysis-pane-premaccuracy" style="display:none">
+      <div class="panel">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.2rem;">
+          <div class="panel-title" style="margin:0">Submitted vs Issued Premium Accuracy</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <input type="month" id="pa-month-input" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;font-size:13px;outline:none;">
+            <button class="btn btn-secondary" onclick="loadPremiumAccuracyData()">Load</button>
+          </div>
+        </div>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:1rem;">Compares submitted (written) premium against issued premium per agent. Only sales where both values are recorded are counted toward accuracy. Enter issued premium amounts in the Sales Log edit form or manual entry.</p>
+        <div id="pa-loading" style="display:none;text-align:center;padding:2rem;color:var(--muted);font-size:13px;">Loading…</div>
+        <div id="pa-msg" style="font-size:12px;margin-bottom:.5rem;display:none;"></div>
+        <div id="pa-table-wrap" style="display:none;"></div>
+      </div>
+    </div>
+
     <!-- Sub-pane: Lead Source Analysis -->
     <div id="analysis-pane-leadsources" style="display:none">
       <!-- Teaser — no sales addon -->
@@ -1322,12 +1381,22 @@
       <!-- Month detail: pills + table -->
       <div id="hist-pane-month" style="display:none">
         <div id="hist-month-pills" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:1.1rem;"></div>
-        <div id="hist-month-heading" style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:.75rem;"></div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:.75rem;">
+          <button onclick="histNavMonth(-1)" title="Previous month" style="background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:2px 10px;font-size:16px;cursor:pointer;line-height:1.4;">&#8249;</button>
+          <div id="hist-month-heading" style="font-size:15px;font-weight:700;color:var(--text);flex:1;"></div>
+          <button onclick="histNavMonth(1)" title="Next month" style="background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:2px 10px;font-size:16px;cursor:pointer;line-height:1.4;">&#8250;</button>
+          <button id="hist-manage-btn" onclick="openMonthManageModal(_histSelectedMonth)" style="background:none;border:1px solid var(--border2);color:var(--muted);border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer;">Manage</button>
+        </div>
         <div style="overflow-x:auto;">
           <table class="hist-tbl">
-            <thead><tr>
-              <th>Rank</th><th>Agent</th><th>Team</th>
-              <th>Score</th><th>Gross</th><th>Deductions</th><th>Policies</th>
+            <thead id="hist-thead"><tr>
+              <th onclick="histSort('rank')" style="cursor:pointer;user-select:none;">Rank</th>
+              <th onclick="histSort('name')" style="cursor:pointer;user-select:none;">Agent</th>
+              <th onclick="histSort('team')" style="cursor:pointer;user-select:none;">Team</th>
+              <th onclick="histSort('total_score')" style="cursor:pointer;user-select:none;">Score</th>
+              <th onclick="histSort('gross_score')" style="cursor:pointer;user-select:none;">Gross</th>
+              <th onclick="histSort('deductions')" style="cursor:pointer;user-select:none;">Deductions</th>
+              <th onclick="histSort('policies')" style="cursor:pointer;user-select:none;">Policies</th>
             </tr></thead>
             <tbody id="hist-body"></tbody>
           </table>
@@ -2393,6 +2462,45 @@
 
 
 <!-- ── COLUMN MAPPER MODAL ── -->
+<div class="modal-overlay" id="new-month-confirm-modal" style="display:none">
+  <div class="modal-box" style="max-width:500px;">
+    <div class="modal-title">New Month Detected</div>
+    <div id="new-month-confirm-body" style="font-size:14px;color:var(--text);margin-bottom:1rem;line-height:1.6;"></div>
+    <div style="background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);border-radius:8px;padding:.75rem 1rem;font-size:13px;color:var(--warn);margin-bottom:1.25rem;">
+      <strong>Suggestion:</strong> Go back and use <strong>Archive Month &amp; Reset</strong> on the Manage tab to properly archive the current month's results first, then re-upload the new month file. This ensures the archive is complete and accurate.
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="cancelNewMonthUpload()">Go Back</button>
+      <button class="btn btn-primary" onclick="confirmNewMonthUpload()">Confirm Upload &amp; Archive</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="hist-manage-modal" style="display:none">
+  <div class="modal-box" style="max-width:520px;">
+    <div class="modal-title">Manage Archived Month</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:1.25rem;">Current label: <strong id="hist-manage-current" style="color:var(--text);"></strong></div>
+    <div style="margin-bottom:1.25rem;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:.4rem;">Rename Month</div>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:.5rem;">Renames this archive to a different month label. Use when data was archived under the wrong month name.</p>
+      <input id="hist-rename-new-name" type="text" placeholder="e.g. May 2026" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;box-sizing:border-box;margin-bottom:.5rem;">
+      <button class="btn btn-primary" style="width:100%;" onclick="histRenameMonth()">Rename to This Label</button>
+    </div>
+    <div style="border-top:1px solid var(--border2);padding-top:1rem;margin-bottom:1rem;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:.4rem;">Combine Into Another Month</div>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:.5rem;">Merges this archive's agent stats into another archived month and deletes this one. Use when a partial month was accidentally split across two archives.</p>
+      <select id="hist-merge-target" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;box-sizing:border-box;margin-bottom:.5rem;">
+        <option value="">— Select target month —</option>
+      </select>
+      <button class="btn btn-danger" style="width:100%;" onclick="histMergeMonth()">Combine Into Selected Month</button>
+    </div>
+    <div id="hist-manage-msg" style="font-size:12px;margin-bottom:.5rem;display:none;"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="document.getElementById('hist-manage-modal').style.display='none'">Close</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="col-mapper-modal">
   <div class="modal-box">
     <div class="modal-title">Confirm Sales Columns</div>
@@ -2451,6 +2559,7 @@ let _memberCustomTabs = [];     // allowed tab names for custom role
 let _ownerUserId      = null;   // owner's user_id when _isMember is true
 let _ownerCompany     = '';     // owner's company name shown in header
 let _dataUserId       = null;   // use for all data queries (= _ownerUserId || _userId)
+let _memberAgentId    = null;   // roster_agent_id for the logged-in member (non-owner)
 let _managedMemberIds = [];     // for captains/COs: member IDs they manage
 let _managedAgentIds  = [];     // derived: roster_agent_id values of managed members
 let _allMembersList   = [];     // all loaded member rows, for manager picker
@@ -2771,7 +2880,7 @@ async function checkAccountAndShow(session) {
       // No account row — check if this user is an invited team member
       const { data: member } = await _supabase
         .from('account_members')
-        .select('owner_user_id, role, custom_tabs, status')
+        .select('owner_user_id, role, custom_tabs, status, roster_agent_id')
         .eq('member_user_id', _userId)
         .eq('status', 'active')
         .single();
@@ -2780,6 +2889,7 @@ async function checkAccountAndShow(session) {
         _memberRole       = member.role;
         _memberCustomTabs = member.custom_tabs || [];
         _ownerUserId      = member.owner_user_id;
+        _memberAgentId    = member.roster_agent_id || null;
         _dataUserId       = _ownerUserId;
         const { data: ownerAcct } = await _supabase
           .from('accounts')
@@ -3075,7 +3185,7 @@ async function handleSignOut() {
   _perfData = null;
   _adminRows = [];
   _analysisAt = null;
-  _isMember = false; _memberRole = null; _memberCustomTabs = [];
+  _isMember = false; _memberRole = null; _memberCustomTabs = []; _memberAgentId = null;
   _ownerUserId = null; _ownerCompany = ''; _dataUserId = null;
   _uploadInProgress = false;
   document.getElementById('ul-calls').innerHTML = '';
@@ -3157,7 +3267,7 @@ function showPerfSubTab(name, btn) {
       return;
     }
     if (name === 'saleslog')  loadChecklistSubmissions();
-    if (name === 'salesperf') initSalesPerf();
+    if (name === 'salesperf') { initSalesPerf(); loadBasicSalesBreakdown('sales-overview-bottom').catch(() => {}); }
     return;
   }
 
@@ -3261,6 +3371,18 @@ async function loadRaceData() {
   const month = (rcRes.data || []).find(r => r.key === 'current_month')?.value || '';
   document.getElementById('header-month').textContent = month || 'No race data uploaded';
   _raceCurrentMonth = month;
+
+  // Keep Set Month input in sync with current race month
+  const setMonthInput = document.getElementById('set-race-month-input');
+  if (setMonthInput && month) {
+    const FULL12 = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const ABBR12 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const parts = month.trim().split(' ');
+    let idx = FULL12.indexOf(parts[0]);
+    if (idx === -1) idx = ABBR12.indexOf(parts[0]);
+    const yr = parseInt(parts[1]);
+    if (idx !== -1 && !isNaN(yr)) setMonthInput.value = `${yr}-${String(idx+1).padStart(2,'0')}`;
+  }
 
   // Last upload time — stored in race_config so all users see the same value
   const lastUploadAt = (rcRes.data || []).find(r => r.key === 'last_upload_at')?.value || '';
@@ -3684,10 +3806,10 @@ function buildTeamToggleUI() {
 
 async function setAgentTeam(agentId, team, btn) {
   if (_isMember && _memberRole !== 'captain') return;
-  const { error } = await _supabase.from('race_data')
-    .update({ team })
-    .eq('user_id', _dataUserId)
-    .eq('agent_id', agentId);
+  const [{ error }, rosterRes] = await Promise.all([
+    _supabase.from('race_data').update({ team }).eq('user_id', _dataUserId).eq('agent_id', agentId),
+    fetch('/api/agent-roster', { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ action: 'set_team', agent_id: agentId, team }) }),
+  ]);
   const msg = document.getElementById('team-assign-msg');
   msg.style.display = 'block';
   if (error) {
@@ -3698,6 +3820,8 @@ async function setAgentTeam(agentId, team, btn) {
       ag.team = team;
       if (_perfData) renderPerf();
     }
+    const ra = _agentRoster.find(r => r.agent_id === agentId);
+    if (ra) ra.team = team;
     buildTeamToggleUI();
     renderRace(_raceData);
     msg.style.color = 'var(--accent2)'; msg.textContent = 'Team updated.';
@@ -3771,13 +3895,18 @@ function handleFile(type, input) {
   const reader = new FileReader();
   reader.onload = async (e) => {
     try {
-      const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-      logEl.innerHTML = `<span class="ok">Parsed ${raw.length - 1} rows. Uploading…</span>`;
+      // Send raw file as base64 — much smaller than JSON-encoding the parsed rows
+      const bytes = new Uint8Array(e.target.result);
+      let binary = '';
+      const chunk = 8192;
+      for (let i = 0; i < bytes.byteLength; i += chunk) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+      }
+      const fileBase64 = btoa(binary);
+      logEl.innerHTML = `<span>Uploading…</span>`;
 
       const hdrs    = authHeaders();
-      const payload = { type, data: raw };
+      const payload = { type, fileBase64 };
       if (_columnMap && Object.keys(_columnMap).length) payload.columnMap = _columnMap;
 
       const res  = await fetch('/api/upload', {
@@ -3788,15 +3917,23 @@ function handleFile(type, input) {
       const json = await res.json();
 
       if (json.needsMapping) {
-        _pendingUploadData = raw;
+        _pendingUploadData = fileBase64;
         _pendingUploadType = type;
         openColMapper(json.headers, json.suggestedMap);
         logEl.innerHTML = '<span class="warn">Column mapping required — see modal.</span>';
         return;
       }
 
+      if (json.needsMonthConfirm) {
+        _pendingUploadData = fileBase64;
+        _pendingUploadType = type;
+        openNewMonthConfirmModal(json.uploadedMonth, json.currentMonth);
+        logEl.innerHTML = `<span class="warn">New month detected (${json.uploadedMonth}) — confirm to proceed.</span>`;
+        return;
+      }
+
       if (json.needsTypeMapping) {
-        _pendingUploadData = raw;
+        _pendingUploadData = fileBase64;
         _pendingUploadType = type;
         openTypeMapper(json.unknownTypes);
         logEl.innerHTML = '<span class="warn">Policy type classification required — see modal.</span>';
@@ -3832,6 +3969,57 @@ function handleFile(type, input) {
   };
   reader.readAsArrayBuffer(file);
   input.value = '';
+}
+
+// ── NEW MONTH CONFIRM MODAL ───────────────────────────────────────────────────
+
+function openNewMonthConfirmModal(uploadedMonth, currentMonth) {
+  document.getElementById('new-month-confirm-body').innerHTML =
+    `A new month was detected in your upload: <strong>${escHtml(uploadedMonth)}</strong>.<br><br>` +
+    `Proceeding will automatically <strong>archive ${escHtml(currentMonth || 'the current month')}'s calls</strong> ` +
+    `and reset the race for ${escHtml(uploadedMonth)}. Any current month data not yet archived will be saved to history.`;
+  document.getElementById('new-month-confirm-modal').style.display = 'flex';
+}
+
+function cancelNewMonthUpload() {
+  document.getElementById('new-month-confirm-modal').style.display = 'none';
+  _pendingUploadData = null; _pendingUploadType = null;
+  _uploadInProgress = false;
+  ['calls','sales'].forEach(t => { const fi = document.getElementById('fi-'+t); if (fi) fi.disabled = false; });
+}
+
+async function confirmNewMonthUpload() {
+  document.getElementById('new-month-confirm-modal').style.display = 'none';
+  const type = _pendingUploadType;
+  const raw  = _pendingUploadData;
+  if (!type || !raw) return;
+  _pendingUploadData = null; _pendingUploadType = null;
+
+  const logEl = document.getElementById('ul-' + type);
+  logEl.innerHTML = '<span>Uploading with new month confirmed…</span>';
+  try {
+    const hdrs    = authHeaders();
+    const payload = { type, fileBase64: raw, confirmNewMonth: true };
+    if (_columnMap && Object.keys(_columnMap).length) payload.columnMap = _columnMap;
+    const res  = await fetch('/api/upload', { method: 'POST', headers: { ...hdrs, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const json = await res.json();
+    if (!res.ok || json.success === false) {
+      logEl.innerHTML = `<span class="err">Error: ${json.error || 'Upload failed'}</span>`; return;
+    }
+    logEl.innerHTML = `<span class="ok">${json.message || 'Upload complete'}</span>`
+      + (json.new != null ? `<br><span>${json.new} new record${json.new !== 1 ? 's' : ''} inserted</span>` : '');
+    await _supabase.from('race_config').upsert(
+      { user_id: _dataUserId, key: 'last_upload_at', value: new Date().toISOString() },
+      { onConflict: 'user_id,key' }
+    );
+    await loadRaceData();
+    await loadHistory();
+  } catch(err) {
+    logEl.innerHTML = `<span class="err">Error: ${err.message}</span>`;
+  } finally {
+    _uploadInProgress = false;
+    ['calls','sales'].forEach(t => { const fi = document.getElementById('fi-'+t); if (fi) fi.disabled = false; });
+  }
 }
 
 // ── COLUMN MAPPER MODAL ───────────────────────────────────────────────────────
@@ -3926,7 +4114,7 @@ async function submitTypeMapper() {
     const res  = await fetch('/api/upload', {
       method: 'POST',
       headers: { ...hdrs, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: pendingType, data: pendingData, columnMap: _columnMap }),
+      body: JSON.stringify({ type: pendingType, fileBase64: pendingData, columnMap: _columnMap }),
     });
     const json = await res.json();
     if (!res.ok || json.success === false) {
@@ -3972,7 +4160,7 @@ async function submitColMapper() {
       const res  = await fetch('/api/upload', {
         method: 'POST',
         headers: { ...hdrs, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: pendingType, data: pendingData, columnMap: _columnMap }),
+        body: JSON.stringify({ type: pendingType, fileBase64: pendingData, columnMap: _columnMap }),
       });
       const json = await res.json();
       if (!res.ok || json.success === false) { logEl.innerHTML = `<span class="err">Error: ${json.error || 'Upload failed'}</span>`; return; }
@@ -4284,33 +4472,38 @@ function _renderAnalysisData(data) {
 }
 
 function displayCachedAnalysis() {
-  const cached = _lsGet('br-analysis-data');
-  if (cached) {
-    try {
-      const data = JSON.parse(cached);
-      if (data.userId && data.userId === _userId && data.insights) {
-        _renderAnalysisData(data);
-        return;
-      }
-      // Wrong user or corrupt — clear and fall through
-      _lsRemove('br-analysis-data');
-    } catch(e) { _lsRemove('br-analysis-data'); }
-  }
-
-  // No valid localStorage — fetch server cache without triggering a paid Claude call.
-  // checkOnly=1: returns 200+data if valid cache exists, 204 if nothing cached.
-  // Do NOT guard on _analysisAt here — a failed DB save leaves it null and would
-  // silently block new browsers from ever seeing the analysis.
+  // Always check the server first — checkOnly=1 never triggers a paid Claude call.
+  // Server cache is the source of truth; localStorage is only a fallback for offline/204.
   fetch('/api/ai-analysis?checkOnly=1', { headers: authHeaders() })
     .then(r => r.status === 204 ? null : r.ok ? r.json() : null)
     .then(data => {
-      if (!data?.insights) return;
-      const ts = data.cachedAt || data.generatedAt;
-      if (ts && !_analysisAt) { _analysisAt = ts; updateAnalysisBtn(); }
-      _renderAnalysisData(data);
-      _lsSet('br-analysis-data', JSON.stringify({ userId: _userId, insights: data.insights, chartData: data.chartData, cachedAt: ts }));
+      if (data?.insights) {
+        const ts = data.cachedAt || data.generatedAt;
+        if (ts && !_analysisAt) { _analysisAt = ts; updateAnalysisBtn(); }
+        _renderAnalysisData(data);
+        _lsSet('br-analysis-data', JSON.stringify({ userId: _userId, insights: data.insights, chartData: data.chartData, cachedAt: ts }));
+      } else {
+        // Server has nothing valid — fall back to localStorage
+        const cached = _lsGet('br-analysis-data');
+        if (cached) {
+          try {
+            const d = JSON.parse(cached);
+            if (d.userId === _userId && d.insights) _renderAnalysisData(d);
+            else _lsRemove('br-analysis-data');
+          } catch(e) { _lsRemove('br-analysis-data'); }
+        }
+      }
     })
-    .catch(() => {});
+    .catch(() => {
+      // Network error — fall back to localStorage
+      const cached = _lsGet('br-analysis-data');
+      if (cached) {
+        try {
+          const d = JSON.parse(cached);
+          if (d.userId === _userId && d.insights) _renderAnalysisData(d);
+        } catch(e) {}
+      }
+    });
 }
 
 function renderAnalysisTrialTeaser() {
@@ -4482,6 +4675,8 @@ function renderAnalysisCharts(data) {
 }
 
 let _histByMonth       = {};   // month → [row, ...]
+let _histSortCol       = 'rank';
+let _histSortDir       = 1;
 let _histMonthOrder    = [];   // sorted newest→oldest
 let _histSelectedMonth = null;
 let _histView          = 'annual';
@@ -4550,6 +4745,7 @@ function renderHistTiles() {
     grid.innerHTML = '<div style="color:var(--muted);font-size:13px;grid-column:1/-1;text-align:center;padding:2rem;">No history yet. Archive a month to get started.</div>';
     return;
   }
+  const canManageHist = !_isMember || ['captain','chief_officer'].includes(_memberRole);
   const rankEmoji = ['🥇','🥈','🥉'];
   grid.innerHTML = _histMonthOrder.map(month => {
     const rows     = _histByMonth[month] || [];
@@ -4575,7 +4771,10 @@ function renderHistTiles() {
     ].filter(Boolean).join(' · ');
 
     return `<div class="hist-month-tile" onclick="drillHistMonth('${escHtml(month)}')">
-      <div style="font-size:16px;font-weight:800;color:var(--text);margin-bottom:2px;">${escHtml(month)}</div>
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:2px;">
+        <div style="font-size:16px;font-weight:800;color:var(--text);">${escHtml(month)}</div>
+        ${canManageHist ? `<button onclick="event.stopPropagation();openMonthManageModal('${escHtml(month)}')" style="background:none;border:1px solid var(--border2);color:var(--muted);border-radius:5px;padding:1px 7px;font-size:11px;cursor:pointer;white-space:nowrap;">Manage</button>` : ''}
+      </div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:.75rem;">${statsLine}</div>
       <div style="border-top:1px solid var(--border2);padding-top:.6rem;">${podium || '<div style="font-size:12px;color:var(--muted);">No entries</div>'}</div>
     </div>`;
@@ -4589,6 +4788,10 @@ function drillHistMonth(month) {
 }
 
 function renderHistMonthDetail() {
+  const canManageHist = !_isMember || ['captain','chief_officer'].includes(_memberRole);
+  const manageBtn = document.getElementById('hist-manage-btn');
+  if (manageBtn) manageBtn.style.display = canManageHist ? '' : 'none';
+
   // Pills
   const pillsEl = document.getElementById('hist-month-pills');
   if (pillsEl) {
@@ -4601,9 +4804,34 @@ function renderHistMonthDetail() {
   const heading = document.getElementById('hist-month-heading');
   if (heading) heading.textContent = _histSelectedMonth || '';
 
-  const rows     = _histByMonth[_histSelectedMonth] || [];
-  const sorted   = [...rows].sort((a, b) => (a.rank||99) - (b.rank||99));
-  const rankCls  = ['hist-rank-1','hist-rank-2','hist-rank-3'];
+  const rows = _histByMonth[_histSelectedMonth] || [];
+  const sorted = [...rows].sort((a, b) => {
+    const col = _histSortCol;
+    let av, bv;
+    if (col === 'policies') {
+      av = (a.wl||0)+(a.ul||0)+(a.term||0)+(a.health||0)+(a.auto||0)+(a.fire||0);
+      bv = (b.wl||0)+(b.ul||0)+(b.term||0)+(b.health||0)+(b.auto||0)+(b.fire||0);
+    } else if (col === 'name' || col === 'team') {
+      av = (a[col]||'').toLowerCase(); bv = (b[col]||'').toLowerCase();
+      return _histSortDir * av.localeCompare(bv);
+    } else {
+      av = a[col] ?? 99; bv = b[col] ?? 99;
+    }
+    return _histSortDir * (av - bv);
+  });
+  const rankCls = ['hist-rank-1','hist-rank-2','hist-rank-3'];
+
+  // Update header arrows
+  const HIST_COLS = ['rank','name','team','total_score','gross_score','deductions','policies'];
+  const thead = document.getElementById('hist-thead');
+  if (thead) {
+    const ths = thead.querySelectorAll('th');
+    ths.forEach((th, i) => {
+      const col = HIST_COLS[i];
+      const arrow = col === _histSortCol ? (_histSortDir === 1 ? ' ▲' : ' ▼') : '';
+      th.textContent = th.textContent.replace(/ [▲▼]$/, '') + arrow;
+    });
+  }
 
   document.getElementById('hist-body').innerHTML = sorted.map(r => {
     const policies = (r.wl||0)+(r.ul||0)+(r.term||0)+(r.health||0)+(r.auto||0)+(r.fire||0);
@@ -4620,9 +4848,122 @@ function renderHistMonthDetail() {
   }).join('') || '<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:20px">No data for this month</td></tr>';
 }
 
+function histSort(col) {
+  if (_histSortCol === col) { _histSortDir *= -1; }
+  else { _histSortCol = col; _histSortDir = col === 'rank' ? 1 : -1; }
+  renderHistMonthDetail();
+}
+
 function selectHistMonth(month) {
   _histSelectedMonth = month;
   renderHistMonthDetail();
+}
+
+function histNavMonth(dir) {
+  if (!_histMonthOrder.length) return;
+  const idx = _histMonthOrder.indexOf(_histSelectedMonth);
+  const next = idx + dir;
+  if (next < 0 || next >= _histMonthOrder.length) return;
+  _histSelectedMonth = _histMonthOrder[next];
+  renderHistMonthDetail();
+}
+
+let _histManagingMonth = null;
+
+function openMonthManageModal(month) {
+  if (!month) return;
+  _histManagingMonth = month;
+  document.getElementById('hist-manage-current').textContent = month;
+  document.getElementById('hist-rename-new-name').value = '';
+  document.getElementById('hist-manage-msg').style.display = 'none';
+  const otherMonths = _histMonthOrder.filter(m => m !== month);
+  const sel = document.getElementById('hist-merge-target');
+  sel.innerHTML = '<option value="">— Select target month —</option>' +
+    otherMonths.map(m => `<option value="${escHtml(m)}">${escHtml(m)}</option>`).join('');
+  document.getElementById('hist-manage-modal').style.display = 'flex';
+}
+
+async function histRenameMonth() {
+  const newName = document.getElementById('hist-rename-new-name').value.trim();
+  if (!newName || !_histManagingMonth) { showInlineMsg('hist-manage-msg', 'Enter a new month label.', 'err'); return; }
+  if (newName === _histManagingMonth) { showInlineMsg('hist-manage-msg', 'Name is the same — nothing changed.', 'warn'); return; }
+  const btn = document.querySelector('#hist-manage-modal button[onclick="histRenameMonth()"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Renaming…'; }
+  try {
+    const [r1, r2] = await Promise.all([
+      _supabase.from('historical_wins').update({ month: newName }).eq('user_id', _dataUserId).eq('month', _histManagingMonth),
+      _supabase.from('historical_months').update({ month: newName }).eq('user_id', _dataUserId).eq('month', _histManagingMonth),
+    ]);
+    if (r1.error || r2.error) throw new Error(r1.error?.message || r2.error?.message);
+    _histByMonth[newName] = (_histByMonth[newName] || []).concat(_histByMonth[_histManagingMonth] || []);
+    delete _histByMonth[_histManagingMonth];
+    _histMonthOrder = _histMonthOrder.map(m => m === _histManagingMonth ? newName : m);
+    if (_histSelectedMonth === _histManagingMonth) _histSelectedMonth = newName;
+    _histManagingMonth = newName;
+    document.getElementById('hist-manage-current').textContent = newName;
+    showInlineMsg('hist-manage-msg', 'Month renamed successfully.', 'ok');
+    renderHistView();
+  } catch(err) {
+    showInlineMsg('hist-manage-msg', 'Error: ' + err.message, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Rename to This Label'; }
+  }
+}
+
+async function histMergeMonth() {
+  const targetMonth = document.getElementById('hist-merge-target').value;
+  if (!targetMonth || !_histManagingMonth) { showInlineMsg('hist-manage-msg', 'Select a target month.', 'err'); return; }
+  if (!confirm(`Combine "${_histManagingMonth}" into "${targetMonth}"? This cannot be undone.`)) return;
+  const btn = document.querySelector('#hist-manage-modal button[onclick="histMergeMonth()"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Combining…'; }
+  try {
+    const srcRows = _histByMonth[_histManagingMonth] || [];
+    const tgtRows = _histByMonth[targetMonth] || [];
+    const tgtMap  = {};
+    for (const r of tgtRows) tgtMap[r.agent_id] = r;
+
+    const merged = [];
+    for (const src of srcRows) {
+      const tgt = tgtMap[src.agent_id];
+      if (tgt) {
+        merged.push({
+          user_id: _dataUserId, month: targetMonth, agent_id: src.agent_id,
+          name: tgt.name || src.name, team: tgt.team || src.team,
+          wl: (tgt.wl||0)+(src.wl||0), ul: (tgt.ul||0)+(src.ul||0),
+          term: (tgt.term||0)+(src.term||0), health: (tgt.health||0)+(src.health||0),
+          auto: (tgt.auto||0)+(src.auto||0), fire: (tgt.fire||0)+(src.fire||0),
+          placed: (tgt.placed||0)+(src.placed||0), answered: (tgt.answered||0)+(src.answered||0),
+          talk_min: (tgt.talk_min||0)+(src.talk_min||0),
+          gross_score: (tgt.gross_score||0)+(src.gross_score||0),
+          deductions: (tgt.deductions||0)+(src.deductions||0),
+          total_score: Math.max(0, ((tgt.total_score||0)+(src.total_score||0))),
+        });
+      } else {
+        merged.push({ ...src, user_id: _dataUserId, month: targetMonth });
+      }
+    }
+    // Re-rank all combined rows by total_score
+    const allRows = tgtRows.filter(r => !merged.find(m => m.agent_id === r.agent_id)).concat(merged);
+    allRows.sort((a, b) => (b.total_score||0) - (a.total_score||0));
+    allRows.forEach((r, i) => { r.rank = i + 1; r.user_id = _dataUserId; r.month = targetMonth; });
+
+    await _supabase.from('historical_wins').delete().eq('user_id', _dataUserId).eq('month', targetMonth);
+    const { error: uErr } = await _supabase.from('historical_wins').insert(allRows);
+    if (uErr) throw new Error(uErr.message);
+    await _supabase.from('historical_wins').delete().eq('user_id', _dataUserId).eq('month', _histManagingMonth);
+    await _supabase.from('historical_months').delete().eq('user_id', _dataUserId).eq('month', _histManagingMonth);
+
+    _histByMonth[targetMonth] = allRows;
+    delete _histByMonth[_histManagingMonth];
+    _histMonthOrder = _histMonthOrder.filter(m => m !== _histManagingMonth);
+    if (_histSelectedMonth === _histManagingMonth) _histSelectedMonth = targetMonth;
+    document.getElementById('hist-manage-modal').style.display = 'none';
+    renderHistView();
+  } catch(err) {
+    showInlineMsg('hist-manage-msg', 'Error: ' + err.message, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Combine Into Selected Month'; }
+  }
 }
 
 // ── ACCOUNT TAB ───────────────────────────────────────────────────────────────
@@ -5268,6 +5609,17 @@ async function confirmArchive() {
       return { ...ag, ...sc };
     }).sort((a,b) => b.total - a.total);
 
+    // Guard: if all scores are 0, check if we'd overwrite non-zero historical data
+    const totalScore = agents.reduce((s, ag) => s + (ag.total || 0), 0);
+    if (totalScore === 0) {
+      const { data: existHist } = await _supabase
+        .from('historical_wins').select('total_score').eq('user_id', _dataUserId).eq('month', month).limit(1);
+      const existingScore = existHist?.[0]?.total_score || 0;
+      if (existingScore > 0) {
+        if (!confirm(`Warning: The current race has no scored data, but ${month} already has recorded results (scores > 0). Archiving now will overwrite that history with zeros.\n\nAre you sure you want to overwrite?`)) return;
+      }
+    }
+
     const histRows = agents.map((ag, i) => ({
       user_id: _dataUserId,
       month,
@@ -5290,14 +5642,27 @@ async function confirmArchive() {
     await _supabase.from('historical_wins').delete().eq('user_id', _dataUserId).eq('month', month);
     await _supabase.from('historical_wins').insert(histRows);
 
+    // Compute date range for the archived month to scope sales queries
+    const _archiveParts = month.trim().split(' ');
+    const _archiveIdx   = _ABBR.indexOf(_archiveParts[0]);
+    const _archiveYr    = parseInt(_archiveParts[1]);
+    let _archiveFrom = null, _archiveTo = null;
+    if (_archiveIdx >= 0 && !isNaN(_archiveYr)) {
+      _archiveFrom = `${_archiveYr}-${String(_archiveIdx + 1).padStart(2,'0')}-01`;
+      const nextMo = _archiveIdx === 11 ? 1 : _archiveIdx + 2;
+      const nextYr = _archiveIdx === 11 ? _archiveYr + 1 : _archiveYr;
+      _archiveTo   = `${nextYr}-${String(nextMo).padStart(2,'0')}-01`;
+    }
+
     // Write monthly call/sales aggregates for trend chart persistence
     const placed   = rdRows.reduce((s, ag) => s + (ag.placed||0), 0);
     const answered = rdRows.reduce((s, ag) => s + (ag.answered||0), 0);
     const talkMin  = rdRows.reduce((s, ag) => s + (ag.talk_min||0), 0);
     const voicemail = _raceWideVm;
     const missed    = _raceWideMissed;
-    const { count: salesCount } = await _supabase.from('sales_log')
-      .select('*', { count: 'exact', head: true }).eq('user_id', _dataUserId);
+    let salesCountQ = _supabase.from('sales_log').select('*', { count: 'exact', head: true }).eq('user_id', _dataUserId);
+    if (_archiveFrom) salesCountQ = salesCountQ.gte('sale_date', _archiveFrom).lt('sale_date', _archiveTo);
+    const { count: salesCount } = await salesCountQ;
 
     await _supabase.from('historical_months').upsert({
       user_id: _dataUserId, month,
@@ -5312,7 +5677,7 @@ async function confirmArchive() {
   await _supabase.from('race_data').delete().eq('user_id', _dataUserId);
 
   await _supabase.from('call_log').delete().eq('user_id', _dataUserId);
-  await _supabase.from('sales_log').delete().eq('user_id', _dataUserId);
+  // sales_log is a permanent ledger — individual records are preserved across archives
   await _supabase.from('race_config').update({ value: '' }).eq('user_id', _dataUserId).eq('key','current_month');
 
   // Invalidate analysis cache so the next Analyze reflects the newly archived month
@@ -5323,6 +5688,151 @@ async function confirmArchive() {
   await loadRaceData();
   await loadHistory();
   alert('Month archived and race reset.');
+}
+
+// ── SET RACE MONTH ───────────────────────────────────────────────────────────
+async function setRaceMonth() {
+  if (_isMember && _memberRole !== 'captain') return;
+  const input = document.getElementById('set-race-month-input');
+  const msg   = document.getElementById('set-race-month-msg');
+  const val   = input?.value; // "YYYY-MM"
+  if (!val) { if (msg) { msg.textContent = 'Pick a month first.'; msg.style.color = 'var(--accent2)'; } return; }
+  const [yr, mo] = val.split('-').map(Number);
+  const FULL12 = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const monthLabel = `${FULL12[mo-1]} ${yr}`;
+  if (!confirm(`Set the current race month to ${monthLabel}? This will rebuild race scores from the sales log for that month.`)) return;
+
+  if (msg) { msg.textContent = 'Updating…'; msg.style.color = 'var(--muted)'; }
+
+  // Update race_config
+  await _supabase.from('race_config').upsert(
+    { user_id: _dataUserId, key: 'current_month', value: monthLabel },
+    { onConflict: 'user_id,key' }
+  );
+
+  // Rebuild race_data sales from this month's sales_log entries
+  const from = `${yr}-${String(mo).padStart(2,'0')}-01`;
+  const toMo = mo === 12 ? 1 : mo + 1;
+  const toYr = mo === 12 ? yr + 1 : yr;
+  const to   = `${toYr}-${String(toMo).padStart(2,'0')}-01`;
+
+  const { data: salesRows } = await _supabase
+    .from('sales_log')
+    .select('agent_id, product, sale_weight')
+    .eq('user_id', _dataUserId)
+    .gte('sale_date', from)
+    .lt('sale_date', to);
+
+  // Tally per-agent sales
+  const totals = {};
+  for (const r of (salesRows || [])) {
+    const cat = r.product;
+    if (!r.agent_id || cat === 'other' || cat === 'deposit' || cat === 'skip') continue;
+    if (!totals[r.agent_id]) totals[r.agent_id] = { wl:0, ul:0, term:0, health:0, auto:0, fire:0 };
+    if (totals[r.agent_id][cat] !== undefined) totals[r.agent_id][cat] += (r.sale_weight ?? 1);
+  }
+
+  // Seed race_data rows for agents in sales_log that don't have an existing row
+  const agentIdsWithSales = Object.keys(totals);
+  if (agentIdsWithSales.length) {
+    const { data: rosterRows } = await _supabase
+      .from('agent_roster')
+      .select('agent_id, name, team')
+      .eq('user_id', _dataUserId)
+      .in('agent_id', agentIdsWithSales);
+    const nameMap = {};
+    const teamMap = {};
+    for (const r of (rosterRows || [])) { nameMap[r.agent_id] = r.name; teamMap[r.agent_id] = r.team; }
+    const seedRows = agentIdsWithSales.map(id => ({
+      user_id: _dataUserId, agent_id: id,
+      name: nameMap[id] || id, team: teamMap[id] || 'sales',
+      wl:0, ul:0, term:0, health:0, auto:0, fire:0,
+      placed:0, answered:0, missed:0, voicemail:0,
+      talk_min:0, avg_min:0, race_wide_missed:0, race_wide_voicemail:0,
+    }));
+    await _supabase.from('race_data').upsert(seedRows, { onConflict: 'user_id,agent_id', ignoreDuplicates: true });
+  }
+
+  // Apply to race_data — zero agents with no sales, set totals for agents with sales
+  const { data: raceAgents } = await _supabase.from('race_data').select('agent_id').eq('user_id', _dataUserId);
+  for (const row of (raceAgents || [])) {
+    const t = totals[row.agent_id] || { wl:0, ul:0, term:0, health:0, auto:0, fire:0 };
+    await _supabase.from('race_data').update(t).eq('user_id', _dataUserId).eq('agent_id', row.agent_id);
+  }
+
+  if (msg) { msg.textContent = `Set to ${monthLabel}.`; msg.style.color = 'var(--accent)'; }
+  await loadRaceData();
+}
+
+// Rebuilds race_data sales totals from sales_log for the current race month.
+// Use after checklist/manual sales were submitted without a corresponding race update.
+async function recalcSales(btn) {
+  if (_isMember && _memberRole !== 'captain') return;
+  const msg = document.getElementById('set-race-month-msg');
+  if (!_raceCurrentMonth) {
+    if (msg) { msg.textContent = 'No race month set.'; msg.style.color = 'var(--accent2)'; }
+    return;
+  }
+  if (btn) { btn.disabled = true; btn.textContent = 'Recalculating…'; }
+  if (msg) { msg.textContent = 'Recalculating…'; msg.style.color = 'var(--muted)'; }
+  try {
+    const FULL12 = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const ABBR   = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const parts  = _raceCurrentMonth.trim().split(' ');
+    let idx = FULL12.indexOf(parts[0]);
+    if (idx === -1) idx = ABBR.indexOf(parts[0]);
+    const yr = parseInt(parts[1]);
+    if (idx === -1 || isNaN(yr)) throw new Error('Could not parse race month: ' + _raceCurrentMonth);
+    const from  = `${yr}-${String(idx + 1).padStart(2,'0')}-01`;
+    const toMo  = idx === 11 ? 1 : idx + 2;
+    const toYr  = idx === 11 ? yr + 1 : yr;
+    const to    = `${toYr}-${String(toMo).padStart(2,'0')}-01`;
+
+    const { data: salesRows } = await _supabase
+      .from('sales_log')
+      .select('agent_id, product, sale_weight')
+      .eq('user_id', _dataUserId)
+      .gte('sale_date', from)
+      .lt('sale_date', to);
+
+    const totals = {};
+    for (const r of (salesRows || [])) {
+      const cat = r.product;
+      if (!r.agent_id || cat === 'other' || cat === 'deposit' || cat === 'skip') continue;
+      if (!totals[r.agent_id]) totals[r.agent_id] = { wl:0, ul:0, term:0, health:0, auto:0, fire:0 };
+      if (totals[r.agent_id][cat] !== undefined) totals[r.agent_id][cat] += (r.sale_weight ?? 1);
+    }
+
+    const agentIdsWithSales = Object.keys(totals);
+    if (agentIdsWithSales.length) {
+      const { data: rosterRows } = await _supabase
+        .from('agent_roster').select('agent_id, name, team')
+        .eq('user_id', _dataUserId).in('agent_id', agentIdsWithSales);
+      const nameMap = {}, teamMap = {};
+      for (const r of (rosterRows || [])) { nameMap[r.agent_id] = r.name; teamMap[r.agent_id] = r.team; }
+      const seedRows = agentIdsWithSales.map(id => ({
+        user_id: _dataUserId, agent_id: id,
+        name: nameMap[id] || id, team: teamMap[id] || 'sales',
+        wl:0, ul:0, term:0, health:0, auto:0, fire:0,
+        placed:0, answered:0, missed:0, voicemail:0,
+        talk_min:0, avg_min:0, race_wide_missed:0, race_wide_voicemail:0,
+      }));
+      await _supabase.from('race_data').upsert(seedRows, { onConflict: 'user_id,agent_id', ignoreDuplicates: true });
+    }
+
+    const { data: raceAgents } = await _supabase.from('race_data').select('agent_id').eq('user_id', _dataUserId);
+    for (const row of (raceAgents || [])) {
+      const t = totals[row.agent_id] || { wl:0, ul:0, term:0, health:0, auto:0, fire:0 };
+      await _supabase.from('race_data').update(t).eq('user_id', _dataUserId).eq('agent_id', row.agent_id);
+    }
+
+    if (msg) { msg.textContent = 'Sales recalculated.'; msg.style.color = 'var(--accent)'; }
+    await loadRaceData();
+  } catch(e) {
+    if (msg) { msg.textContent = e.message; msg.style.color = 'var(--danger)'; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Recalculate Sales'; }
+  }
 }
 
 // ── MEMBER TAB GATING ────────────────────────────────────────────────────────
@@ -5338,10 +5848,11 @@ function getAllowedTabs() {
     }
     case 'custom': {
       const customBase = _memberCustomTabs.length ? _memberCustomTabs : ['race'];
+      if (!customBase.includes('history')) customBase.push('history');
       if ((_selfReportConfig?.activities_enabled || _selfReportConfig?.sales_enabled) && !customBase.includes('manage')) customBase.push('manage');
       return customBase;
     }
-    default:              return ['race'];
+    default:              return ['race','history'];
   }
 }
 
@@ -5349,7 +5860,10 @@ function _applyPerfMemberGating() {
   const memberLimited = _isMember && !['captain','chief_officer'].includes(_memberRole);
   ['callperf','saleslog','salesperf','commissions'].forEach(sub => {
     const btn = document.getElementById(`perf-stab-${sub}`);
-    if (btn) btn.style.display = memberLimited ? 'none' : '';
+    if (!btn) return;
+    // Non-captain/CO members see salesperf + commissions (both scoped to their own agent server-side)
+    if (memberLimited) { btn.style.display = (sub === 'salesperf' || sub === 'commissions') ? '' : 'none'; return; }
+    btn.style.display = '';
   });
 }
 
@@ -7689,14 +8203,20 @@ function renderCommissions() {
     return;
   }
 
+  // Detect if any agent has a carry-forward in or out this month
+  const hasCF = results.some(r => (r.carry_forward_in || 0) !== 0 || (r.carry_forward_out || 0) !== 0);
+  const colCount = hasCF ? 9 : 8;
+  const fmt2 = n => n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+
   wrap.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px;">
     <thead>
       <tr style="border-bottom:1px solid var(--border2);">
         <th style="text-align:left;padding:8px 10px;color:var(--muted);font-weight:600;">Agent</th>
         <th style="text-align:right;padding:8px 10px;color:var(--muted);font-weight:600;">Earned</th>
         <th style="text-align:right;padding:8px 10px;color:var(--muted);font-weight:600;">Bonus</th>
-        <th style="text-align:right;padding:8px 10px;color:var(--muted);font-weight:600;">Net</th>
         <th style="text-align:right;padding:8px 10px;color:var(--muted);font-weight:600;">CB</th>
+        ${hasCF ? '<th style="text-align:right;padding:8px 10px;color:var(--muted);font-weight:600;" title="Carry-forward debt applied from prior month">Prior Debt</th>' : ''}
+        <th style="text-align:right;padding:8px 10px;color:var(--muted);font-weight:600;">Net</th>
         <th style="text-align:right;padding:8px 10px;color:var(--muted);font-weight:600;">Paid</th>
         <th style="text-align:center;padding:8px 10px;color:var(--muted);font-weight:600;">Status</th>
         <th style="padding:8px 10px;"></th>
@@ -7704,19 +8224,29 @@ function renderCommissions() {
     </thead>
     <tbody>
       ${results.map(r => {
-        const isPaid = r.paid?.amount_paid != null;
-        const notes  = r.paid?.notes || '';
-        const netTotal = r.earned + (r.bonus_earned || 0);
-        const rowBg  = r.recalculated ? 'background:rgba(255,179,0,.06);' : '';
+        const isPaid  = r.paid?.amount_paid != null;
+        const notes   = r.paid?.notes || '';
+        const cfIn    = r.carry_forward_in  || 0;
+        const cfOut   = r.carry_forward_out || 0;
+        // net_earned from API = earned + bonus - CB + carry_forward_in (true net; can be negative)
+        const netDisplay = r.net_earned;
+        // Default amount for Mark Paid: bank paid_out if available, otherwise max(0, net)
+        const defaultPay = r.bank_summary ? r.bank_summary.paid_out : Math.max(0, netDisplay);
+        const rowBg = r.recalculated ? 'background:rgba(255,179,0,.06);' : (cfOut < 0 ? 'background:rgba(255,77,109,.04);' : '');
         return `<tr style="border-bottom:1px solid var(--border2);${rowBg}" id="comm-row-${escHtml(r.agent_id)}">
           <td style="padding:8px 10px;">${escHtml(r.name)}</td>
-          <td style="padding:8px 10px;text-align:right;font-weight:600;">$${r.earned.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-          <td style="padding:8px 10px;text-align:right;color:var(--accent);">${r.bonus_earned > 0 ? '$'+r.bonus_earned.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) : '<span style="color:var(--muted);">—</span>'}</td>
-          <td style="padding:8px 10px;text-align:right;font-weight:700;">$${netTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-          <td style="padding:8px 10px;text-align:right;">${r.chargeback_total > 0 ? `<span style="color:#ff6b6b;">-$${r.chargeback_total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>` : '<span style="color:var(--muted);">—</span>'}</td>
+          <td style="padding:8px 10px;text-align:right;font-weight:600;">$${fmt2(r.earned)}</td>
+          <td style="padding:8px 10px;text-align:right;color:var(--accent);">${r.bonus_earned > 0 ? '$'+fmt2(r.bonus_earned) : '<span style="color:var(--muted);">—</span>'}</td>
+          <td style="padding:8px 10px;text-align:right;">${r.chargeback_total > 0 ? `<span style="color:#ff6b6b;">-$${fmt2(r.chargeback_total)}</span>` : '<span style="color:var(--muted);">—</span>'}</td>
+          ${hasCF ? `<td style="padding:8px 10px;text-align:right;">${cfIn < 0 ? `<span style="color:#ff6b6b;" title="Carry-forward from prior month">-$${fmt2(-cfIn)}</span>` : '<span style="color:var(--muted);">—</span>'}</td>` : ''}
+          <td style="padding:8px 10px;text-align:right;font-weight:700;${netDisplay < 0 ? 'color:#ff6b6b;' : ''}">
+            ${netDisplay < 0
+              ? `-$${fmt2(-netDisplay)}<div style="font-size:10px;color:#ff6b6b;font-weight:400;">carries fwd</div>`
+              : `$${fmt2(netDisplay)}`}
+          </td>
           <td style="padding:8px 10px;text-align:right;">
             ${isPaid
-              ? `<div style="font-weight:600;">$${parseFloat(r.paid.amount_paid).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+              ? `<div style="font-weight:600;">$${fmt2(parseFloat(r.paid.amount_paid))}</div>
                  ${notes ? `<div style="font-size:10px;color:var(--muted);margin-top:1px;">${escHtml(notes)}</div>` : ''}`
               : `<span style="color:var(--muted);">—</span>`}
           </td>
@@ -7727,15 +8257,17 @@ function renderCommissions() {
                 ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(255,179,0,.12);color:#ffb300;cursor:help;" title="${escHtml(r.cap_total_note)}">&#x2B06; Capped</span>`
                 : r.recalculated
                   ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(255,179,0,.12);color:#ffb300;">&#x26A0; Recalculated</span>`
-                  : `<span style="font-size:11px;padding:2px 8px;border-radius:20px;${isPaid ? 'background:rgba(0,229,180,.15);color:var(--accent2)' : 'background:rgba(255,255,255,.06);color:var(--muted)'};">${isPaid ? 'Paid' : 'Unpaid'}</span>`}
+                  : cfOut < 0
+                    ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(255,77,109,.12);color:#ff6b6b;" title="$${fmt2(-cfOut)} carries into next month">&#x21B3; CF Debt</span>`
+                    : `<span style="font-size:11px;padding:2px 8px;border-radius:20px;${isPaid ? 'background:rgba(0,229,180,.15);color:var(--accent2)' : 'background:rgba(255,255,255,.06);color:var(--muted)'};">${isPaid ? 'Paid' : 'Unpaid'}</span>`}
           </td>
           <td style="padding:8px 10px;display:flex;gap:4px;align-items:center;">
             <button class="btn btn-secondary" style="font-size:11px;padding:3px 9px;" onclick="toggleCommBreakdown('${escHtml(r.agent_id)}')">&darr;</button>
-            <button class="btn btn-secondary" style="font-size:11px;padding:3px 9px;" onclick="openPayForm('${escHtml(r.agent_id)}','${escHtml(r.name)}',${netTotal},'${escHtml(month)}')">${isPaid ? 'Edit' : 'Mark Paid'}</button>
+            <button class="btn btn-secondary" style="font-size:11px;padding:3px 9px;" onclick="openPayForm('${escHtml(r.agent_id)}','${escHtml(r.name)}',${defaultPay},'${escHtml(month)}')">${isPaid ? 'Edit' : 'Mark Paid'}</button>
           </td>
         </tr>
         <tr id="comm-breakdown-${escHtml(r.agent_id)}" style="display:none;">
-          <td colspan="8" style="padding:4px 10px 16px 28px;">
+          <td colspan="${colCount}" style="padding:4px 10px 16px 28px;">
             ${r.structure_details ? (() => {
               const fmt = n => '$' + (n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
               return r.structure_details.map(sd => {
@@ -7883,11 +8415,51 @@ function renderCommissions() {
                 </table>
               </div>`;
             })() : ''}
+            ${((r.carry_forward_in || 0) < 0 || (r.carry_forward_out || 0) < 0) ? (() => {
+              const fmt = n => '$' + Math.abs(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+              const cfIn  = r.carry_forward_in  || 0;
+              const cfOut = r.carry_forward_out || 0;
+              const rows = [];
+              if (cfIn < 0) rows.push(`<tr><td style="padding:3px 8px;color:var(--muted);">Prior debt applied</td><td style="padding:3px 8px;text-align:right;color:#ff6b6b;">-${fmt(cfIn)}</td></tr>`);
+              if (cfOut < 0) rows.push(`<tr><td style="padding:3px 8px;color:var(--muted);">Carries into next month</td><td style="padding:3px 8px;text-align:right;color:#ff6b6b;font-weight:600;">-${fmt(cfOut)}</td></tr>`);
+              return `<div style="margin-top:10px;padding:8px 10px;background:rgba(255,77,109,.05);border:1px solid rgba(255,77,109,.2);border-radius:6px;">
+                <div style="font-size:11px;font-weight:700;color:#ff6b6b;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Carry-Forward</div>
+                <table style="font-size:12px;border-collapse:collapse;width:100%;max-width:320px;">${rows.join('')}</table>
+              </div>`;
+            })() : ''}
           </td>
         </tr>`;
       }).join('')}
     </tbody>
   </table>`;
+  // Auto-save carry-forward debts so next month's calculation picks them up
+  _autoSaveCarryForwards(results, month);
+}
+
+async function _autoSaveCarryForwards(results, month) {
+  for (const r of results) {
+    const cfOut = r.carry_forward_out || 0;
+    if (cfOut === 0) continue;               // nothing to carry forward
+    if (r.paid?.amount_paid != null) continue; // Mark Paid already saved the bank entry
+    // Build a bank entry representing the carry-forward debt
+    let bankEntry = r.bank_summary ? { ...r.bank_summary } : {
+      earned:          (r.earned || 0) + (r.bonus_earned || 0) - (r.chargeback_total || 0),
+      cap:             null,
+      paid_out:        Math.max(0, r.net_earned || 0),
+      banked:          0,
+      interest:        0,
+      balance_before:  r.carry_forward_in || 0,
+      balance_after:   cfOut,
+      drawdown:        0,
+    };
+    // For bank accounts ensure balance_after reflects the carry-forward debt
+    if (r.bank_summary && cfOut < 0) bankEntry.balance_after = cfOut;
+    fetch('/api/commissions', {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agentId: r.agent_id, month, amountPaid: null, bankEntry }),
+    }).catch(() => {});
+  }
 }
 
 function toggleCommBreakdown(agentId) {
@@ -7896,9 +8468,22 @@ function toggleCommBreakdown(agentId) {
 }
 
 function openPayForm(agentId, agentName, earned, month) {
-  // Find bank_summary for this agent from last loaded commission data
+  // Find bank_summary (or carry-forward data) for this agent from last loaded commission data
   const agentRow = (_commData?.results || []).find(r => r.agent_id === agentId);
-  const bankSummary = agentRow?.bank_summary || null;
+  let bankSummary = agentRow?.bank_summary || null;
+  // For non-bank accounts with carry-forward, build a synthetic bank entry so it persists
+  if (!bankSummary && agentRow && ((agentRow.carry_forward_in || 0) !== 0 || (agentRow.carry_forward_out || 0) !== 0)) {
+    bankSummary = {
+      earned:         (agentRow.earned || 0) + (agentRow.bonus_earned || 0) - (agentRow.chargeback_total || 0),
+      cap:            null,
+      paid_out:       Math.max(0, agentRow.net_earned || 0),
+      banked:         0,
+      interest:       0,
+      balance_before: agentRow.carry_forward_in  || 0,
+      balance_after:  agentRow.carry_forward_out || 0,
+      drawdown:       0,
+    };
+  }
   const container = document.getElementById('comm-pay-modal');
   if (!container) return;
   const existing = _commPayments[agentId] || null;
@@ -9758,7 +10343,7 @@ function manualAddRow(opts = {}) {
   const { agentId = '', customerName = '', saleDate = '' } = opts;
   const activeLocs = _salesLocations.filter(l => l.active !== false);
   const hasLocs    = activeLocs.length > 0;
-  const row2Cols   = hasLocs ? '1fr 1fr 1fr 1fr 1fr 1fr' : '1fr 1fr 1fr 1fr 1fr';
+  const row2Cols   = hasLocs ? '1fr 1fr 1fr 1fr 1fr 1fr 1fr' : '1fr 1fr 1fr 1fr 1fr 1fr';
   const locColHtml = hasLocs ? `<div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">LOCATION</label>
         <select class="msr-location" style="${msrSelectStyle()}">
           <option value="">— optional —</option>
@@ -9789,8 +10374,10 @@ function manualAddRow(opts = {}) {
         <input class="msr-date" id="msr-sale-date-${id}" type="text" placeholder="YYYY-MM-DD" value="${escHtml(saleDate)}" style="${msrInputStyle()}"></div>
       <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">ISSUED DATE</label>
         <input class="msr-issued-date" id="msr-issued-date-${id}" type="text" placeholder="YYYY-MM-DD" style="${msrInputStyle()}"></div>
-      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">PREMIUM</label>
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">SUBMITTED PREM</label>
         <input class="msr-prem" type="number" step="0.01" placeholder="0.00" style="${msrInputStyle()}"></div>
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">ISSUED PREM</label>
+        <input class="msr-issued-prem" type="number" step="0.01" placeholder="0.00" style="${msrInputStyle()}"></div>
       <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">PERIOD (MO)</label>
         <select class="msr-period" style="${msrSelectStyle()}">
           <option value="">—</option><option value="6">6</option><option value="12">12</option>
@@ -9894,8 +10481,10 @@ async function manualSubmitAll(btn) {
     const isSplit   = row.querySelector('.msr-split')?.checked ?? false;
     const ratioRaw  = isSplit ? parseFloat(row.querySelector('.msr-split-ratio')?.value || '50') : 100;
     const ratio     = Math.min(Math.max(ratioRaw, 1), 99) / 100;
-    const premRaw   = row.querySelector('.msr-prem')?.value || null;
-    const premFloat = premRaw ? parseFloat(premRaw) : null;
+    const premRaw      = row.querySelector('.msr-prem')?.value || null;
+    const premFloat    = premRaw ? parseFloat(premRaw) : null;
+    const issPremRaw   = row.querySelector('.msr-issued-prem')?.value || null;
+    const issPremFloat = issPremRaw ? parseFloat(issPremRaw) : null;
     const teammateId= isSplit ? (row.querySelector('.msr-teammate-sel')?.value || null) : null;
     const primaryAgent = row.querySelector('.msr-agent')?.value || null;
     const baseBody = {
@@ -9914,6 +10503,7 @@ async function manualSubmitAll(btn) {
       ...baseBody,
       agentId:        primaryAgent,
       writtenPremium: premFloat != null ? (isSplit ? +(premFloat * ratio).toFixed(2) : premFloat) : null,
+      issuedPremium:  issPremFloat != null ? (isSplit ? +(issPremFloat * ratio).toFixed(2) : issPremFloat) : null,
       splitRatio:     isSplit ? ratio : null,
       teammate:       teammateId,
       saleWeight:     isSplit ? 0.5 : 1,
@@ -9925,7 +10515,8 @@ async function manualSubmitAll(btn) {
       const body2 = {
         ...baseBody,
         agentId:        teammateId,
-        writtenPremium: premFloat != null ? +(premFloat * (1 - ratio)).toFixed(2) : null,
+        writtenPremium: premFloat    != null ? +(premFloat    * (1 - ratio)).toFixed(2) : null,
+        issuedPremium:  issPremFloat != null ? +(issPremFloat * (1 - ratio)).toFixed(2) : null,
         splitRatio:     1 - ratio,
         teammate:       primaryAgent,
         saleWeight:     0.5,
@@ -9938,7 +10529,7 @@ async function manualSubmitAll(btn) {
   msg.style.display = 'block';
   if (saved)   { msg.style.color = 'var(--accent2)'; msg.textContent = `${saved} entr${saved===1?'y':'ies'} saved.`; }
   if (errors)  { msg.style.color = 'var(--danger)';  msg.textContent += ` ${errors} failed (product, date, and lead source required).`; }
-  if (saved)   { loadRaceData().catch(() => {}); }
+  if (saved)   { loadRaceData().catch(() => {}); manualAddRow(); }
 }
 
 // ── Manual entry helpers ──────────────────────────────────────────────────────
@@ -10026,9 +10617,10 @@ function _buildSlEditForm(e) {
         <input id="sl-auto-issued-${h}" type="checkbox"${autoChk} onchange="slAutoIssuedChanged(this,'${h}')" style="width:18px;height:18px;margin-top:4px;">
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;gap:.75rem;margin-bottom:.75rem;">
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr 1fr;gap:.75rem;margin-bottom:.75rem;">
       <div>${lbl('CUSTOMER NAME')}<input id="sl-cust-${h}" type="text" value="${escHtml(e.customer_name || '')}" style="${si}"></div>
-      <div>${lbl('PREMIUM')}<input id="sl-prem-${h}" type="number" step="0.01" value="${e.written_premium || ''}" style="${si}"></div>
+      <div>${lbl('SUBMITTED PREM')}<input id="sl-prem-${h}" type="number" step="0.01" value="${e.written_premium || ''}" style="${si}"></div>
+      <div>${lbl('ISSUED PREM')}<input id="sl-issued-prem-${h}" type="number" step="0.01" value="${e.issued_premium || ''}" style="${si}"></div>
       <div>${lbl('PERIOD')}<select id="sl-period-${h}" style="${ss}"><option value="">—</option><option value="6"${e.period==6?' selected':''}>6</option><option value="12"${e.period==12?' selected':''}>12</option></select></div>
       <div>${lbl('LEAD SOURCE')}<select id="sl-source-${h}" style="${ss}">${srcOpts}</select></div>
       <div>${lbl('LOCATION')}<select id="sl-location-${h}" style="${ss}">${locOpts}</select></div>
@@ -10113,8 +10705,9 @@ async function saveSalesLogRow(h, btn) {
       sale_date:     document.getElementById('sl-sale-date-' + h)?.value   || null,
       issued_date:   document.getElementById('sl-issued-date-' + h)?.value || null,
       auto_issued:   document.getElementById('sl-auto-issued-' + h)?.checked ?? null,
-      written_premium: document.getElementById('sl-prem-' + h)?.value      || null,
-      customer_name: document.getElementById('sl-cust-' + h)?.value        || null,
+      written_premium: document.getElementById('sl-prem-' + h)?.value        || null,
+      issued_premium:  document.getElementById('sl-issued-prem-' + h)?.value || null,
+      customer_name: document.getElementById('sl-cust-' + h)?.value          || null,
       lead_source:   document.getElementById('sl-source-' + h)?.value      || null,
       period:        document.getElementById('sl-period-' + h)?.value       || null,
       split_sale:    document.getElementById('sl-split-' + h)?.checked      ?? null,
@@ -10155,18 +10748,19 @@ let _salesLogAllYear      = false;
 let _salesLogIssuedFilter = 'all';
 let _salesLogCustomFrom   = null; // YYYY-MM-DD when quarterly mode active
 let _salesLogCustomTo     = null;
-let _spEntries   = [];
-let _spMetric    = 'count';
-let _spDateMode  = 'month';
-let _spDateMonth = '';
-let _spDateYear  = '';
-let _spDateStart = '';
-let _spDateEnd   = '';
-let _spDim1      = 'product';
-let _spDim2      = 'lead_source';
-let _spCrumbs    = [];
-let _spChart1    = null;
-let _spChart2    = null;
+let _spEntries        = [];
+let _spMetric         = 'count';
+let _spDateMode       = 'month';
+let _spDateMonth      = '';
+let _spDateYear       = '';
+let _spDateStart      = '';
+let _spDateEnd        = '';
+let _spDim1           = 'product';
+let _spDim2           = 'lead_source';
+let _spCrumbs         = [];
+let _spChart1         = null;
+let _spChart2         = null;
+let _spLocationFilter = 'all';
 
 function initSalesLogControls() {
   const monthSel = document.getElementById('sl-month-sel');
@@ -10681,9 +11275,17 @@ async function loadBasicSalesBreakdown(targetId) {
     return ay !== by ? ay - by : am - bm;
   }).slice(-12); // last 12 archived months
 
-  // Current period from race_data
-  const now    = new Date();
-  const curKey = `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][now.getUTCMonth()]} ${now.getUTCFullYear()}`;
+  // Current period from race_data — label with the race month, not today's calendar month
+  const ABBR12 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  let curKey;
+  if (_raceCurrentMonth) {
+    const _rp = _raceCurrentMonth.trim().split(' ');
+    const _ri = ['January','February','March','April','May','June','July','August','September','October','November','December'].indexOf(_rp[0]);
+    curKey = (_ri >= 0 ? ABBR12[_ri] : _rp[0]) + ' ' + _rp[1];
+  } else {
+    const now = new Date();
+    curKey = `${ABBR12[now.getUTCMonth()]} ${now.getUTCFullYear()}`;
+  }
   const curTotals = {};
   for (const c of cats) curTotals[c.key] = 0;
   for (const ag of (_raceData || [])) {
@@ -10760,7 +11362,7 @@ async function loadBasicSalesBreakdown(targetId) {
   container.innerHTML = chartNote + `<div class="panel" style="margin-bottom:1rem;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
       <div style="font-size:13px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.04em;">Sales Overview</div>
-      <span style="font-size:11px;color:var(--muted);">Uploaded data · ${periodCount} period${periodCount !== 1 ? 's' : ''}</span>
+      <span style="font-size:11px;color:var(--muted);">${periodCount} period${periodCount !== 1 ? 's' : ''}</span>
     </div>
     <div style="overflow-x:auto;">
       <table style="width:100%;border-collapse:collapse;">
@@ -10814,8 +11416,33 @@ function spDisplayLabel(key, rawVal) {
 
 function spActiveEntries() {
   let entries = _spEntries;
+  if (_spLocationFilter && _spLocationFilter !== 'all') {
+    entries = entries.filter(e => (e.location || '') === _spLocationFilter);
+  }
   _spCrumbs.forEach(c => { entries = entries.filter(e => spFieldVal(c.field, e) === c.value); });
   return entries;
+}
+
+function onSpLocationChange() {
+  _spLocationFilter = document.getElementById('sp-location-filter')?.value || 'all';
+  _spCrumbs = [];
+  _spDim1 = 'product'; _spDim2 = 'lead_source';
+  const s1 = document.getElementById('sp-dim1'); if (s1) s1.value = _spDim1;
+  const s2 = document.getElementById('sp-dim2'); if (s2) s2.value = _spDim2;
+  spRender();
+}
+
+function _spPopulateLocationFilter() {
+  const sel = document.getElementById('sp-location-filter');
+  if (!sel) return;
+  const locs = [...new Set(_spEntries.map(e => e.location).filter(Boolean))].sort();
+  if (!locs.length) { sel.style.display = 'none'; _spLocationFilter = 'all'; return; }
+  sel.style.display = '';
+  const cur = sel.value;
+  sel.innerHTML = '<option value="all">All Locations</option>'
+    + locs.map(l => `<option value="${escHtml(l)}">${escHtml(l)}</option>`).join('');
+  if (locs.includes(cur)) sel.value = cur;
+  else { sel.value = 'all'; _spLocationFilter = 'all'; }
 }
 
 function spGroup(entries, dimKey) {
@@ -10854,6 +11481,7 @@ async function spLoad() {
     if (loading) loading.style.display = 'none';
     if (grid)    grid.style.display    = '';
   }
+  _spPopulateLocationFilter();
   spRender();
 }
 
@@ -11014,6 +11642,15 @@ function spRangeChanged() {
   spLoad();
 }
 
+function spNavMonth(dir) {
+  const el = document.getElementById('sp-month-input');
+  if (!el || !el.value) return;
+  const [y, m] = el.value.split('-').map(Number);
+  const d = new Date(y, m - 1 + dir, 1);
+  el.value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  spRangeChanged();
+}
+
 function spSetMetric(metric, btn) {
   _spMetric = metric;
   document.querySelectorAll('#sp-metric-toggle .acct-stab').forEach(b => b.classList.remove('active'));
@@ -11046,12 +11683,28 @@ function spInitYearSelect() {
 
 async function initSalesPerf() {
   if (!_spDateMonth) {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
+    // Prefer the current race month so the view opens on active sales data.
+    // Fall back to calendar month only if no race month is configured.
+    const MONTH_NAMES_FULL = ['January','February','March','April','May','June',
+                              'July','August','September','October','November','December'];
+    let y, m;
+    if (_raceCurrentMonth) {
+      const parts = _raceCurrentMonth.trim().split(' ');
+      const idx = MONTH_NAMES_FULL.indexOf(parts[0]);
+      const yr  = parseInt(parts[1]);
+      if (idx !== -1 && !isNaN(yr)) {
+        y = yr;
+        m = String(idx + 1).padStart(2, '0');
+      }
+    }
+    if (!y) {
+      const now = new Date();
+      y = now.getFullYear();
+      m = String(now.getMonth() + 1).padStart(2, '0');
+    }
     _spDateMonth = `${y}-${m}`;
     _spDateYear  = String(y);
-    const lastDay = new Date(y, now.getMonth() + 1, 0).getDate();
+    const lastDay = new Date(y, parseInt(m), 0).getDate();
     _spDateStart  = `${y}-${m}-01`;
     _spDateEnd    = `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
   }
@@ -11431,6 +12084,10 @@ function clAddSaleRow() {
         ${(_clAgents || _agentRoster.filter(a => a.active !== false)).map(a => `<option value="${escHtml(a.agent_id || a.id)}">${escHtml(a.name)}</option>`).join('')}
       </select>
     </div>
+    <div style="margin-bottom:.5rem;">
+      <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">DESCRIPTION <span style="font-weight:400;color:var(--muted);font-size:10px;">(included in email, not saved)</span></label>
+      <input class="clrow-desc" type="text" placeholder="e.g. 2022 Toyota Camry, Term 20yr, etc." style="${msrInputStyle()}">
+    </div>
     <div style="text-align:right;">
       <button class="btn btn-danger" style="padding:3px 10px;font-size:12px;" onclick="document.getElementById('clrow-${id}').remove()">Remove Row</button>
     </div>
@@ -11637,6 +12294,7 @@ async function clSubmit() {
       splitSale:      row.querySelector('.clrow-split')?.checked             ?? null,
       teammate:       row.querySelector('.clrow-teammate-sel')?.value        || null,
       saleWeight:     row.querySelector('.clrow-split')?.checked ? 0.5 : 1,
+      description:    row.querySelector('.clrow-desc')?.value.trim()         || null,
     });
   }
 
@@ -11750,6 +12408,7 @@ function buildSummaryEmail(payload) {
     let line = `  ${i+1}. ${cat}`;
     if (s.subcategory)    line += ` — ${s.subcategory}`;
     if (s.writtenPremium) line += ` ($${parseFloat(s.writtenPremium).toFixed(2)})`;
+    if (s.description)    line += ` — ${s.description}`;
     if (s.autoIssued)     line += ' ✓ Auto Issued';
     if (s.splitSale) {
       const tmName = _agentRoster.find(a => a.agent_id === s.teammate)?.name || _clAgents?.find(a => a.agent_id === s.teammate)?.name || s.teammate || 'TBD';
@@ -12325,8 +12984,14 @@ async function saveMemberAnalysisAgents(btn) {
     const d = await r.json();
     if (r.ok) {
       _memberAnalysisAgents = agents;
-      _memberAnalysisAgentsSetAt = new Date().toISOString();
-      showInlineMsg('ma-agents-msg', 'Agent selection saved. Selection is locked for 30 days.', 'ok');
+      if (d.lockedUntil) {
+        // Full save — lock clock was reset
+        _memberAnalysisAgentsSetAt = new Date().toISOString();
+        showInlineMsg('ma-agents-msg', 'Agent selection saved. Selection is locked for 30 days.', 'ok');
+      } else {
+        // Additive save — lock clock unchanged
+        showInlineMsg('ma-agents-msg', 'Agent added to selection.', 'ok');
+      }
       renderMemberAnalysisAgentPicker();
     } else {
       showInlineMsg('ma-agents-msg', d.error || 'Save failed', 'err');
@@ -12370,9 +13035,10 @@ async function removeInactiveMaAgents(btn) {
 
 // ── Member Analysis — analysis pane ──────────────────────────────────────────
 function showAnalysisSubTab(name, btn) {
-  document.getElementById('analysis-pane-trends').style.display      = name === 'trends'       ? '' : 'none';
-  document.getElementById('analysis-pane-members').style.display     = name === 'members'      ? '' : 'none';
-  document.getElementById('analysis-pane-leadsources').style.display = name === 'leadsources'  ? '' : 'none';
+  document.getElementById('analysis-pane-trends').style.display       = name === 'trends'       ? '' : 'none';
+  document.getElementById('analysis-pane-members').style.display      = name === 'members'      ? '' : 'none';
+  document.getElementById('analysis-pane-leadsources').style.display  = name === 'leadsources'  ? '' : 'none';
+  document.getElementById('analysis-pane-premaccuracy').style.display = name === 'premaccuracy' ? '' : 'none';
   document.querySelectorAll('#tab-analysis .acct-stab').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
   if (name === 'leadsources') {
@@ -12381,6 +13047,95 @@ function showAnalysisSubTab(name, btn) {
     document.getElementById('la-content').style.display = hasAddon ? ''     : 'none';
     if (hasAddon) { updateLeadAnalysisBtn(); displayCachedLeadAnalysis(); }
   }
+  if (name === 'premaccuracy') {
+    const monthInput = document.getElementById('pa-month-input');
+    if (monthInput && !monthInput.value) {
+      const now = new Date();
+      monthInput.value = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+    }
+  }
+}
+
+// ── Premium Accuracy ──────────────────────────────────────────────────────────
+
+let _paEntries = [];
+
+async function loadPremiumAccuracyData() {
+  const monthInput = document.getElementById('pa-month-input');
+  const month = monthInput?.value;
+  if (!month) { showInlineMsg('pa-msg', 'Select a month first.', 'err'); return; }
+  const [year, mo] = month.split('-');
+  const fromDate = `${year}-${mo}-01`;
+  const lastDay  = new Date(parseInt(year), parseInt(mo), 0).getDate();
+  const toDate   = `${year}-${mo}-${String(lastDay).padStart(2,'0')}`;
+  const loading  = document.getElementById('pa-loading');
+  const wrap     = document.getElementById('pa-table-wrap');
+  loading.style.display = ''; wrap.style.display = 'none';
+  try {
+    const r = await fetch(`/api/sales?fromDate=${fromDate}&toDate=${toDate}`, { headers: authHeaders() });
+    const d = await r.json();
+    _paEntries = d.entries || [];
+    renderPremiumAccuracyTable();
+  } catch(e) {
+    showInlineMsg('pa-msg', 'Error loading data.', 'err');
+  } finally {
+    loading.style.display = 'none';
+  }
+}
+
+function renderPremiumAccuracyTable() {
+  const byAgent = {};
+  for (const e of _paEntries) {
+    const agentId   = e.agent_id || '(unknown)';
+    const agentName = _agentRoster.find(a => a.agent_id === agentId)?.name || agentId;
+    if (!byAgent[agentId]) byAgent[agentId] = { name: agentName, submitted: 0, issued: 0, matchCount: 0, total: 0 };
+    const sub = parseFloat(e.written_premium) || 0;
+    const iss = parseFloat(e.issued_premium)  || 0;
+    byAgent[agentId].total++;
+    if (sub > 0) byAgent[agentId].submitted += sub;
+    if (iss > 0) byAgent[agentId].issued    += iss;
+    if (sub > 0 && iss > 0) byAgent[agentId].matchCount++;
+  }
+  const agents    = Object.values(byAgent).sort((a, b) => b.submitted - a.submitted);
+  const totalSub  = agents.reduce((s, a) => s + a.submitted, 0);
+  const totalIss  = agents.reduce((s, a) => s + a.issued, 0);
+  const fmt = v => v ? '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+  const pct = (iss, sub) => sub > 0 ? (iss / sub * 100).toFixed(1) + '%' : '—';
+  const pctStyle = (iss, sub) => {
+    if (!sub) return '';
+    const a = iss / sub * 100;
+    return a >= 95 ? 'color:var(--accent2);' : a >= 80 ? 'color:var(--warn);' : 'color:var(--danger);';
+  };
+  const el = document.getElementById('pa-table-wrap');
+  if (!agents.length) {
+    el.innerHTML = '<div style="color:var(--muted);text-align:center;padding:2rem;">No sales data for this period. Make sure agents have issued premium amounts entered.</div>';
+    el.style.display = ''; return;
+  }
+  el.innerHTML = `
+    <div style="font-size:13px;margin-bottom:.85rem;padding:.6rem .8rem;background:var(--card2);border-radius:8px;">
+      <strong>Team:</strong> ${fmt(totalSub)} submitted · ${fmt(totalIss)} issued ·
+      <strong style="${pctStyle(totalIss,totalSub)}">${pct(totalIss,totalSub)} accuracy</strong>
+    </div>
+    <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead><tr style="border-bottom:1px solid var(--border2);">
+        <th style="text-align:left;padding:6px 10px;font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:600;">Agent</th>
+        <th style="text-align:right;padding:6px 10px;font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:600;">Submitted</th>
+        <th style="text-align:right;padding:6px 10px;font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:600;">Issued</th>
+        <th style="text-align:right;padding:6px 10px;font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:600;">Matched / Total</th>
+        <th style="text-align:right;padding:6px 10px;font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:600;">Accuracy</th>
+      </tr></thead>
+      <tbody>
+        ${agents.map(a => `<tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+          <td style="padding:7px 10px;font-weight:600;">${escHtml(a.name)}</td>
+          <td style="padding:7px 10px;text-align:right;">${fmt(a.submitted)}</td>
+          <td style="padding:7px 10px;text-align:right;">${fmt(a.issued)}</td>
+          <td style="padding:7px 10px;text-align:right;color:var(--muted);">${a.matchCount} / ${a.total}</td>
+          <td style="padding:7px 10px;text-align:right;font-weight:700;${pctStyle(a.issued,a.submitted)}">${pct(a.issued,a.submitted)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>`;
+  el.style.display = '';
 }
 
 // ── Lead Source Analysis ──────────────────────────────────────────────────────
@@ -12448,21 +13203,36 @@ function renderLeadSourceTable(chartData) {
 
 function displayCachedLeadAnalysis() {
   if (!_leadAnalysisAt) return;
-  const cached = _lsGet('br-lead-analysis-' + _userId);
-  if (cached) {
-    try {
-      const data = JSON.parse(cached);
-      if (data.userId !== _userId) { _lsRemove('br-lead-analysis-' + _userId); }
-      else { _applyLeadAnalysis(data); return; }
-    } catch(e) { /* fall through */ }
-  }
+  // Always check the server first — it never regenerates (uses DB cache only).
+  // localStorage is only a fallback for network errors.
   fetch('/api/lead-analysis', { headers: authHeaders() })
     .then(r => r.ok ? r.json() : null)
     .then(data => {
-      if (!data?.insights) return;
-      _lsSet('br-lead-analysis-' + _userId, JSON.stringify({ userId: _userId, ...data }));
-      _applyLeadAnalysis(data);
-    }).catch(() => {});
+      if (data?.insights) {
+        _lsSet('br-lead-analysis-' + _userId, JSON.stringify({ userId: _userId, ...data }));
+        _applyLeadAnalysis(data);
+      } else {
+        // No server data — fall back to localStorage
+        const cached = _lsGet('br-lead-analysis-' + _userId);
+        if (cached) {
+          try {
+            const d = JSON.parse(cached);
+            if (d.userId === _userId && d.insights) _applyLeadAnalysis(d);
+            else _lsRemove('br-lead-analysis-' + _userId);
+          } catch(e) {}
+        }
+      }
+    })
+    .catch(() => {
+      // Network error — fall back to localStorage
+      const cached = _lsGet('br-lead-analysis-' + _userId);
+      if (cached) {
+        try {
+          const d = JSON.parse(cached);
+          if (d.userId === _userId && d.insights) _applyLeadAnalysis(d);
+        } catch(e) {}
+      }
+    });
 }
 
 function _applyLeadAnalysis(data) {
@@ -12542,35 +13312,49 @@ function displayCachedMemberAnalysis() {
     renderMemberAnalysisTeaser();
     return;
   }
-  const cached = _lsGet('br-member-analysis-' + _userId);
-  if (cached) {
-    try {
-      const data = JSON.parse(cached);
-      if (data.userId === _userId && data.agentSections) {
-        if (data.curKey) _maCurKey = data.curKey;
-        renderMemberAnalysisCards(data.agentSections, data.agentData, data.generatedAt, data.hoursLastPeriod);
-        updateHoursLabel(data.hoursLastPeriod);
-        return;
-      }
-    } catch(e) {}
-  }
-  // No valid localStorage — fetch server cache without triggering a paid generation.
-  // checkOnly=1 returns 200+data if a valid cache exists, or 204 if nothing cached.
-  // We do NOT guard on _memberAnalysisAt here: that would silently block new browsers
-  // when the DB save previously failed and member_analysis_at was never written.
+  // Always check the server first — checkOnly=1 never triggers a paid generation.
+  // Server cache is the source of truth; localStorage is only a fallback for offline/204.
   fetch('/api/member-analysis?checkOnly=1', { headers: authHeaders() })
     .then(r => r.status === 204 ? null : r.json())
     .then(data => {
-      if (!data?.agentSections) return;
-      if (data.curKey) _maCurKey = data.curKey;
-      // Sync _memberAnalysisAt from the server timestamp so the countdown is accurate
-      const ts = data.cachedAt || data.generatedAt;
-      if (ts) { _memberAnalysisAt = ts; updateMemberAnalysisBtn(); }
-      renderMemberAnalysisCards(data.agentSections, data.agentData, data.generatedAt || data.cachedAt, data.hoursLastPeriod);
-      updateHoursLabel(data.hoursLastPeriod);
-      _lsSet('br-member-analysis-' + _userId, JSON.stringify({ userId: _userId, ...data }));
+      if (data?.agentSections) {
+        if (data.curKey) _maCurKey = data.curKey;
+        const ts = data.cachedAt || data.generatedAt;
+        if (ts) { _memberAnalysisAt = ts; updateMemberAnalysisBtn(); }
+        renderMemberAnalysisCards(data.agentSections, data.agentData, data.generatedAt || data.cachedAt, data.hoursLastPeriod);
+        // Always recompute hours label from _memberHoursData (current DB state),
+        // not from hoursLastPeriod in the cache (reflects when analysis was generated, not now).
+        updateHoursLabel(null);
+        _lsSet('br-member-analysis-' + _userId, JSON.stringify({ userId: _userId, ...data }));
+      } else {
+        // Server has nothing valid (cache expired or never saved) — fall back to localStorage
+        const cached = _lsGet('br-member-analysis-' + _userId);
+        if (cached) {
+          try {
+            const d = JSON.parse(cached);
+            if (d.userId === _userId && d.agentSections) {
+              if (d.curKey) _maCurKey = d.curKey;
+              renderMemberAnalysisCards(d.agentSections, d.agentData, d.generatedAt, d.hoursLastPeriod);
+              updateHoursLabel(null);
+            }
+          } catch(e) {}
+        }
+      }
     })
-    .catch(() => {});
+    .catch(() => {
+      // Network error — fall back to localStorage
+      const cached = _lsGet('br-member-analysis-' + _userId);
+      if (cached) {
+        try {
+          const d = JSON.parse(cached);
+          if (d.userId === _userId && d.agentSections) {
+            if (d.curKey) _maCurKey = d.curKey;
+            renderMemberAnalysisCards(d.agentSections, d.agentData, d.generatedAt, d.hoursLastPeriod);
+            updateHoursLabel(null);
+          }
+        } catch(e) {}
+      }
+    });
 }
 
 function maHoursMismatchUpload() {
@@ -13129,7 +13913,7 @@ async function maHoursSave(btn) {
     if (!r.ok) { showInlineMsg('ma-hours-msg', d.error || 'Save failed', 'err'); return; }
 
     _memberHoursData = d.periods || [];
-    updateHoursLabel();
+    updateHoursLabel(null);
     renderMaHoursPeriods();
 
     // Clear cached analysis (hours changed)
@@ -13185,7 +13969,7 @@ async function maHoursDeletePeriod(period, btn) {
     const d = await r.json();
     if (!r.ok) { alert(d.error || 'Delete failed'); return; }
     _memberHoursData = d.periods || [];
-    updateHoursLabel();
+    updateHoursLabel(null);
     renderMaHoursPeriods();
     _lsRemove('br-member-analysis-' + _userId);
   } catch(e) { alert(e.message); }
