@@ -2573,6 +2573,7 @@ let _adminRows = [];
 let _accessLogEntries = [];
 let _alSearchTimer = null;
 let _raceData  = [];
+let _raceAutoRefreshTimer = null;
 let _processingToken = null;
 let _analysisAt = null; // ai_analysis_at from accounts table — authoritative per-account timer
 let _isMember         = false;  // true when logged in as a team member (not account owner)
@@ -3323,6 +3324,18 @@ function goToAccountTab(pane, targetId) {
   if (targetId) setTimeout(() => scrollAndPulse(targetId), 200);
 }
 
+function _startRaceAutoRefresh() {
+  clearInterval(_raceAutoRefreshTimer);
+  _raceAutoRefreshTimer = setInterval(() => {
+    if (document.visibilityState !== 'hidden') loadRaceData();
+  }, 10 * 60 * 1000); // 10 minutes
+}
+
+function _stopRaceAutoRefresh() {
+  clearInterval(_raceAutoRefreshTimer);
+  _raceAutoRefreshTimer = null;
+}
+
 function showTab(name, btn) {
   if (_trialExpired && name !== 'account') return;
   if (_isMember && name !== 'account' && !getAllowedTabs().includes(name)) return;
@@ -3331,7 +3344,8 @@ function showTab(name, btn) {
   const tab = document.getElementById('tab-' + name);
   if (tab) tab.style.display = 'block';
   if (btn) btn.classList.add('active');
-  if (name === 'race') loadRaceData();
+  if (name === 'race') { loadRaceData(); _startRaceAutoRefresh(); }
+  else _stopRaceAutoRefresh();
   if (name === 'account') loadAccountTab();
   if (name === 'adminpanel') { loadAdminPanel(); loadAccessLog(); }
   if (name === 'perf') {
