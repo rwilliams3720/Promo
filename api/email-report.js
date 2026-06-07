@@ -60,14 +60,21 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  // Allow Vercel cron, external cron secret, or admin JWT
-  const token      = (req.headers.authorization || '').replace('Bearer ', '').trim();
-  const cronSecret = process.env.CRON_SECRET;
-  const isVercelCron   = req.headers['x-vercel-cron'] === '1';
-  const isExternalCron = cronSecret && req.headers['x-cron-secret'] === cronSecret;
-  const isCron = isVercelCron || isExternalCron;
+  // Authorize as a cron via a secret — not the spoofable x-vercel-cron header alone.
+  // When CRON_SECRET is set, Vercel's native cron sends it as `Authorization: Bearer
+  // <CRON_SECRET>`; an external scheduler may send it as `x-cron-secret`. Only when no
+  // secret is configured do we fall back to the legacy x-vercel-cron header. (Mirrors
+  // api/cleanup.js.)
+  const token          = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  const cronSecret     = process.env.CRON_SECRET;
+  const bearerIsSecret = cronSecret && token === cronSecret;
+  const headerIsSecret = cronSecret && req.headers['x-cron-secret'] === cronSecret;
+  const isCron = cronSecret
+    ? (bearerIsSecret || headerIsSecret)
+    : (req.headers['x-vercel-cron'] === '1');
 
-  if (!isCron) {
+  // The admin-JWT path must not be entered with the cron secret as the bearer.
+  if (!isCron && !bearerIsSecret) {
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
     const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
     if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
