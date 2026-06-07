@@ -209,6 +209,8 @@ export default async function handler(req, res) {
     if (!id) return res.status(400).json({ error: 'id required' });
 
     if (action === 'update_type') {
+      // Activity-type config is account-wide (incl. payout rate) — owner/captain/CO only.
+      if (!ctx.canApprove) return res.status(403).json({ error: 'Approver access required' });
       const { name, category, subcategory, source, call_disposition, active, payment } = req.body;
       const update = {};
       if (name             !== undefined) update.name             = name;
@@ -229,6 +231,20 @@ export default async function handler(req, res) {
     }
 
     if (action === 'update_entry') {
+      // Non-approver members may only edit their OWN, not-yet-approved entries.
+      if (!ctx.canApprove) {
+        if (!ctx.memberAgentId) return res.status(403).json({ error: 'No roster agent linked to your account' });
+        const { data: existing } = await supabase
+          .from('bonus_activities')
+          .select('agent_id, status')
+          .eq('user_id', dataUserId).eq('id', id).single();
+        if (!existing || existing.agent_id !== ctx.memberAgentId) {
+          return res.status(403).json({ error: 'You can only edit your own entries' });
+        }
+        if (existing.status === 'approved') {
+          return res.status(403).json({ error: 'Approved entries cannot be edited' });
+        }
+      }
       const { count, notes } = req.body;
       const update = {};
       if (count !== undefined) update.count = parseInt(count) || 1;
@@ -265,6 +281,8 @@ export default async function handler(req, res) {
     if (!id) return res.status(400).json({ error: 'id required' });
 
     if (resource === 'types') {
+      // Deleting a type cascades to all its entries — owner/captain/CO only.
+      if (!ctx.canApprove) return res.status(403).json({ error: 'Approver access required' });
       const { error } = await supabase
         .from('bonus_activity_types')
         .delete()
@@ -275,6 +293,20 @@ export default async function handler(req, res) {
     }
 
     if (resource === 'entries') {
+      // Non-approver members may only delete their OWN, not-yet-approved entries.
+      if (!ctx.canApprove) {
+        if (!ctx.memberAgentId) return res.status(403).json({ error: 'No roster agent linked to your account' });
+        const { data: existing } = await supabase
+          .from('bonus_activities')
+          .select('agent_id, status')
+          .eq('user_id', dataUserId).eq('id', id).single();
+        if (!existing || existing.agent_id !== ctx.memberAgentId) {
+          return res.status(403).json({ error: 'You can only delete your own entries' });
+        }
+        if (existing.status === 'approved') {
+          return res.status(403).json({ error: 'Approved entries cannot be deleted' });
+        }
+      }
       const { error } = await supabase
         .from('bonus_activities')
         .delete()

@@ -3,6 +3,76 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
+async function rebuildRaceData(dataUserId, agentIds) {
+  const ids = [...new Set(agentIds.filter(Boolean))];
+  if (!ids.length) return;
+
+  const { data: rosterRows } = await supabase
+    .from('agent_roster')
+    .select('agent_id, name')
+    .eq('user_id', dataUserId)
+    .in('agent_id', ids);
+  const nameMap = {};
+  for (const r of (rosterRows || [])) nameMap[r.agent_id] = r.name;
+
+  const ensureRows = ids.map(id => ({
+    user_id: dataUserId,
+    agent_id: id,
+    name: nameMap[id] || id,
+    team: 'sales',
+    wl: 0, ul: 0, term: 0, health: 0, auto: 0, fire: 0,
+    placed: 0, answered: 0, missed: 0, voicemail: 0,
+    talk_min: 0, avg_min: 0,
+    race_wide_missed: 0, race_wide_voicemail: 0,
+  }));
+  await supabase.from('race_data').upsert(ensureRows, { onConflict: 'user_id,agent_id', ignoreDuplicates: true });
+
+  const { data: cfgRow } = await supabase
+    .from('race_config')
+    .select('value')
+    .eq('user_id', dataUserId)
+    .eq('key', 'current_month')
+    .single();
+  const currentMonth = cfgRow?.value || '';
+  let fromDate = null, toDate = null;
+  if (currentMonth) {
+    const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const parts = currentMonth.trim().split(' ');
+    let idx = MONTH_NAMES.indexOf(parts[0]);
+    if (idx === -1) idx = ABBR.indexOf(parts[0]);
+    const yr = parseInt(parts[1]);
+    if (idx !== -1 && !isNaN(yr)) {
+      fromDate = `${yr}-${String(idx + 1).padStart(2, '0')}-01`;
+      const nextMo = idx === 11 ? 1 : idx + 2;
+      const nextYr = idx === 11 ? yr + 1 : yr;
+      toDate = `${nextYr}-${String(nextMo).padStart(2, '0')}-01`;
+    }
+  }
+
+  let q = supabase.from('sales_log').select('agent_id, product, sale_weight').eq('user_id', dataUserId).in('agent_id', ids);
+  if (fromDate) q = q.gte('sale_date', fromDate);
+  if (toDate)   q = q.lt('sale_date', toDate);
+  const { data: salesRows } = await q;
+
+  const totals = {};
+  for (const id of ids) totals[id] = { wl: 0, ul: 0, term: 0, health: 0, auto: 0, fire: 0 };
+  for (const row of (salesRows || [])) {
+    const cat = row.product;
+    if (cat === 'other' || cat === 'deposit' || cat === 'skip' || !row.agent_id) continue;
+    if (!totals[row.agent_id]) continue;
+    if (totals[row.agent_id][cat] !== undefined) totals[row.agent_id][cat] += (row.sale_weight ?? 1);
+  }
+
+  const now = new Date().toISOString();
+  for (const id of ids) {
+    await supabase.from('race_data').update({
+      ...totals[id],
+      last_updated: now,
+    }).eq('user_id', dataUserId).eq('agent_id', id);
+  }
+}
+
 const DEFAULT_FORM_TYPES = [
   { form_key: 'GSD',  label: 'GSD',  sort_order: 0 },
   { form_key: 'DSS',  label: 'DSS',  sort_order: 1 },
@@ -185,6 +255,25 @@ export default async function handler(req, res) {
     if (!acct.has_sales_addon)  return res.status(403).json({ error: 'Feature not active' });
 
     const userId        = acct.user_id;
+
+    // SECURITY: the body controls salespersonId/teammate. Validate every agent id
+    // against the account's active roster so a forged submission cannot attribute
+    // sales (and inflate race scores / commissions) to an arbitrary agent.
+    const { data: rosterRows } = await supabase
+      .from('agent_roster')
+      .select('agent_id')
+      .eq('user_id', userId)
+      .eq('active', true);
+    const validAgentIds = new Set((rosterRows || []).map(r => r.agent_id));
+    if (salespersonId && !validAgentIds.has(salespersonId)) {
+      return res.status(400).json({ error: 'Unknown salesperson' });
+    }
+    for (const s of (sales || [])) {
+      if (s.teammate && !validAgentIds.has(s.teammate)) {
+        return res.status(400).json({ error: 'Unknown teammate on a sale' });
+      }
+    }
+
     const encryptedName = encryptField(customerName);
 
     const extendedCompletions = {
@@ -240,6 +329,10 @@ export default async function handler(req, res) {
       }));
       const { error: salesErr } = await supabase.from('sales_log').insert(logInserts);
       if (salesErr) console.error('sales_log insert error:', salesErr);
+
+      // Rebuild race_data so checklist sales appear on the Race tab immediately
+      const agentIds = [...new Set([salespersonId, ...sales.map(s => s.teammate)].filter(Boolean))];
+      await rebuildRaceData(userId, agentIds).catch(e => console.error('rebuildRaceData:', e));
     }
 
     const emailCfg = acct.checklist_email_config || defaultEmailConfig(acct.company_name);

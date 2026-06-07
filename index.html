@@ -3514,7 +3514,7 @@ function renderRace(data) {
   document.getElementById('stats-row').innerHTML = `
     <div class="stat-card" style="--accent-line:var(--gold)">
       <div class="stat-label">Leader</div>
-      <div class="stat-val" style="font-size:1.3rem;color:var(--gold)">${topAgent.name.split(' ')[0]}</div>
+      <div class="stat-val" style="font-size:1.3rem;color:var(--gold)">${escHtml(topAgent.name.split(' ')[0])}</div>
       <div class="stat-sub">${topAgent.total} pts</div>
     </div>
     <div class="stat-card" style="--accent-line:var(--accent2)">
@@ -3556,8 +3556,8 @@ function renderRace(data) {
       <div>
         <div class="agent-top">
           <div class="agent-color" style="background:${ag.color}"></div>
-          <div class="agent-name">${ag.name}</div>
-          <span class="team-badge ${svc?'badge-service':'badge-sales'}">${ag.team}</span>
+          <div class="agent-name">${escHtml(ag.name)}</div>
+          <span class="team-badge ${svc?'badge-service':'badge-sales'}">${escHtml(ag.team)}</span>
         </div>
         <div class="pill-row">
           ${ag.wl     && SCORING.wl_enabled      ?`<span class="pill">WL×${ag.wl}</span>`:''}
@@ -3594,19 +3594,19 @@ function renderRace(data) {
   const [p1, p2, p3] = agents;
   document.getElementById('podium').innerHTML = `
     ${p2?`<div class="podium-col">
-      <div class="podium-name">${p2.name.split(' ')[0]}</div>
+      <div class="podium-name">${escHtml(p2.name.split(' ')[0])}</div>
       <div class="podium-pts">${p2.total}</div>
       <div class="podium-trophy">🥈</div>
       <div class="podium-block podium-2" style="height:130px">2</div>
     </div>`:''}
     ${p1?`<div class="podium-col">
-      <div class="podium-name">${p1.name.split(' ')[0]}</div>
+      <div class="podium-name">${escHtml(p1.name.split(' ')[0])}</div>
       <div class="podium-pts">${p1.total}</div>
       <div class="podium-trophy">🥇</div>
       <div class="podium-block podium-1" style="height:170px">1</div>
     </div>`:''}
     ${p3?`<div class="podium-col">
-      <div class="podium-name">${p3.name.split(' ')[0]}</div>
+      <div class="podium-name">${escHtml(p3.name.split(' ')[0])}</div>
       <div class="podium-pts">${p3.total}</div>
       <div class="podium-trophy">🥉</div>
       <div class="podium-block podium-3" style="height:100px">3</div>
@@ -3831,7 +3831,7 @@ function buildTeamToggleUI() {
   const _visibleRace   = _activeRaceIds ? _raceData.filter(ag => _activeRaceIds.has(ag.agent_id)) : _raceData;
   grid.innerHTML = [..._visibleRace].sort((a,b) => a.name.localeCompare(b.name)).map(ag => `
     <div class="team-assign-row">
-      <span class="team-assign-name">${ag.name}</span>
+      <span class="team-assign-name">${escHtml(ag.name)}</span>
       <div class="team-toggle">
         <button class="team-btn team-btn-sales${ag.team==='sales'?' active':''}"
           onclick="setAgentTeam('${ag.agent_id}','sales',this)">Sales</button>
@@ -5419,9 +5419,9 @@ async function loadAdminPanel() {
 function renderAdminTable(rows) {
   document.getElementById('admin-body').innerHTML = rows.map(r => `
     <tr data-uid="${r.user_id}">
-      <td>${r.email}</td>
-      <td>${r.company_name||'—'}</td>
-      <td>${r.contact_name||'—'}</td>
+      <td>${escHtml(r.email||'')}</td>
+      <td>${r.company_name?escHtml(r.company_name):'—'}</td>
+      <td>${r.contact_name?escHtml(r.contact_name):'—'}</td>
       <td><select class="admin-select" onchange="adminSave('${r.user_id}','plan',this.value)">
         ${['basic','pro','premium'].map(p =>
           `<option value="${p}"${p===(r.plan||'basic')?' selected':''}>${p} — $${PLAN_PRICES[p]||'?'}</option>`).join('')}

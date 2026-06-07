@@ -177,6 +177,12 @@ export default async function handler(req, res) {
 
   // ── GET: list manual/checklist entries ────────────────────────────────────
   if (req.method === 'GET') {
+    // A non-captain/CO member with no linked roster agent must NOT receive the
+    // whole company's sales log — return nothing rather than an unscoped query.
+    if (ctx.isMember && !ctx.isCapOrCO && !ctx.memberAgentId) {
+      return res.status(200).json({ entries: [] });
+    }
+
     const { month, year, includeUnissued, includeHidden } = req.query;
 
     const now      = new Date();
@@ -186,8 +192,17 @@ export default async function handler(req, res) {
     let fromDate = allYear ? `${selYear}-01-01` : `${selYear}-${String(selMonth).padStart(2,'0')}-01`;
     const lastDay  = allYear ? 31 : new Date(selYear, selMonth, 0).getDate();
     let toDate   = allYear ? `${selYear}-12-31` : `${selYear}-${String(selMonth).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
-    if (req.query.fromDate) fromDate = req.query.fromDate;
-    if (req.query.toDate)   toDate   = req.query.toDate;
+    // Validate client-supplied date overrides (these feed a PostgREST .or() filter
+    // string, so reject anything that isn't a strict YYYY-MM-DD to prevent filter injection).
+    const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+    if (req.query.fromDate) {
+      if (!ISO_DATE.test(req.query.fromDate)) return res.status(400).json({ error: 'Invalid fromDate' });
+      fromDate = req.query.fromDate;
+    }
+    if (req.query.toDate) {
+      if (!ISO_DATE.test(req.query.toDate)) return res.status(400).json({ error: 'Invalid toDate' });
+      toDate = req.query.toDate;
+    }
 
     const COLS = 'hash, agent_id, product, subcategory, sale_date, issued_date, written_premium, issued_premium, source, customer_name, lead_source, period, auto_issued, split_sale, split_ratio, teammate, checklist_id, hidden, location, is_cancelled, chargeback_date';
 

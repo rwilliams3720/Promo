@@ -65,16 +65,43 @@ export default async function handler(req, res) {
     const parsedCount = Math.max(1, parseInt(count) || 1);
 
     if (action === 'activate') {
+      // SECURITY: never trust the client to self-activate or set the seat count.
+      // Verify a real, paid subscription exists for the member-analysis price and
+      // derive the seat count from the subscription quantity itself.
+      if (!acct.stripe_customer_id) {
+        return res.status(402).json({ error: 'No payment on file' });
+      }
+      let verifiedQty = 0;
+      try {
+        for (const status of ['active', 'trialing', 'past_due']) {
+          const { data: subs } = await stripe.subscriptions.list({
+            customer: acct.stripe_customer_id, status, limit: 10,
+          });
+          for (const sub of (subs || [])) {
+            const item = sub.items?.data?.find(i => i.price?.id === priceId);
+            if (item) verifiedQty = Math.max(verifiedQty, item.quantity || 1);
+          }
+        }
+      } catch (err) {
+        console.error('Stripe member analysis verify error:', err.message);
+        return res.status(500).json({ error: 'Could not verify subscription' });
+      }
+      if (verifiedQty < 1) {
+        return res.status(402).json({ error: 'No active member-analysis subscription found' });
+      }
       await supabase.from('accounts').update({
-        has_member_analysis:  true,
-        member_analysis_count: parsedCount,
+        has_member_analysis:   true,
+        member_analysis_count: verifiedQty,
       }).eq('user_id', user.id);
-      return res.status(200).json({ ok: true });
+      return res.status(200).json({ ok: true, count: verifiedQty });
     }
 
     if (action === 'update') {
       if (!acct.has_member_analysis) return res.status(400).json({ error: 'Add-on not active' });
 
+      // Only persist the new count after Stripe confirms the quantity change on a
+      // real subscription item — never write an unverified count to the DB.
+      let applied = false;
       if (acct.stripe_customer_id) {
         try {
           for (const status of ['active', 'past_due', 'trialing']) {
@@ -85,6 +112,7 @@ export default async function handler(req, res) {
               const item = sub.items?.data?.find(i => i.price?.id === priceId);
               if (item) {
                 await stripe.subscriptionItems.update(item.id, { quantity: parsedCount });
+                applied = true;
               }
             }
           }
@@ -93,6 +121,7 @@ export default async function handler(req, res) {
           return res.status(500).json({ error: err.message });
         }
       }
+      if (!applied) return res.status(402).json({ error: 'No active subscription to update' });
 
       await supabase.from('accounts').update({
         member_analysis_count: parsedCount,

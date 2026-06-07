@@ -11,6 +11,11 @@ const ADMIN_EMAIL   = 'russelsaiassistant@gmail.com';
 const FROM_EMAIL    = 'Boat Race <reports@the-boat-race.com>';
 const PLAN_LABELS   = { basic: 'Basic ($25)', pro: 'Pro ($35)', premium: 'Premium ($50)' };
 
+// Escape untrusted signup fields before interpolating into the notification email HTML
+const esc = (s) => String(s ?? '')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -43,13 +48,13 @@ export default async function handler(req, res) {
       <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;">
         <h2 style="margin:0 0 16px;font-size:20px;">New Account Registered</h2>
         <table style="width:100%;border-collapse:collapse;font-size:14px;">
-          <tr><td style="padding:6px 0;color:#666;width:140px;">Company</td><td style="padding:6px 0;font-weight:600;">${company_name || '—'}</td></tr>
-          <tr><td style="padding:6px 0;color:#666;">Contact</td><td style="padding:6px 0;">${contact_name || '—'}</td></tr>
-          <tr><td style="padding:6px 0;color:#666;">Email</td><td style="padding:6px 0;">${email}</td></tr>
-          <tr><td style="padding:6px 0;color:#666;">Phone</td><td style="padding:6px 0;">${phone || '—'}</td></tr>
-          <tr><td style="padding:6px 0;color:#666;">Plan</td><td style="padding:6px 0;">${PLAN_LABELS[plan] || plan || 'Basic'}</td></tr>
-          <tr><td style="padding:6px 0;color:#666;">Agents</td><td style="padding:6px 0;">${agent_count || 1}</td></tr>
-          <tr><td style="padding:6px 0;color:#666;">Referral</td><td style="padding:6px 0;">${referral_source || '—'}</td></tr>
+          <tr><td style="padding:6px 0;color:#666;width:140px;">Company</td><td style="padding:6px 0;font-weight:600;">${company_name ? esc(company_name) : '—'}</td></tr>
+          <tr><td style="padding:6px 0;color:#666;">Contact</td><td style="padding:6px 0;">${contact_name ? esc(contact_name) : '—'}</td></tr>
+          <tr><td style="padding:6px 0;color:#666;">Email</td><td style="padding:6px 0;">${esc(email)}</td></tr>
+          <tr><td style="padding:6px 0;color:#666;">Phone</td><td style="padding:6px 0;">${phone ? esc(phone) : '—'}</td></tr>
+          <tr><td style="padding:6px 0;color:#666;">Plan</td><td style="padding:6px 0;">${esc(PLAN_LABELS[plan] || plan || 'Basic')}</td></tr>
+          <tr><td style="padding:6px 0;color:#666;">Agents</td><td style="padding:6px 0;">${esc(agent_count || 1)}</td></tr>
+          <tr><td style="padding:6px 0;color:#666;">Referral</td><td style="padding:6px 0;">${referral_source ? esc(referral_source) : '—'}</td></tr>
           <tr><td style="padding:6px 0;color:#666;">Signed up</td><td style="padding:6px 0;">${new Date().toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'})}</td></tr>
         </table>
       </div>
