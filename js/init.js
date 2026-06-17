@@ -568,7 +568,7 @@ function showPerfSubTab(name, btn) {
       return;
     }
     if (name === 'saleslog')  loadChecklistSubmissions();
-    if (name === 'salesperf') { initSalesPerf(); loadBasicSalesBreakdown('sales-overview-bottom').catch(() => {}); }
+    if (name === 'salesperf') { initSalesPerf().then(() => loadBasicSalesBreakdown('sales-overview-bottom').catch(() => {})); }
     return;
   }
 
