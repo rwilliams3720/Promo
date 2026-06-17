@@ -938,7 +938,8 @@ async function loadBasicSalesBreakdown(targetId) {
     return ay !== by ? ay - by : am - bm;
   }).slice(-12); // last 12 archived months
 
-  // Current period from race_data — label with the race month, not today's calendar month
+  // Current period — prefer _spEntries (same source as SP charts) so numbers match.
+  // Fall back to race_data for upload-only accounts that have no _spEntries.
   const ABBR12 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   let curKey;
   if (_raceCurrentMonth) {
@@ -951,8 +952,15 @@ async function loadBasicSalesBreakdown(targetId) {
   }
   const curTotals = {};
   for (const c of cats) curTotals[c.key] = 0;
-  for (const ag of (_raceData || [])) {
-    for (const c of cats) curTotals[c.key] += (ag[c.key] || 0);
+  const useSPEntries = Array.isArray(_spEntries) && _spEntries.length > 0;
+  if (useSPEntries) {
+    for (const e of _spEntries) {
+      if (e.product && curTotals[e.product] !== undefined) curTotals[e.product]++;
+    }
+  } else {
+    for (const ag of (_raceData || [])) {
+      for (const c of cats) curTotals[c.key] += (ag[c.key] || 0);
+    }
   }
   const hasCurData = cats.some(c => curTotals[c.key] > 0);
 
@@ -987,15 +995,33 @@ async function loadBasicSalesBreakdown(targetId) {
   // Per-agent breakdown for current period
   let agentSection = '';
   if (hasCurData) {
-    const agentsSorted = (_raceData || [])
-      .map(ag => {
-        const products = {};
-        let total = 0;
-        for (const c of cats) { products[c.key] = ag[c.key] || 0; total += products[c.key]; }
-        return { name: ag.name || ag.agent_id, total, products };
-      })
-      .filter(ag => ag.total > 0)
-      .sort((a, b) => b.total - a.total);
+    let agentsSorted;
+    if (useSPEntries) {
+      const agMap = {};
+      for (const e of _spEntries) {
+        if (!e.agent_id || !e.product || curTotals[e.product] === undefined) continue;
+        if (!agMap[e.agent_id]) {
+          const n = _agentRoster.find(a => a.agent_id === e.agent_id)?.name || e.agent_id;
+          agMap[e.agent_id] = { name: n, total: 0, products: {} };
+          for (const c of cats) agMap[e.agent_id].products[c.key] = 0;
+        }
+        if (agMap[e.agent_id].products[e.product] !== undefined) {
+          agMap[e.agent_id].products[e.product]++;
+          agMap[e.agent_id].total++;
+        }
+      }
+      agentsSorted = Object.values(agMap).filter(ag => ag.total > 0).sort((a, b) => b.total - a.total);
+    } else {
+      agentsSorted = (_raceData || [])
+        .map(ag => {
+          const products = {};
+          let total = 0;
+          for (const c of cats) { products[c.key] = ag[c.key] || 0; total += products[c.key]; }
+          return { name: ag.name || ag.agent_id, total, products };
+        })
+        .filter(ag => ag.total > 0)
+        .sort((a, b) => b.total - a.total);
+    }
 
     if (agentsSorted.length) {
       agentSection = `
