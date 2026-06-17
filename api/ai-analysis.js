@@ -16,6 +16,79 @@ function isoWeek(date) {
   return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
 }
 
+// Lightweight chart rebuild: historical_months + current month only (no Claude call).
+// Used on checkOnly=1 so the trend chart always shows up-to-date values.
+async function buildFreshChartData(supabase, dataUserId) {
+  const FULL_TO_ABBR = {
+    January:'Jan',February:'Feb',March:'Mar',April:'Apr',May:'May',June:'Jun',
+    July:'Jul',August:'Aug',September:'Sep',October:'Oct',November:'Nov',December:'Dec',
+  };
+  const monthOrder = { Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12 };
+
+  const now = new Date();
+  const curMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+    .toISOString().split('T')[0];
+
+  const [{ data: histMonths }, { data: curCalls }, { data: curSales }] = await Promise.all([
+    supabase.from('historical_months')
+      .select('month,placed,answered,talk_min,voicemail,missed,policies')
+      .eq('user_id', dataUserId),
+    supabase.from('call_log')
+      .select('disposition,talk_secs')
+      .eq('user_id', dataUserId)
+      .gte('call_dt', curMonthStart)
+      .not('disposition', 'in', '(internal,other,skip)'),
+    supabase.from('sales_log')
+      .select('product')
+      .eq('user_id', dataUserId)
+      .gte('sale_date', curMonthStart)
+      .eq('is_cancelled', false),
+  ]);
+
+  const monthly = {};
+  const archivedKeys = new Set();
+
+  for (const hm of (histMonths || [])) {
+    const parts = hm.month.split(' ');
+    const norm = (parts.length === 2 && FULL_TO_ABBR[parts[0]])
+      ? FULL_TO_ABBR[parts[0]] + ' ' + parts[1] : hm.month;
+    archivedKeys.add(norm);
+    monthly[norm] = {
+      placed: hm.placed||0, answered: hm.answered||0, talkMin: hm.talk_min||0,
+      voicemail: hm.voicemail||0, missed: hm.missed||0, policies: hm.policies||0,
+    };
+  }
+
+  const curKey = `${MONTH_ABBR[now.getUTCMonth()]} ${now.getUTCFullYear()}`;
+  if (!archivedKeys.has(curKey)) {
+    const cur = { placed:0, answered:0, talkMin:0, voicemail:0, missed:0, policies:0 };
+    for (const row of (curCalls || [])) {
+      if (row.disposition === 'placed')    { cur.placed++;   cur.talkMin += (row.talk_secs||0)/60; }
+      if (row.disposition === 'answered')  { cur.answered++; cur.talkMin += (row.talk_secs||0)/60; }
+      if (row.disposition === 'voicemail')   cur.voicemail++;
+      if (row.disposition === 'missed')      cur.missed++;
+    }
+    cur.policies = (curSales || []).length;
+    monthly[curKey] = cur;
+  }
+
+  const sorted = Object.keys(monthly).sort((a, b) => {
+    const [am, ay] = [monthOrder[a.split(' ')[0]], parseInt(a.split(' ')[1])];
+    const [bm, by] = [monthOrder[b.split(' ')[0]], parseInt(b.split(' ')[1])];
+    return ay !== by ? ay - by : am - bm;
+  });
+
+  return sorted.map(mon => ({
+    period: mon,
+    placed:    monthly[mon].placed,
+    answered:  monthly[mon].answered,
+    talkMin:   Math.round(monthly[mon].talkMin),
+    voicemail: monthly[mon].voicemail,
+    missed:    monthly[mon].missed,
+    policies:  monthly[mon].policies,
+  }));
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -62,6 +135,17 @@ export default async function handler(req, res) {
   if (!force && acct.ai_analysis_cache && acct.ai_analysis_at) {
     const age = Date.now() - new Date(acct.ai_analysis_at).getTime();
     if (age < CACHE_TTL_MS) {
+      if (checkOnly) {
+        // Rebuild chartData from fresh historical data so the chart reflects
+        // the current month's actual numbers, not the snapshot from when analysis ran.
+        const freshChart = await buildFreshChartData(supabase, dataUserId);
+        return res.status(200).json({
+          ...acct.ai_analysis_cache,
+          chartData: freshChart,
+          cached: true,
+          cachedAt: acct.ai_analysis_at,
+        });
+      }
       return res.status(200).json({ ...acct.ai_analysis_cache, cached: true, cachedAt: acct.ai_analysis_at });
     }
   }

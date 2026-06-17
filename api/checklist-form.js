@@ -325,7 +325,7 @@ export default async function handler(req, res) {
         split_sale:     s.splitSale    ?? null,
         teammate:       s.teammate     || null,
         checklist_id:   submissionId,
-        location:       location       || null,
+        location:       (location || '').trim() || null,
       }));
       const { error: salesErr } = await supabase.from('sales_log').insert(logInserts);
       if (salesErr) console.error('sales_log insert error:', salesErr);

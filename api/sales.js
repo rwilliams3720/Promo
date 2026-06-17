@@ -280,7 +280,7 @@ export default async function handler(req, res) {
       split_ratio:     splitRatio != null ? parseFloat(splitRatio) || null : null,
       teammate:        teammate       || null,
       checklist_id:    null,
-      location:        location       || null,
+      location:        (location || '').trim() || null,
       is_cancelled:    false,
       chargeback_date: null,
       sale_weight:     saleWeight != null ? parseFloat(saleWeight) : 1,
