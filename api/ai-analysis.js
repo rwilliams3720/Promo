@@ -5,8 +5,9 @@ const supabase  = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SE
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 
-const MONTH_ABBR   = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-const CACHE_TTL_MS = 5 * 24 * 60 * 60 * 1000; // 5 days
+const MONTH_ABBR     = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const CACHE_TTL_MS   = 5 * 24 * 60 * 60 * 1000; // 5 days
+const SKIP_PRODUCTS  = new Set(['other','other2','other3','other4','other5','deposit','skip']);
 
 function isoWeek(date) {
   const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
@@ -23,26 +24,62 @@ async function buildFreshChartData(supabase, dataUserId) {
     January:'Jan',February:'Feb',March:'Mar',April:'Apr',May:'May',June:'Jun',
     July:'Jul',August:'Aug',September:'Sep',October:'Oct',November:'Nov',December:'Dec',
   };
+  const ABBR_LIST = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const monthOrder = { Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12 };
+  // Use the race's current_month so charts reflect the active race period, not the calendar month.
+  // Falls back to calendar month if race_config is missing.
+  const { data: cfgRow } = await supabase
+    .from('race_config')
+    .select('value')
+    .eq('user_id', dataUserId)
+    .eq('key', 'current_month')
+    .single();
 
-  const now = new Date();
-  const curMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
-    .toISOString().split('T')[0];
+  let fromDate, toDate, curKey;
+  const cfgMonth = cfgRow?.value?.trim() || '';
+  if (cfgMonth) {
+    const parts = cfgMonth.split(' ');
+    let idx = MONTH_NAMES.indexOf(parts[0]);
+    if (idx === -1) idx = ABBR_LIST.indexOf(parts[0]);
+    const yr = parseInt(parts[1]);
+    if (idx !== -1 && !isNaN(yr)) {
+      fromDate = `${yr}-${String(idx + 1).padStart(2, '0')}-01`;
+      const nextMo = idx === 11 ? 1 : idx + 2;
+      const nextYr = idx === 11 ? yr + 1 : yr;
+      toDate   = `${nextYr}-${String(nextMo).padStart(2, '0')}-01`;
+      curKey   = `${ABBR_LIST[idx]} ${yr}`;
+    }
+  }
+  if (!fromDate) {
+    const now = new Date();
+    fromDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().split('T')[0];
+    const nextMo = now.getUTCMonth() === 11 ? 1 : now.getUTCMonth() + 2;
+    const nextYr = now.getUTCMonth() === 11 ? now.getUTCFullYear() + 1 : now.getUTCFullYear();
+    toDate   = `${nextYr}-${String(nextMo).padStart(2, '0')}-01`;
+    curKey   = `${MONTH_ABBR[now.getUTCMonth()]} ${now.getUTCFullYear()}`;
+  }
+
+  let callQuery = supabase.from('call_log')
+    .select('disposition,talk_secs')
+    .eq('user_id', dataUserId)
+    .gte('call_dt', fromDate)
+    .lt('call_dt', toDate)
+    .not('disposition', 'in', '(internal,other,skip)');
+
+  let salesQuery = supabase.from('sales_log')
+    .select('product')
+    .eq('user_id', dataUserId)
+    .gte('sale_date', fromDate)
+    .lt('sale_date', toDate)
+    .eq('is_cancelled', false);
 
   const [{ data: histMonths }, { data: curCalls }, { data: curSales }] = await Promise.all([
     supabase.from('historical_months')
       .select('month,placed,answered,talk_min,voicemail,missed,policies')
       .eq('user_id', dataUserId),
-    supabase.from('call_log')
-      .select('disposition,talk_secs')
-      .eq('user_id', dataUserId)
-      .gte('call_dt', curMonthStart)
-      .not('disposition', 'in', '(internal,other,skip)'),
-    supabase.from('sales_log')
-      .select('product')
-      .eq('user_id', dataUserId)
-      .gte('sale_date', curMonthStart)
-      .eq('is_cancelled', false),
+    callQuery,
+    salesQuery,
   ]);
 
   const monthly = {};
@@ -59,7 +96,6 @@ async function buildFreshChartData(supabase, dataUserId) {
     };
   }
 
-  const curKey = `${MONTH_ABBR[now.getUTCMonth()]} ${now.getUTCFullYear()}`;
   if (!archivedKeys.has(curKey)) {
     const cur = { placed:0, answered:0, talkMin:0, voicemail:0, missed:0, policies:0 };
     for (const row of (curCalls || [])) {
@@ -68,7 +104,7 @@ async function buildFreshChartData(supabase, dataUserId) {
       if (row.disposition === 'voicemail')   cur.voicemail++;
       if (row.disposition === 'missed')      cur.missed++;
     }
-    cur.policies = (curSales || []).length;
+    cur.policies = (curSales || []).filter(r => !SKIP_PRODUCTS.has(r.product)).length;
     monthly[curKey] = cur;
   }
 
@@ -276,6 +312,7 @@ export default async function handler(req, res) {
       if (!agents[row.agent_id]) agents[row.agent_id] = { placed:0, answered:0, talkMin:0, policies:0, chargebacks:0 };
       if (!agents[row.agent_id].chargebacks) agents[row.agent_id].chargebacks = 0;
       if (row.is_cancelled) { agents[row.agent_id].chargebacks++; continue; }
+      if (SKIP_PRODUCTS.has(row.product)) continue;
       agents[row.agent_id].policies++;
       r90pol.pol++;
       const dtStr = String(row.sale_date).includes('T') ? String(row.sale_date).split('T')[0] : String(row.sale_date);
