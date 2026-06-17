@@ -282,9 +282,17 @@ function renderRace(data) {
 // ── Sales tile (race tab bottom-right) ───────────────────────────────────────
 async function loadSalesTileData() {
   if ((!_hasSalesAddon && !_isAdmin) || !_dataUserId) return;
-  const now = new Date();
-  const m   = now.getMonth() + 1;
-  const y   = now.getFullYear();
+  // Use the race month so tile numbers match the rest of the race tab
+  let m, y;
+  if (_raceCurrentMonth) {
+    const MONTH_NAMES = ['January','February','March','April','May','June','July',
+                         'August','September','October','November','December'];
+    const parts = _raceCurrentMonth.trim().split(' ');
+    const idx   = MONTH_NAMES.indexOf(parts[0]);
+    const yr    = parseInt(parts[1]);
+    if (idx !== -1 && !isNaN(yr)) { m = idx + 1; y = yr; }
+  }
+  if (!m) { const now = new Date(); m = now.getMonth() + 1; y = now.getFullYear(); }
   try {
     const r = await fetch(`/api/sales?month=${m}&year=${y}`, { headers: authHeaders() });
     if (r.ok) {
@@ -329,9 +337,11 @@ function renderSalesTile() {
 
   const agentMap = {};
 
-  if (locationActive) {
-    // Location drill-down: aggregate manual/checklist entries for the selected location
-    const entries = _salesTileEntries.filter(e => e.location === _salesTileLocation && !e.is_cancelled);
+  if (useSalesLog && _salesTileEntries.length > 0) {
+    // Use sales_log for both location-specific and All Locations views so counts are consistent
+    const entries = locationActive
+      ? _salesTileEntries.filter(e => (e.location || '').trim() === _salesTileLocation && !e.is_cancelled)
+      : _salesTileEntries.filter(e => !e.is_cancelled);
     for (const e of entries) {
       if (!e.agent_id || SKIP.has(e.product)) continue;
       if (!agentMap[e.agent_id]) {
@@ -350,7 +360,7 @@ function renderSalesTile() {
       else { const ros = _agentRoster.find(r => r.agent_id === id); if (ros) ag.name = ros.name; }
     }
   } else {
-    // Default: read product totals from race_data — includes all sources (upload, manual, checklist)
+    // Fallback: read product totals from race_data (upload-only accounts with no sales_log entries)
     for (const ag of (_raceData || [])) {
       if (!ag.agent_id) continue;
       const products = {};
