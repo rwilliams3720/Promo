@@ -172,12 +172,31 @@ export default async function handler(req, res) {
     const age = Date.now() - new Date(acct.ai_analysis_at).getTime();
     if (age < CACHE_TTL_MS) {
       if (checkOnly) {
-        // Rebuild chartData from fresh historical data so the chart reflects
-        // the current month's actual numbers, not the snapshot from when analysis ran.
+        // Rebuild current-month data fresh so charts always reflect live numbers.
+        // Then merge into the cached chart rather than replacing it wholesale —
+        // the full analysis may have months from call_log that aren't yet in
+        // historical_months, and we don't want to lose them on every tab switch.
         const freshChart = await buildFreshChartData(supabase, dataUserId);
+        const cachedChart = [...(acct.ai_analysis_cache?.chartData || [])];
+        const freshMap = new Map(freshChart.map(d => [d.period, d]));
+
+        // Replace cached entries covered by freshChart; keep the rest unchanged.
+        const merged = cachedChart.map(d => freshMap.get(d.period) || d);
+        // Append any periods in freshChart not yet in the cached chart.
+        for (const fd of freshChart) {
+          if (!cachedChart.find(d => d.period === fd.period)) merged.push(fd);
+        }
+        // Sort chronologically oldest → newest.
+        const mo = { Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12 };
+        merged.sort((a, b) => {
+          const [am,ay] = [mo[a.period?.split(' ')[0]], parseInt(a.period?.split(' ')[1])];
+          const [bm,by] = [mo[b.period?.split(' ')[0]], parseInt(b.period?.split(' ')[1])];
+          return ay !== by ? ay - by : am - bm;
+        });
+
         return res.status(200).json({
           ...acct.ai_analysis_cache,
-          chartData: freshChart,
+          chartData: merged.length ? merged : freshChart,
           cached: true,
           cachedAt: acct.ai_analysis_at,
         });
