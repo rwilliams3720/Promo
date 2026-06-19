@@ -96,7 +96,9 @@ async function buildFreshChartData(supabase, dataUserId) {
     };
   }
 
-  if (!archivedKeys.has(curKey)) {
+  // Always use live data for the current race month — never let a stale historical_months
+  // entry block it, even if that entry has zeros from a past partial archive run.
+  {
     const cur = { placed:0, answered:0, talkMin:0, voicemail:0, missed:0, policies:0 };
     for (const row of (curCalls || [])) {
       if (row.disposition === 'placed')    { cur.placed++;   cur.talkMin += (row.talk_secs||0)/60; }
@@ -105,7 +107,7 @@ async function buildFreshChartData(supabase, dataUserId) {
       if (row.disposition === 'missed')      cur.missed++;
     }
     cur.policies = (curSales || []).filter(r => !SKIP_PRODUCTS.has(r.product)).length;
-    monthly[curKey] = cur;
+    monthly[curKey] = cur; // override any stale historical_months entry
   }
 
   const sorted = Object.keys(monthly).sort((a, b) => {
@@ -230,7 +232,7 @@ export default async function handler(req, res) {
       from += PAGE;
     }
 
-    const [{ data: sales }, { data: raceRows }, { data: histMonths }, { data: histWins }] = await Promise.all([
+    const [{ data: sales }, { data: raceRows }, { data: histMonths }, { data: histWins }, { data: raceCfgRow }] = await Promise.all([
       supabase.from('sales_log')
         .select('agent_id,product,sale_date,is_cancelled')
         .eq('user_id', dataUserId)
@@ -244,7 +246,31 @@ export default async function handler(req, res) {
       supabase.from('historical_wins')
         .select('month,agent_id,name,team,placed,answered,talk_min,wl,ul,term,health,auto,fire,missed,voicemail,rank')
         .eq('user_id', dataUserId),
+      supabase.from('race_config')
+        .select('value')
+        .eq('user_id', dataUserId)
+        .eq('key', 'current_month')
+        .single(),
     ]);
+
+    // Determine the current race month key (abbreviated, e.g. "Jun 2026") so we
+    // can always use live call_log data for it — even if historical_months has a
+    // stale or zero entry from a prior partial archive.
+    const _FULL_TO_ABBR_FA = {
+      January:'Jan',February:'Feb',March:'Mar',April:'Apr',May:'May',June:'Jun',
+      July:'Jul',August:'Aug',September:'Sep',October:'Oct',November:'Nov',December:'Dec',
+    };
+    const _ABBR_LIST_FA = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const _MONTH_NAMES_FA = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    let liveRaceMonthKey = null;
+    const _cfgVal = (raceCfgRow?.value || '').trim();
+    if (_cfgVal) {
+      const _p = _cfgVal.split(' ');
+      let _idx = _MONTH_NAMES_FA.indexOf(_p[0]);
+      if (_idx === -1) _idx = _ABBR_LIST_FA.indexOf(_p[0]);
+      const _yr = parseInt(_p[1]);
+      if (_idx !== -1 && !isNaN(_yr)) liveRaceMonthKey = `${_ABBR_LIST_FA[_idx]} ${_yr}`;
+    }
     const agentMeta = {};
     for (const r of (raceRows || [])) agentMeta[r.agent_id] = { name: r.name, team: r.team };
     // Fill in names for archived agents no longer in race_data
@@ -267,12 +293,15 @@ export default async function handler(req, res) {
       July:'Jul',August:'Aug',September:'Sep',October:'Oct',November:'Nov',December:'Dec',
     };
 
-    // Seed from archived historical_months — complete months, never overwritten by call_log
+    // Seed from archived historical_months — complete months, never overwritten by call_log.
+    // Exception: the current race month is always rebuilt from live call_log even if a
+    // stale/zero entry exists in historical_months (e.g. from a past partial archive run).
     for (const hm of (histMonths || [])) {
       const rawParts = hm.month.split(' ');
       const normMonth = (rawParts.length === 2 && FULL_TO_ABBR[rawParts[0]])
         ? FULL_TO_ABBR[rawParts[0]] + ' ' + rawParts[1]
         : hm.month;
+      if (liveRaceMonthKey && normMonth === liveRaceMonthKey) continue; // always use live data for current race month
       archivedMonthKeys.add(normMonth);
       monthly[normMonth] = {
         placed:   hm.placed   || 0,
