@@ -164,7 +164,7 @@ All data tables have a `user_id uuid` column (FK → auth.users) and RLS policy 
 | `race_data` | Live race totals per agent per user | `(user_id, agent_id)` |
 | `call_log` | Every classified call | `(user_id, hash)` |
 | `sales_log` | Every classified sale (upload, manual, checklist) | `(user_id, hash)` |
-| `historical_wins` | Archived end-of-month per-agent results | `(user_id, month, agent_id)` |
+| `historical_wins` | Archived end-of-month per-agent results | no unique constraint — use delete+insert, never upsert |
 | `historical_months` | Archived end-of-month team-level aggregates for trend charts | `(user_id, month)` |
 | `race_config` | Key-value store — `current_month`, `last_upload_at` | `(user_id, key)` |
 | `commission_bank` | Commission deferral ledger — one row per agent per month | `(user_id, agent_id, month)` |
@@ -185,8 +185,10 @@ All data tables have a `user_id uuid` column (FK → auth.users) and RLS policy 
 Added by `directive2-migration.sql`:
 `checklist_token (uuid unique), has_sales_addon (boolean default false), sales_entry_mode (text default 'upload'), checklist_email_config (jsonb)`
 
-Added by `lead-sources-migration.sql`:
+Added by `lead-sources-migration.sql` (also in `setup.sql` as `ALTER TABLE accounts ADD COLUMN IF NOT EXISTS lead_sources jsonb`):
 `lead_sources (jsonb)` — array of lead source label strings; editable in Account → Sales → Products. **Never include `lead_sources` in the critical accounts SELECT** (the one that checks auth/plan). Fetch it separately after auth succeeds with a standalone `.select('lead_sources')` query so a missing column doesn't break agents/locations/checklist.
+
+`PATCH /api/checklist-config` with `{ leadSources }` now returns HTTP 500 with the Supabase error message on save failure (previously returned `{ ok: true }` silently).
 
 Added for commissions/self-reporting:
 `has_commissions_addon (boolean default false)`, `self_report_config (jsonb default '{}')` — see Self-Reporting section.
@@ -197,13 +199,21 @@ Added by `credits-migration.sql`:
 
 Added by `member-analysis-migration.sql`:
 `has_member_analysis (boolean default false)`, `member_analysis_count (smallint default 0)`, `member_analysis_agents (jsonb default '[]')`, `member_analysis_agents_set_at (timestamptz)`, `member_analysis_cache (jsonb)`, `member_analysis_at (timestamptz)`, `member_hours_data (jsonb)`.
-**`member_analysis_agents_set_at` is required** — the PATCH in `api/member-analysis.js` always saves both `member_analysis_agents` and `member_analysis_agents_set_at` in a single UPDATE. If this column is missing the entire update fails silently, so agent selection never persists.
+**`member_analysis_agents_set_at` is required** — the PATCH in `api/member-analysis.js` saves both `member_analysis_agents` and `member_analysis_agents_set_at` on a full save. If this column is missing the entire update fails silently, so agent selection never persists.
+
+**Agent selection lock rules** (`api/member-analysis.js`):
+- Full save (any existing agent removed or replaced): saves `member_analysis_agents_set_at = now`, starts 30-day lock. Returns `{ ok: true, lockedUntil }`.
+- Additive save (seats available + no existing agent removed): saves `member_analysis_agents` only, lock clock unchanged. Returns `{ ok: true }` (no `lockedUntil`).
+- `removeInactiveOnly: true`: saves `member_analysis_agents` only, no lock clock update, works for all users including admin. Validated server-side to block additions.
+- Frontend: `saveMemberAnalysisAgents` only sets `_memberAnalysisAgentsSetAt = new Date()` when `d.lockedUntil` is present in response.
 
 Added by `commission-bank-migration.sql`:
 `commission_bank_config (jsonb default '{}')` — shape: `{ enabled, cap_per_period, interest_rate, interest_period }`. Managed in Account → Sales → Commissions sub-tab.
 
 ### account_members columns
-`id (uuid PK), owner_user_id, member_user_id (nullable until accepted), email, role ('captain'|'chief_officer'|'bosun'|'custom'), custom_tabs (jsonb), status ('invited'|'active'|'removed'), invite_token (unique, nullable after accept), invite_expires_at, created_at, managed_by (uuid FK → account_members.id ON DELETE SET NULL)`
+`id (uuid PK), owner_user_id, member_user_id (nullable until accepted), email, role ('captain'|'chief_officer'|'bosun'|'custom'), custom_tabs (jsonb), status ('invited'|'active'|'removed'), invite_token (unique, nullable after accept), invite_expires_at, created_at, managed_by (uuid FK → account_members.id ON DELETE SET NULL), roster_agent_id (text nullable — links member to their agent_roster row)`
+
+`roster_agent_id` is fetched at member login and stored in `_memberAgentId`. Used to auto-scope the Chargeback Report for bosun/custom members (chargeback filter locked to their own agent).
 UNIQUE(owner_user_id, email)
 
 `managed_by` — links a member to their direct manager (captain or CO). Used to build the org chart tree in `loadMemberOrgTree()`. Added by:
@@ -229,8 +239,15 @@ Added by `split-sale-migration.sql`: `sale_weight (numeric NOT NULL DEFAULT 1)` 
 `other` and `deposit` products do NOT increment policy counts in race_data (excluded in `rebuildRaceData`).
 
 ### agent_roster columns
-`id (uuid PK), user_id, agent_id (text, slugified name), name (text), active (boolean default true), commission_structure_id (uuid nullable — legacy single-structure), commission_all_must_qualify (boolean default false), roster_agent_id (text nullable — links a member user to this agent for self-reporting)`
+`id (uuid PK), user_id, agent_id (text, slugified name), name (text), active (boolean default true), commission_structure_id (uuid nullable — legacy single-structure), commission_all_must_qualify (boolean default false), roster_agent_id (text nullable — links a member user to this agent for self-reporting), team (text default 'sales')`
 UNIQUE(user_id, agent_id).
+
+`team`: `'sales'` or `'service'`. **Persistent team assignment** — this is the source of truth for team, not `race_data.team`. `setAgentTeam()` writes to both `race_data` and `agent_roster` (via `PATCH /api/agent-roster` `set_team` action) so assignments survive month-end archive. `ensureRaceDataRows()` (upload.js) and `setRaceMonth()` seed `race_data.team` from this column instead of defaulting to `'sales'`. Migration SQL:
+```sql
+ALTER TABLE agent_roster ADD COLUMN IF NOT EXISTS team text NOT NULL DEFAULT 'sales';
+UPDATE agent_roster ar SET team = rd.team FROM race_data rd
+WHERE ar.user_id = rd.user_id AND ar.agent_id = rd.agent_id AND rd.team IS NOT NULL;
+```
 
 `commission_all_must_qualify`: when true and the agent has multiple structures, if any structure fails its threshold the entire payout is blocked. When false, each structure pays or doesn't independently.
 
@@ -271,6 +288,8 @@ ALTER TABLE sales_locations ADD COLUMN IF NOT EXISTS product_goals_annual  jsonb
 
 ### call_log columns
 `user_id, hash, agent_id, disposition, talk_secs, call_dt (DATE), call_slot (SMALLINT 0–47)`
+
+**`agent_id` is AES-256-GCM encrypted** with a random IV — the same value produces a different ciphertext on every write. Always use `decryptField(r.agent_id)` when reading agent_id back from call_log (implemented in both `upload.js` and `sales.js`). Never compare raw ciphertext to plain agent IDs.
 
 ### scoring_config columns
 `user_id, config_key, config_value`
@@ -317,7 +336,7 @@ Shown when `_salesEntryMode === 'manual'` (or `_isAdmin`). Entry row fields:
 
 **Auto Issued**: when checked, Issued Date auto-fills from Sale Date and is disabled. `msrSaleDateChanged` keeps them in sync if date changes while checked.
 
-Submitted via `POST /api/sales`. On success: row removed, `loadRaceData()` refreshed.
+Submitted via `POST /api/sales`. On success: row removed, `loadRaceData()` refreshed, and `manualAddRow()` is called automatically to seed a fresh blank row for sequential entry.
 
 ### Sales Log (Performance tab → Sales Log sub-tab)
 Shows last 200 manual + checklist entries. Gated by `_hasSalesAddon || _isAdmin`.
@@ -422,6 +441,8 @@ Appends an "Unassigned" group for any active roster agents not assigned under an
 
 **Name resolution on race tab**: `renderRace` resolves display names from `_agentRoster.find(a => a.agent_id === ag.agent_id)?.name` — not from `race_data.name`. This ensures renames show immediately without requiring a new data upload. `api/agent-roster.js` PATCH also syncs `race_data.name` on rename for consistency.
 
+**Team assignment persistence**: `setAgentTeam()` writes to both `race_data.team` (live race) and `agent_roster.team` (permanent) in parallel. `race_data` rows are deleted on archive; `agent_roster.team` persists across months so captains never need to re-assign teams. `_agentRoster` cache is updated in-place immediately after save.
+
 Debug query:
 ```sql
 SELECT agent_id, name, active FROM agent_roster
@@ -441,6 +462,10 @@ Multiple structures can be assigned to a single agent via the `agent_commission_
 ### api/commissions.js — Key Patterns
 
 **`calcStructurePayout(agentId, struct, sales, roster, isFinancialService, actCounts, fromDate, toDate)`** — standalone helper called once per structure per agent. Returns `{ earned, breakdown, threshold_note, group_details, ungrouped_earned }`.
+
+**Ungrouped commissions blocking rule**: products with rates in a structure but NOT assigned to any threshold group go to `ungrouped` and normally always pay. Exception: if any threshold group has activity (counts > 0 or earned > 0) and fails its floor, AND no group with activity passes, `effectiveUngrouped = 0` — the entire structure earns $0. This prevents ungrouped products from double-counting when the same products are also rated in a second passing structure. Multi-group case: if at least one group with activity passes, ungrouped still pays.
+
+**`SKIP_PRODUCTS`** (`new Set(['other','other2','other3','other4','other5','deposit','skip'])`) — module-level constant in `api/ai-analysis.js`. Excluded from policy counts in both `buildFreshChartData` and the full analysis sales loop.
 
 **`getStructureList(agentId)`** — checks `agent_commission_structures` junction table first, falls back to legacy `commission_structure_id` field on `agent_roster`. Backward compatible.
 
@@ -468,7 +493,8 @@ Gated by `_hasCommissionsAddon || _isAdmin`. Teaser shows $25/mo price and "Add 
 Commissions table columns: Agent | Structures | Earned | Bonus | Chargebacks | Net | Status (Paid/Unpaid).
 Expanding a row shows per-structure breakdown when multiple structures assigned.
 
-### api/agent-roster.js — Multi-Structure PATCH Actions
+### api/agent-roster.js — PATCH Actions
+- `set_team`: updates `agent_roster.team` for an agent — accessible to both **owners and captain members** (all other actions are owner-only)
 - `add_commission_structure`: upserts into `agent_commission_structures` with auto sort_order
 - `remove_commission_structure`: deletes from junction table
 - `update_qualifier`: sets `commission_all_must_qualify` on the agent_roster row
@@ -482,6 +508,8 @@ Defers a configurable portion of earned commissions across periods (e.g., hold-b
 { "enabled": true, "cap_per_period": 500, "interest_rate": 0.05, "interest_period": "monthly" }
 ```
 Managed in Account → Sales → Commissions sub-tab.
+
+**Bank toggle behavior**: the "Enable Commission Bank" checkbox (`#bank-enabled`) uses `onchange="this.checked ? toggleBankFields(true) : (toggleBankFields(false), saveBankConfig(this))"`. Unchecking auto-saves `enabled: false` immediately — the Save button lives inside `#bank-config-fields` which is hidden when unchecked, so auto-save is the only way to persist the disabled state. Do not revert to `onchange="toggleBankFields(this.checked)"` — that makes it impossible to save when turning off.
 
 **`commission_bank` table** — ledger of deferred/banked amounts per agent per month:
 PK `(user_id, agent_id, month)`. Each row records how much was deferred that period and whether it has been released.
@@ -571,9 +599,9 @@ The Performance tab has 5 sub-tabs controlled by `showPerfSubTab(name, btn)`:
 
 `showTab('perf')` calls `_applyPerfMemberGating()` then:
 - Captain/CO members → defaults to `callperf`
-- Bosun/custom members → defaults to `chargebacks` (callperf, saleslog, salesperf, commissions tabs are hidden via `_applyPerfMemberGating()`)
+- Bosun/custom members → defaults to `chargebacks`
 
-**`_applyPerfMemberGating()`** — hides callperf/saleslog/salesperf/commissions sub-tab buttons for members who are not captain or chief_officer. Bosun members only see the Chargebacks sub-tab, auto-filtered to their own agent (agent dropdown locked, disabled).
+**`_applyPerfMemberGating()`** — hides callperf/saleslog sub-tab buttons for members who are not captain or chief_officer. Bosun/custom members see salesperf (scoped to own agent), commissions (own row + What-If Calculator, scoped to own agent via `memberAgentId`), and chargebacks (auto-filtered to own agent, dropdown locked). Chargebacks is the default pane when bosun lands on the Perf tab.
 
 ### Chargeback Report
 
@@ -607,6 +635,16 @@ let _perfSortDir = 1;     // 1=asc, -1=desc
       : PERF_COL_LABELS[col];
   });
   ```
+
+### Race Controls
+Race Controls panel (Race tab, captain/owner only) contains:
+- **Refresh Data** — calls `loadRaceData()`
+- **Archive Month & Reset** — calls `confirmArchive()`
+- **Set Month** — `setRaceMonth()`: sets `race_config.current_month` and rebuilds `race_data` sales from `sales_log` for that month
+- **Recalculate Sales** — `recalcSales(btn)`: rebuilds `race_data` sales totals from `sales_log` for the **current** race month without changing the month label. Use when checklist/manual sales are in the log but not reflected on the Race tab (e.g. after backfilling old submissions).
+
+### Checklist → race_data
+`POST /api/checklist-form` calls `rebuildRaceData(userId, agentIds)` after inserting `sales_log` rows, so checklist sales immediately appear on the Race tab. `agentIds` includes the salesperson and any split-sale teammates. This mirrors the existing behavior in `api/sales.js` for manual entry.
 
 ### Manage Tab
 Sub-tab nav removed. Sales Log and Sales Performance are in the Performance tab. Manage tab shows: file upload, manual entry (when enabled), activity self-report panels (when self-reporting enabled), activity log (collapsible, owners/captains).
@@ -648,7 +686,7 @@ const SP_COLORS = ['#00d4ff','#7b61ff','#00e5b4', ...]; // 14 colors, cycling
 ```
 
 ### Key Functions
-- **`initSalesPerf()`** — entry point; initializes date controls to current month, calls `spLoad()`
+- **`initSalesPerf()`** — entry point; initializes date controls to current month, calls `spLoad()`; `showPerfSubTab('salesperf')` also calls `loadBasicSalesBreakdown('sales-overview-bottom')` to always render the Sales Overview at the bottom of the pane regardless of entry mode
 - **`spLoad()`** — fetches `GET /api/sales?fromDate=&toDate=`; stores result in `_spEntries`; calls `spRender()`
 - **`spRender()`** — applies crumb filters, builds data for both charts, calls `spBuildChart()`
 - **`spBuildChart(canvasId, dim, filteredEntries, chartRef)`** — destroys prior Chart.js instance, creates new pie/doughnut
@@ -694,11 +732,12 @@ Account tab shows a "Sandbox — Reset My Data" section for `_isAdmin` accounts.
 ### confirmArchive (index.html)
 1. Reads `race_config.current_month` for the month label
 2. **Month label fallback**: if `current_month` blank → scan `call_log` dates, pick most common month → fallback to current date
-3. Scores current `race_data` using `scoring_config` → inserts/replaces `historical_wins` rows
-4. Writes team-level aggregates to `historical_months`
-5. **Deletes** `race_data` rows — next upload creates a fresh roster
-6. Clears `race_config.current_month`
-7. Deletes-before-insert on `historical_wins` to prevent PK conflicts on re-archive
+3. **Zero-score guard**: if total score across all agents = 0 AND `historical_wins` already has data for this month with score > 0, prompts confirmation before overwriting — prevents archive from blanking existing historical data
+4. Scores current `race_data` using `scoring_config` → inserts/replaces `historical_wins` rows
+5. Writes team-level aggregates to `historical_months`
+6. **Deletes** `race_data` rows — next upload creates a fresh roster
+7. Clears `race_config.current_month`
+8. Deletes-before-insert on `historical_wins` to prevent duplicate rows (no unique constraint)
 
 Month format written by `confirmArchive`: `"Apr 2026"` (abbreviated, `_ABBR[month]` array).
 
@@ -713,8 +752,12 @@ Called server-side on out-of-order upload (uploaded month < current race month).
 ## AI Analysis
 
 - **Timer**: 5-day cooldown driven by `_analysisAt` (from `accounts.ai_analysis_at`).
-- **Tab open**: `displayCachedAnalysis()`. Falls back to server fetch if localStorage empty.
+- **Tab open**: `displayCachedAnalysis()`. **Always fetches server first** (`checkOnly=1` — no Claude call). localStorage is only a fallback on 204 or network error. This ensures any browser always shows the latest analysis regardless of what's in local storage.
+- **Current race month always uses live data**: `historical_months` can contain a stale or zeroed entry for the current race month (e.g. written by an out-of-order upload). Both `buildFreshChartData` and the full analysis path fetch `race_config.current_month`, parse it to a `curKey` (e.g. `"Jun 2026"`), and always override that key with live `call_log` / `sales_log` data — never trust `historical_months` for the current race month. The full analysis path skips adding `liveRaceMonthKey` to `archivedMonthKeys` so live call rows are not skipped.
+- **`checkOnly=1` chart merge**: the checkOnly path merges fresh chart data INTO the cached chart (key-by-period) rather than replacing the whole array. Replacing caused historical months to disappear on tab switch.
 - **Archive invalidation**: `confirmArchive()` clears cache so any browser gets clean state on next login.
+- **Cross-browser**: All three display functions (`displayCachedAnalysis`, `displayCachedLeadAnalysis`, `displayCachedMemberAnalysis`) follow server-first pattern. Do **not** revert to localStorage-first — that was the root cause of stale analysis showing on second browsers.
+- **Hours on file label**: Always computed from `_memberHoursData` (loaded fresh from Supabase at login) via `updateHoursLabel(null)`. Never pass `hoursLastPeriod` from the analysis cache to `updateHoursLabel` — that value reflects when the analysis was generated, not the current uploads.
 - **Email Analysis button**: two-click confirm (6s). Calls `POST /api/ai-analysis?action=email`.
 - **max_tokens**: 1000
 
@@ -785,10 +828,12 @@ All data queries use `_dataUserId` (frontend) or `dataUserId` (API), never `_use
 ### Role access
 | Role | Tabs allowed | Write access |
 |------|-------------|--------------|
-| Bosun | Race, History | None |
-| Chief Officer | Scoring, Manage, Performance, History | None |
-| Captain | All tabs | saveScoring, setAgentTeam, confirmArchive |
-| Custom | Owner-selected | None (unless captain-level) |
+| Bosun | Race, History, (Manage if self-report enabled) | Self-report only |
+| Chief Officer | Race, Scoring, Manage, Performance, History | None |
+| Captain | All tabs | saveScoring, setAgentTeam, confirmArchive, setRaceMonth |
+| Custom | Owner-selected + History always | None (unless captain-level) |
+
+**History tab**: all member roles see it. `canManageHist` (captain or chief_officer role) controls whether the Manage button appears in historical tiles and detail view.
 
 Bosun/Custom members also get Manage tab access when `self_report_config.activities_enabled` or `sales_enabled` is true.
 
@@ -868,6 +913,8 @@ async function fetchAllPages(client, table, columns, userId) {
 ## race_data Update Behavior (upload.js)
 
 Rebuilt from ALL call_log rows on every call upload — even zero new rows — to allow forced recalculation.
+
+**`rebuildRaceData` must be scoped to the current race month.** `sales_log` is a permanent ledger (never deleted on archive), so without a date filter, all historical sales would accumulate in the live race totals. Both `api/sales.js` and `api/upload.js` read `race_config.current_month`, convert it to a `fromDate`/`toDate` range, and apply that range when querying `sales_log` inside `rebuildRaceData`.
 
 ## Talk Time Display (`fmtMins`)
 - Under 60 min → `"45.2 min"`
@@ -1151,6 +1198,25 @@ Do **not** revert to FormData — `@vercel/node` does not auto-parse multipart b
 2. Sends admin notification to `russelsaiassistant@gmail.com` via Resend
 3. `on_auth_user_created` Supabase trigger inserts the `accounts` row
 
+## Race Controls — Set Race Month (`setRaceMonth`)
+
+Found in the Race tab's Race Controls panel (captain/owner only). Allows manually setting `race_config.current_month` without running an archive + upload cycle.
+
+**Flow:**
+1. Updates `race_config` with the selected month label (e.g., "June 2026")
+2. Queries `sales_log` for that month's date range → builds per-agent sales totals
+3. **Seeds missing `race_data` rows**: upserts placeholder rows (with `ignoreDuplicates: true` so existing call stats are preserved) for any agent found in `sales_log` that doesn't have a `race_data` row — looks up `name` and `team` from `agent_roster` (team persists across archives)
+4. Updates all `race_data` rows with the computed sales totals (zeros agents with no sales for that month)
+5. Calls `loadRaceData()` to refresh the UI
+
+**Critical**: Step 3 is necessary because `confirmArchive()` deletes all `race_data` rows. Before a call upload runs, the table is empty. Without seeding, the update loop in step 4 finds no rows to iterate.
+
 ## Race Tab Voicemail/Missed Counts
 
 `loadRaceData()` queries `call_log` directly for counts (two `count: exact` queries). Results in `_raceWideMissed` and `_raceWideVm`. Do not read `race_data.race_wide_missed/voicemail` — unreliable after archive.
+
+## Hours Label Staleness (`_maLastHoursPeriod`)
+
+`updateHoursLabel()` prefers `_maLastHoursPeriod` (set by `updateHoursLabel(data.hoursLastPeriod)` when cached analysis loads) over `_memberHoursData`. If a prior analysis was loaded in the same session, `_maLastHoursPeriod` sticks and the label shows the old period even after a new upload.
+
+**Fix (in place):** `maHoursSave` and `maHoursDeletePeriod` call `updateHoursLabel(null)` (not `updateHoursLabel()`) to explicitly clear `_maLastHoursPeriod` and recompute from the freshly-returned `_memberHoursData`.
