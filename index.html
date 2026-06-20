@@ -2123,7 +2123,7 @@
             <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Smooth out large commission payouts by capping what's paid per period. Excess rolls into a bank and can be drawn down in lower-earning months. Optionally earn interest on the banked balance.</p>
             <div style="display:flex;align-items:center;gap:10px;margin-bottom:.75rem;">
               <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
-                <input type="checkbox" id="bank-enabled" onchange="toggleBankFields(this.checked)">
+                <input type="checkbox" id="bank-enabled" onchange="this.checked ? toggleBankFields(true) : (toggleBankFields(false), saveBankConfig(this))">
                 Enable Commission Bank
               </label>
             </div>

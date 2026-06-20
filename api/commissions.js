@@ -217,7 +217,18 @@ function calcStructurePayout(agentId, struct, sales, roster, isFinancialService,
   }
 
   const groupPayout = thresholds.reduce((s, grp) => s + (groupStatus[grp.id]?.payout || 0), 0);
-  const totalEarned = Math.round((ungrouped + groupPayout) * 100) / 100;
+
+  // When a group has activity and fails its floor, and no group with activity passes,
+  // block ungrouped commissions so a failing structure contributes $0 total.
+  const anyGroupActivelyFailed = thresholds.some(grp =>
+    !groupStatus[grp.id]?.passes && ((groupCounts[grp.id] || 0) > 0 || (groupEarned[grp.id] || 0) > 0)
+  );
+  const anyGroupActivelyPassed = thresholds.some(grp =>
+    groupStatus[grp.id]?.passes && ((groupCounts[grp.id] || 0) > 0 || (groupEarned[grp.id] || 0) > 0)
+  );
+  const effectiveUngrouped = (anyGroupActivelyFailed && !anyGroupActivelyPassed) ? 0 : ungrouped;
+
+  const totalEarned = Math.round((effectiveUngrouped + groupPayout) * 100) / 100;
   const cappedEarned = struct.cap_per_structure != null ? Math.min(totalEarned, struct.cap_per_structure) : totalEarned;
 
   const group_details = thresholds.map(grp => {
@@ -248,7 +259,7 @@ function calcStructurePayout(agentId, struct, sales, roster, isFinancialService,
     breakdown,
     threshold_note: anyFailed ? buildThresholdNote(thresholds, groupStatus, groupCounts, groupEarned) : null,
     group_details,
-    ungrouped_earned: Math.round(ungrouped * 100) / 100,
+    ungrouped_earned: Math.round(effectiveUngrouped * 100) / 100,
   };
 }
 
