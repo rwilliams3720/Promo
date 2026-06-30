@@ -245,7 +245,7 @@ export default async function handler(req, res) {
 
   // ── POST: create manual entry ─────────────────────────────────────────────
   if (req.method === 'POST') {
-    let { agentId, product, subcategory, saleDate, issuedDate, writtenPremium, issuedPremium, customerName,
+    let { agentId, product, subcategory, saleDate, issuedDate, writtenPremium, issuedPremium, customerName, force,
           leadSource, period, autoIssued, splitSale, splitRatio, teammate, location, saleWeight } = req.body || {};
 
     // Non-captain/CO members can only submit for themselves
@@ -259,7 +259,16 @@ export default async function handler(req, res) {
 
     const normalizedName = (customerName || '').toLowerCase().trim();
     const resolvedIssuedDate = autoIssued ? saleDate : (issuedDate || null);
-    const hash = sha256Short([agentId || '', product, subcategory || '', saleDate, writtenPremium || '', normalizedName].join('|'));
+    const baseHash = sha256Short([agentId || '', product, subcategory || '', saleDate, writtenPremium || '', normalizedName].join('|'));
+
+    // Duplicate check — if the same hash exists and caller hasn't confirmed, return 409
+    if (!force) {
+      const { data: dup } = await supabase.from('sales_log').select('hash').eq('user_id', dataUserId).eq('hash', baseHash).maybeSingle();
+      if (dup) return res.status(409).json({ duplicate: true });
+    }
+
+    // When forcing a confirmed duplicate, mint a unique hash so it inserts as a new row
+    const hash = (force && baseHash) ? sha256Short([agentId || '', product, subcategory || '', saleDate, writtenPremium || '', normalizedName, Date.now().toString()].join('|')) : baseHash;
 
     const { error } = await supabase.from('sales_log').upsert({
       user_id:         dataUserId,

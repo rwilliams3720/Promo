@@ -127,6 +127,19 @@ function msrToggleTeammate(cb, id) {
   }
 }
 
+function _msrShowDupWarning(row) {
+  if (row.querySelector('.msr-dup-warn')) return;
+  const warn = document.createElement('div');
+  warn.className = 'msr-dup-warn';
+  warn.style.cssText = 'background:rgba(255,179,0,.1);border:1px solid rgba(255,179,0,.35);border-radius:6px;padding:7px 10px;margin-top:6px;font-size:12px;color:#ffb300;display:flex;align-items:center;gap:10px;flex-wrap:wrap;';
+  warn.innerHTML = `<span style="flex:1;">&#x26A0; This sale already exists in the log.</span>
+    <button style="background:rgba(255,179,0,.2);border:1px solid rgba(255,179,0,.4);color:#ffb300;border-radius:5px;padding:3px 12px;font-size:12px;cursor:pointer;font-family:inherit;"
+      onclick="var r=this.closest('.manual-sale-row');r.dataset.dupForce='1';this.closest('.msr-dup-warn').remove();manualSubmitAll(this);">Add anyway</button>
+    <button style="background:none;border:1px solid rgba(255,255,255,.15);color:var(--muted);border-radius:5px;padding:3px 12px;font-size:12px;cursor:pointer;font-family:inherit;"
+      onclick="this.closest('.manual-sale-row').remove();">Skip</button>`;
+  row.appendChild(warn);
+}
+
 async function manualSubmitAll(btn) {
   const rows = document.querySelectorAll('#manual-sales-rows .manual-sale-row');
   if (!rows.length) return;
@@ -171,7 +184,12 @@ async function manualSubmitAll(btn) {
       teammate:       teammateId,
       saleWeight:     isSplit ? 0.5 : 1,
     };
-    const r = await fetch('/api/sales', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const force = row.dataset.dupForce === '1';
+    const r = await fetch('/api/sales', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, force }) });
+    if (r.status === 409) {
+      _msrShowDupWarning(row);
+      continue;
+    }
     if (!r.ok) { errors++; continue; }
     // Second entry for teammate when split sale
     if (isSplit && teammateId) {
@@ -183,6 +201,7 @@ async function manualSubmitAll(btn) {
         splitRatio:     1 - ratio,
         teammate:       primaryAgent,
         saleWeight:     0.5,
+        force,
       };
       await fetch('/api/sales', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body2) });
     }
