@@ -10,6 +10,12 @@ const PLAN_BY_PRICE = {
   [process.env.STRIPE_PRICE_PREMIUM]: 'premium',
 };
 
+// In Stripe API >= 2026-03-25 (dahlia), current_period_end moved to the item level.
+// Read from both places so the webhook works across API versions.
+function getPeriodEnd(sub) {
+  return sub.current_period_end ?? sub.items?.data?.[0]?.current_period_end ?? null;
+}
+
 // Returns 'plan'|'sales_addon'|'commissions_addon'|'lead_analysis_addon'|'member_analysis'|'unknown'
 function subType(sub) {
   const priceId = sub?.items?.data?.[0]?.price?.id;
@@ -76,12 +82,13 @@ export default async function handler(req, res) {
         if (type === 'plan') {
           const priceId    = sub.items.data[0]?.price?.id;
           const plan       = PLAN_BY_PRICE[priceId] || 'basic';
-          const paidThrough = new Date(sub.current_period_end * 1000).toISOString();
-          console.log('[webhook] updating plan to:', plan, 'for userId:', userId);
+          const periodEnd  = getPeriodEnd(sub);
+          const paidThrough = periodEnd ? new Date(periodEnd * 1000).toISOString() : null;
+          console.log('[webhook] updating plan to:', plan, 'periodEnd:', periodEnd, 'for userId:', userId);
           await supabase.from('accounts').update({
             status: 'paid', plan,
             stripe_customer_id: session.customer,
-            paid_through: paidThrough,
+            ...(paidThrough ? { paid_through: paidThrough } : {}),
           }).eq('user_id', userId);
         } else if (type === 'sales_addon') {
           await supabase.from('accounts').update({
@@ -118,9 +125,10 @@ export default async function handler(req, res) {
         if (type === 'plan') {
           const priceId    = sub.items.data[0]?.price?.id;
           const plan       = PLAN_BY_PRICE[priceId] || 'basic';
-          const paidThrough = new Date(sub.current_period_end * 1000).toISOString();
-          await supabase.from('accounts').update({ status: 'paid', plan, paid_through: paidThrough })
-            .eq('stripe_customer_id', customerId);
+          const periodEnd  = getPeriodEnd(sub);
+          const paidThrough = periodEnd ? new Date(periodEnd * 1000).toISOString() : null;
+          const update = { status: 'paid', plan, ...(paidThrough ? { paid_through: paidThrough } : {}) };
+          await supabase.from('accounts').update(update).eq('stripe_customer_id', customerId);
         } else if (type === 'sales_addon') {
           await supabase.from('accounts').update({ has_sales_addon: true })
             .eq('stripe_customer_id', customerId);
@@ -160,12 +168,13 @@ export default async function handler(req, res) {
         if (type === 'plan') {
           const priceId    = sub.items.data[0]?.price?.id;
           const plan       = PLAN_BY_PRICE[priceId] || 'basic';
-          const paidThrough = new Date(sub.current_period_end * 1000).toISOString();
+          const periodEnd  = getPeriodEnd(sub);
+          const paidThrough = periodEnd ? new Date(periodEnd * 1000).toISOString() : null;
           const status = sub.status === 'active'   ? 'paid'
                        : sub.status === 'past_due' ? 'past_due'
                        : 'deferred';
-          await supabase.from('accounts').update({ status, plan, paid_through: paidThrough })
-            .eq('stripe_customer_id', customerId);
+          const update = { status, plan, ...(paidThrough ? { paid_through: paidThrough } : {}) };
+          await supabase.from('accounts').update(update).eq('stripe_customer_id', customerId);
         } else if (type === 'sales_addon') {
           const isActive = sub.status === 'active';
           await supabase.from('accounts').update({ has_sales_addon: isActive })
