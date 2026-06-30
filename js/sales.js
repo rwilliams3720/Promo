@@ -1860,6 +1860,77 @@ async function loadCommissions() {
   }
 }
 
+function _fmtCommDate(d) {
+  if (!d) return '';
+  const [yr, mo, day] = d.split('-').map(Number);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return months[mo - 1] + ' ' + day + ', ' + yr;
+}
+
+function _buildCommBreakdownHtml(breakdown, sdPrefix) {
+  const fmt = n => '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (!breakdown.length) return '<span style="font-size:12px;color:var(--muted);">No sales this month.</span>';
+
+  const productOrder = [];
+  const productGroups = {};
+  for (const b of breakdown) {
+    if (!productGroups[b.product]) { productGroups[b.product] = []; productOrder.push(b.product); }
+    productGroups[b.product].push(b);
+  }
+
+  let sdIdx = 0;
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:10px;">
+    <thead><tr style="border-bottom:1px solid var(--border2);">
+      <th style="padding:3px 4px;width:22px;"></th>
+      <th style="text-align:left;padding:3px 8px;color:var(--muted);">Product</th>
+      <th style="text-align:right;padding:3px 8px;color:var(--muted);">Premium</th>
+      <th style="text-align:right;padding:3px 8px;color:var(--muted);">Share</th>
+      <th style="text-align:right;padding:3px 8px;color:var(--muted);">Commission</th>
+    </tr></thead><tbody>`;
+
+  for (const product of productOrder) {
+    const items = productGroups[product];
+    const totPremium = items.reduce((s, b) => s + (b.premium || 0), 0);
+    const totShare   = items.reduce((s, b) => s + (b.share   || 0), 0);
+    const totComm    = items.reduce((s, b) => s + (b.commission || 0), 0);
+
+    html += `<tr style="background:rgba(255,255,255,.03);border-top:1px solid var(--border);">
+      <td style="padding:4px 4px;"></td>
+      <td style="padding:4px 8px;font-weight:700;color:var(--text);">${escHtml(product)}<span style="font-size:10px;font-weight:400;color:var(--muted);margin-left:5px;">${items.length} sale${items.length !== 1 ? 's' : ''}</span></td>
+      <td style="padding:4px 8px;text-align:right;font-weight:600;">${fmt(totPremium)}</td>
+      <td style="padding:4px 8px;text-align:right;font-weight:600;">${fmt(totShare)}</td>
+      <td style="padding:4px 8px;text-align:right;font-weight:700;color:var(--accent2);">${fmt(totComm)}</td>
+    </tr>`;
+
+    for (const b of items) {
+      const did = 'csd-' + sdPrefix + '-' + (sdIdx++);
+      const detailParts = [];
+      if (b.sale_date)     detailParts.push('Date: <strong style="color:var(--text);">' + escHtml(_fmtCommDate(b.sale_date)) + '</strong>');
+      if (b.customer_name) detailParts.push('Customer: <strong style="color:var(--text);">' + escHtml(b.customer_name) + '</strong>');
+      if (b.subcategory)   detailParts.push('Sub: <strong style="color:var(--text);">' + escHtml(b.subcategory) + '</strong>');
+      if (b.split)         detailParts.push('Role: <strong style="color:var(--text);">' + escHtml(b.role) + '</strong>');
+      const hasDetail = detailParts.length > 0;
+
+      html += `<tr style="border-bottom:1px solid rgba(255,255,255,.03);">
+        <td style="padding:2px 4px;text-align:center;">${hasDetail ? `<button onclick="toggleCommSaleDetail('${did}')" style="background:none;border:1px solid rgba(255,255,255,.15);color:var(--muted);border-radius:3px;width:16px;height:16px;line-height:13px;font-size:12px;cursor:pointer;padding:0;font-family:inherit;" title="View details">+</button>` : ''}</td>
+        <td style="padding:2px 8px 2px 18px;font-size:11px;color:var(--muted);">${b.split ? '<span style="font-size:10px;">(' + escHtml(b.role) + ')</span>' : ''}</td>
+        <td style="padding:2px 8px;text-align:right;color:var(--muted);font-size:11px;">${fmt(b.premium)}</td>
+        <td style="padding:2px 8px;text-align:right;color:var(--muted);font-size:11px;">${fmt(b.share)}</td>
+        <td style="padding:2px 8px;text-align:right;color:var(--muted);font-size:11px;">${fmt(b.commission)}</td>
+      </tr>`;
+      if (hasDetail) {
+        html += `<tr id="${did}" style="display:none;background:rgba(255,255,255,.02);">
+          <td></td>
+          <td colspan="4" style="padding:3px 8px 8px 22px;font-size:11px;color:var(--muted);">${detailParts.join(' &nbsp;·&nbsp; ')}</td>
+        </tr>`;
+      }
+    }
+  }
+
+  html += '</tbody></table>';
+  return html;
+}
+
 function renderCommissions() {
   if (!_commData) return;
   const results = _commData.results || [];
@@ -1877,20 +1948,7 @@ function renderCommissions() {
         <span style="font-size:14px;font-weight:600;">${escHtml(r.name)}</span>
         <span style="font-size:18px;font-weight:700;color:var(--accent2);">$${r.earned.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
       </div>
-      ${r.breakdown.length ? `<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:.75rem;">
-        <thead><tr style="border-bottom:1px solid var(--border2);">
-          <th style="text-align:left;padding:4px 8px;color:var(--muted);">Product</th>
-          <th style="text-align:right;padding:4px 8px;color:var(--muted);">Premium</th>
-          <th style="text-align:right;padding:4px 8px;color:var(--muted);">Your Share</th>
-          <th style="text-align:right;padding:4px 8px;color:var(--muted);">Commission</th>
-        </tr></thead>
-        <tbody>${r.breakdown.map(b => `<tr style="border-bottom:1px solid var(--border2);">
-          <td style="padding:4px 8px;">${escHtml(b.product)}${b.split ? ' <span style="font-size:10px;color:var(--muted);">('+b.role+')</span>' : ''}</td>
-          <td style="padding:4px 8px;text-align:right;">$${(b.premium||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-          <td style="padding:4px 8px;text-align:right;">$${(b.share||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-          <td style="padding:4px 8px;text-align:right;font-weight:600;">$${(b.commission||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-        </tr>`).join('')}</tbody>
-      </table>` : '<p style="font-size:12px;color:var(--muted);">No sales this month.</p>'}
+      ${_buildCommBreakdownHtml(r.breakdown, 'mv-' + r.agent_id.replace(/[^a-z0-9]/g,''))}
     `).join('<hr style="border:none;border-top:1px solid var(--border2);margin:.75rem 0;">');
     return;
   }
@@ -1982,20 +2040,7 @@ function renderCommissions() {
                   : sd.threshold_note
                     ? `<span style="font-size:10px;background:rgba(255,179,0,.15);color:#ffb300;border-radius:4px;padding:1px 6px;margin-left:6px;" title="${escHtml(sd.threshold_note)}">&#x26A0; Min not met</span>`
                     : `<span style="font-size:10px;background:rgba(0,229,180,.1);color:var(--accent2);border-radius:4px;padding:1px 6px;margin-left:6px;">&#x2713; Qualifies</span>`;
-                const breakdownTable = sd.breakdown.length ? `<table style="font-size:12px;border-collapse:collapse;margin-bottom:8px;width:100%;">
-                  <thead><tr style="border-bottom:1px solid var(--border2);">
-                    <th style="text-align:left;padding:3px 8px;color:var(--muted);">Product</th>
-                    <th style="text-align:right;padding:3px 8px;color:var(--muted);">Premium</th>
-                    <th style="text-align:right;padding:3px 8px;color:var(--muted);">Share</th>
-                    <th style="text-align:right;padding:3px 8px;color:var(--muted);">Commission</th>
-                  </tr></thead>
-                  <tbody>${sd.breakdown.map(b => `<tr>
-                    <td style="padding:3px 8px;">${escHtml(b.product)}${b.split ? ` <span style="font-size:10px;color:var(--muted);">(${b.role})</span>` : ''}</td>
-                    <td style="padding:3px 8px;text-align:right;">${fmt(b.premium)}</td>
-                    <td style="padding:3px 8px;text-align:right;">${fmt(b.share)}</td>
-                    <td style="padding:3px 8px;text-align:right;font-weight:600;">${fmt(b.commission)}</td>
-                  </tr>`).join('')}</tbody>
-                </table>` : '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">No qualifying sales for this structure.</div>';
+                const breakdownTable = _buildCommBreakdownHtml(sd.breakdown, escHtml(r.agent_id) + '-' + sd.structure_id.slice(0, 6));
                 const groupTable = sd.group_details ? (() => {
                   const gdRows = sd.group_details.map(g => {
                     const sc = g.passes ? 'var(--accent2)' : '#ff6b6b';
@@ -2036,20 +2081,7 @@ function renderCommissions() {
               }).join('');
             })() : (() => {
               const fmt = n => '$' + (n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-              return `${r.breakdown.length ? `<table style="font-size:12px;border-collapse:collapse;margin-bottom:10px;">
-              <thead><tr style="border-bottom:1px solid var(--border2);">
-                <th style="text-align:left;padding:3px 8px;color:var(--muted);">Product</th>
-                <th style="text-align:right;padding:3px 8px;color:var(--muted);">Premium</th>
-                <th style="text-align:right;padding:3px 8px;color:var(--muted);">Share</th>
-                <th style="text-align:right;padding:3px 8px;color:var(--muted);">Rate Commission</th>
-              </tr></thead>
-              <tbody>${r.breakdown.map(b => `<tr>
-                <td style="padding:3px 8px;">${escHtml(b.product)}${b.split ? ` <span style="font-size:10px;color:var(--muted);">(${b.role})</span>` : ''}</td>
-                <td style="padding:3px 8px;text-align:right;">$${(b.premium||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-                <td style="padding:3px 8px;text-align:right;">$${(b.share||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-                <td style="padding:3px 8px;text-align:right;font-weight:600;">$${(b.commission||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-              </tr>`).join('')}</tbody>
-            </table>` : '<span style="font-size:12px;color:var(--muted);">No sales this month.</span>'}
+              return `${_buildCommBreakdownHtml(r.breakdown, escHtml(r.agent_id))}
             ${r.group_details ? (() => {
               const rows = r.group_details.map(g => {
                 const statusColor = g.passes ? 'var(--accent2)' : '#ff6b6b';
@@ -2171,6 +2203,11 @@ async function _autoSaveCarryForwards(results, month) {
 function toggleCommBreakdown(agentId) {
   const row = document.getElementById('comm-breakdown-' + agentId);
   if (row) row.style.display = row.style.display === 'none' ? '' : 'none';
+}
+
+function toggleCommSaleDetail(id) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 
 function openPayForm(agentId, agentName, earned, month) {

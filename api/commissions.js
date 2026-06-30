@@ -1,6 +1,23 @@
 import { createClient } from '@supabase/supabase-js';
+import crypto from 'crypto';
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+
+function decryptField(ciphertext) {
+  if (!ciphertext) return null;
+  const key = process.env.CUSTOMER_ENCRYPTION_KEY
+    ? Buffer.from(process.env.CUSTOMER_ENCRYPTION_KEY, 'hex')
+    : null;
+  if (!key || !ciphertext.includes(':')) return ciphertext;
+  try {
+    const [ivB64, encB64, tagB64] = ciphertext.split(':');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(ivB64, 'base64'));
+    decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
+    return decipher.update(Buffer.from(encB64, 'base64')) + decipher.final('utf8');
+  } catch {
+    return ciphertext;
+  }
+}
 
 // Resolve which user's data to use, and whether commissions add-on is active
 async function resolveUser(token) {
@@ -121,7 +138,7 @@ function calcStructurePayout(agentId, struct, sales, roster, isFinancialService,
         const ratio = isSplit ? (sale.split_ratio ?? defaultRatio) : 1;
         const share = premium * ratio;
         const commission = applyRate(struct, product, sale.subcategory || null, share, premium, isFS);
-        breakdown.push({ hash: sale.hash, product, premium, share, commission, split: isSplit, role: 'primary' });
+        breakdown.push({ hash: sale.hash, product, premium, share, commission, split: isSplit, role: 'primary', customer_name: decryptField(sale.customer_name), sale_date: sale.sale_date || null, subcategory: sale.subcategory || null });
       }
     }
 
@@ -135,7 +152,7 @@ function calcStructurePayout(agentId, struct, sales, roster, isFinancialService,
           const primaryRatio = sale.split_ratio ?? defaultRatio;
           const tmShare = premium * (1 - primaryRatio);
           const commission = applyRate(struct, product, sale.subcategory || null, tmShare, premium, isFS);
-          breakdown.push({ hash: sale.hash, product, premium, share: tmShare, commission, split: true, role: 'teammate' });
+          breakdown.push({ hash: sale.hash, product, premium, share: tmShare, commission, split: true, role: 'teammate', customer_name: decryptField(sale.customer_name), sale_date: sale.sale_date || null, subcategory: sale.subcategory || null });
         }
       }
     }
@@ -293,7 +310,7 @@ export default async function handler(req, res) {
     // Sales: broad OR filter — sale_date OR issued_date within the month (for pay_on_issue support)
     const [salesRes, rosterRes, structuresRes, subcatsRes, agentStructsRes, bankLedgerRes] = await Promise.all([
       supabase.from('sales_log')
-        .select('hash, agent_id, product, subcategory, written_premium, split_sale, split_ratio, teammate, sale_date, issued_date, is_cancelled, chargeback_date')
+        .select('hash, agent_id, product, subcategory, written_premium, split_sale, split_ratio, teammate, sale_date, issued_date, is_cancelled, chargeback_date, customer_name')
         .eq('user_id', dataUserId)
         .or(`and(sale_date.gte.${fromDate},sale_date.lte.${toDate}),and(issued_date.gte.${fromDate},issued_date.lte.${toDate})`),
       supabase.from('agent_roster')
