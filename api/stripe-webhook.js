@@ -10,13 +10,14 @@ const PLAN_BY_PRICE = {
   [process.env.STRIPE_PRICE_PREMIUM]: 'premium',
 };
 
-// Returns 'plan'|'sales_addon'|'commissions_addon'|'lead_analysis_addon'|'unknown'
+// Returns 'plan'|'sales_addon'|'commissions_addon'|'lead_analysis_addon'|'member_analysis'|'unknown'
 function subType(sub) {
   const priceId = sub?.items?.data?.[0]?.price?.id;
   if (PLAN_BY_PRICE[priceId]) return 'plan';
   if (priceId && priceId === process.env.STRIPE_PRICE_SALES_ADDON)         return 'sales_addon';
   if (priceId && priceId === process.env.STRIPE_PRICE_COMMISSIONS_ADDON)   return 'commissions_addon';
   if (priceId && priceId === process.env.STRIPE_PRICE_LEAD_ANALYSIS_ADDON) return 'lead_analysis_addon';
+  if (priceId && priceId === process.env.STRIPE_PRICE_MEMBER_ANALYSIS)     return 'member_analysis';
   return 'unknown';
 }
 
@@ -44,13 +45,15 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: `Webhook signature failed: ${err.message}` });
   }
 
+  console.log('[webhook] event:', event.type);
   try {
     switch (event.type) {
 
       case 'checkout.session.completed': {
         const session = event.data.object;
         const userId  = session.client_reference_id;
-        if (!userId) break;
+        console.log('[webhook] checkout.session.completed userId:', userId, 'subscription:', session.subscription);
+        if (!userId) { console.warn('[webhook] no client_reference_id — skipping'); break; }
 
         // One-time credit purchase — no subscription
         if (session.metadata?.type === 'analysis_credit') {
@@ -69,10 +72,12 @@ export default async function handler(req, res) {
 
         const sub = await stripe.subscriptions.retrieve(session.subscription);
         const type = subType(sub);
+        console.log('[webhook] sub type:', type, 'priceId:', sub.items.data[0]?.price?.id);
         if (type === 'plan') {
           const priceId    = sub.items.data[0]?.price?.id;
           const plan       = PLAN_BY_PRICE[priceId] || 'basic';
           const paidThrough = new Date(sub.current_period_end * 1000).toISOString();
+          console.log('[webhook] updating plan to:', plan, 'for userId:', userId);
           await supabase.from('accounts').update({
             status: 'paid', plan,
             stripe_customer_id: session.customer,
@@ -92,6 +97,13 @@ export default async function handler(req, res) {
           await supabase.from('accounts').update({
             has_lead_analysis_addon: true,
             stripe_customer_id:      session.customer,
+          }).eq('user_id', userId);
+        } else if (type === 'member_analysis') {
+          const qty = sub.items.data[0]?.quantity || 1;
+          await supabase.from('accounts').update({
+            has_member_analysis:   true,
+            member_analysis_count: qty,
+            stripe_customer_id:    session.customer,
           }).eq('user_id', userId);
         }
         break;
@@ -118,6 +130,12 @@ export default async function handler(req, res) {
         } else if (type === 'lead_analysis_addon') {
           await supabase.from('accounts').update({ has_lead_analysis_addon: true })
             .eq('stripe_customer_id', customerId);
+        } else if (type === 'member_analysis') {
+          const qty = sub.items.data[0]?.quantity || 1;
+          await supabase.from('accounts').update({
+            has_member_analysis:   true,
+            member_analysis_count: qty,
+          }).eq('stripe_customer_id', customerId);
         }
         break;
       }
@@ -160,6 +178,13 @@ export default async function handler(req, res) {
           const isActive = sub.status === 'active';
           await supabase.from('accounts').update({ has_lead_analysis_addon: isActive })
             .eq('stripe_customer_id', customerId);
+        } else if (type === 'member_analysis') {
+          const isActive = sub.status === 'active';
+          const qty = sub.items.data[0]?.quantity || 1;
+          await supabase.from('accounts').update({
+            has_member_analysis:   isActive,
+            member_analysis_count: isActive ? qty : 0,
+          }).eq('stripe_customer_id', customerId);
         }
         break;
       }
@@ -177,6 +202,11 @@ export default async function handler(req, res) {
         } else if (type === 'lead_analysis_addon') {
           await supabase.from('accounts').update({ has_lead_analysis_addon: false })
             .eq('stripe_customer_id', customerId);
+        } else if (type === 'member_analysis') {
+          await supabase.from('accounts').update({
+            has_member_analysis:   false,
+            member_analysis_count: 0,
+          }).eq('stripe_customer_id', customerId);
         } else if (type === 'plan') {
           // Don't override 'deferred' — admin set it intentionally to preserve access after cancel
           await supabase.from('accounts')

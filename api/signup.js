@@ -59,7 +59,11 @@ export default async function handler(req, res) {
         </table>
       </div>
     `,
-  }).catch(e => console.error('[signup] Resend error:', e?.message));
+  }).then(({ error }) => {
+    // Resend v6+ returns { data, error } — API errors don't reject, they resolve with error set
+    if (error) console.error('[signup] Resend API error:', JSON.stringify(error));
+    else console.log('[signup] Notification sent for:', email);
+  }).catch(e => console.error('[signup] Resend network error:', e?.message));
 
   return res.status(200).json({ ok: true });
 }
