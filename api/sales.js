@@ -51,7 +51,7 @@ async function rebuildRaceData(dataUserId, agentIds) {
     }
   }
 
-  let q = supabase.from('sales_log').select('agent_id, product, sale_weight').eq('user_id', dataUserId).eq('is_cancelled', false).in('agent_id', ids);
+  let q = supabase.from('sales_log').select('agent_id, product').eq('user_id', dataUserId).eq('is_cancelled', false).in('agent_id', ids);
   if (fromDate) q = q.gte('sale_date', fromDate);
   if (toDate)   q = q.lt('sale_date', toDate);
   const { data: salesRows } = await q;
@@ -62,7 +62,7 @@ async function rebuildRaceData(dataUserId, agentIds) {
     const cat = row.product;
     if (cat === 'other' || cat === 'deposit' || cat === 'skip' || !row.agent_id) continue;
     if (!totals[row.agent_id]) continue;
-    if (totals[row.agent_id][cat] !== undefined) totals[row.agent_id][cat] += (row.sale_weight ?? 1);
+    if (totals[row.agent_id][cat] !== undefined) totals[row.agent_id][cat] += 1;
   }
 
   const now = new Date().toISOString();

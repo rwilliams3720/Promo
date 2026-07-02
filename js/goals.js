@@ -407,6 +407,9 @@ function renderRaceGoalsRow(ag) {
         ? (agGoal.actuals?.policies ?? 0)
         : (ag.wl||0)+(ag.ul||0)+(ag.term||0)+(ag.health||0)+(ag.auto||0)+(ag.fire||0);
       label  = 'Pol';
+    } else if (key === 'premium' && useActuals) {
+      actual = agGoal.actuals?.premium ?? 0;
+      label  = 'Prem';
     } else continue;
     const pct = target > 0 ? Math.min(100, Math.round(actual / target * 100)) : 0;
     const col = pct >= 100 ? 'var(--accent2)' : pct >= 70 ? '#fbbf24' : 'var(--muted)';
