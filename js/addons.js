@@ -511,11 +511,13 @@ async function loadAddonConfig() {
   _leadSources        = d.leadSources      || [];
   _selfReportConfig   = d.selfReportConfig || {};
   // Load activity types if commissions add-on is active, admin, or self-reporting of activities is enabled
+  // Must be awaited so _activityTypes is populated before renderManageTabMode calls _populateSrActivityTypes
   if (_hasCommissionsAddon || _isAdmin || _selfReportConfig.activities_enabled) {
-    fetch('/api/bonus-activities?resource=types', { headers: authHeaders() })
-      .then(r => r.ok ? r.json() : [])
-      .then(data => { _activityTypes = Array.isArray(data) ? data : []; })
-      .catch(() => {});
+    try {
+      const tr = await fetch('/api/bonus-activities?resource=types', { headers: authHeaders() });
+      _activityTypes = tr.ok ? (await tr.json()) : [];
+      if (!Array.isArray(_activityTypes)) _activityTypes = [];
+    } catch(_) { _activityTypes = []; }
   }
 }
 

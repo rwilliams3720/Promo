@@ -245,10 +245,16 @@ export default async function handler(req, res) {
           return res.status(403).json({ error: 'Approved entries cannot be edited' });
         }
       }
-      const { count, notes } = req.body;
+      const { count, notes, activity_date, agent_id, activity_type_id } = req.body;
       const update = {};
       if (count !== undefined) update.count = parseInt(count) || 1;
       if (notes !== undefined) update.notes = notes || null;
+      // Approvers (owners/managers) may also change date, agent, and type
+      if (ctx.canApprove) {
+        if (activity_date    !== undefined) update.activity_date    = activity_date    || null;
+        if (agent_id         !== undefined) update.agent_id         = agent_id         || null;
+        if (activity_type_id !== undefined) update.activity_type_id = activity_type_id || null;
+      }
       if (!Object.keys(update).length) return res.status(400).json({ error: 'Nothing to update' });
       const { error } = await supabase
         .from('bonus_activities')

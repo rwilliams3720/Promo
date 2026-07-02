@@ -636,11 +636,11 @@ async function loadChargebackReport() {
   await loadMemberOrgTree();
   try {
     const { fromDate, toDate } = _cbDateRange();
-    const params = new URLSearchParams({ fromDate, toDate, includeHidden: '1' });
+    const params = new URLSearchParams({ fromDate, toDate, includeHidden: '1', chargebackMode: '1' });
     const r = await fetch(`/api/sales?${params}`, { headers: authHeaders() });
     const d = await r.json();
     _cbAllEntries = d.entries || [];
-    _cbEntries    = _cbAllEntries.filter(e => e.is_cancelled);
+    _cbEntries    = _cbAllEntries;
     const memberLimited = _isMember && !['captain','chief_officer'].includes(_memberRole);
     _cbAgentFilter    = (memberLimited && _memberAgentId) ? _memberAgentId : 'all';
     _cbLocationFilter = 'all';
@@ -754,9 +754,18 @@ function renderChargebackReport() {
     return `<th style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:4px 8px;text-align:left;cursor:pointer;user-select:none;white-space:nowrap;" onclick="setCbSort('${col}')">${label}${arrow}</th>`;
   };
 
+  const canWaive = !_isMember || _isAdmin;
   const renderCbRow = e => {
     const ag = _agentRoster.find(a => a.agent_id === e.agent_id)?.name || e.agent_id || '—';
     const pr = e.written_premium ? '$' + Number(e.written_premium).toFixed(2) : '—';
+    const waiveCell = canWaive
+      ? `<td style="padding:6px 8px;text-align:center;">
+           <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:11px;color:var(--muted);">
+             <input type="checkbox" ${e.chargeback_exempt ? 'checked' : ''} onchange="toggleCbExempt('${escHtml(e.hash)}',this.checked)" style="accent-color:var(--accent2);cursor:pointer;">
+             Waive
+           </label>
+         </td>`
+      : '';
     return `<tr style="border-bottom:1px solid var(--border2);">
       <td style="padding:6px 8px;font-size:12px;color:#ff6b6b;">${e.chargeback_date || '—'}</td>
       <td style="padding:6px 8px;font-size:12px;color:var(--muted);">${e.sale_date || '—'}</td>
@@ -764,10 +773,12 @@ function renderChargebackReport() {
       <td style="padding:6px 8px;font-size:12px;">${escHtml(labelForCat(e.product))}${e.subcategory ? '<span style="color:var(--muted);font-size:11px;"> · ' + escHtml(e.subcategory) + '</span>' : ''}</td>
       <td style="padding:6px 8px;font-size:12px;color:var(--muted);">${escHtml(e.customer_name || '—')}</td>
       <td style="padding:6px 8px;font-size:12px;color:var(--danger);">${pr}</td>
+      ${waiveCell}
     </tr>`;
   };
 
-  const theadHtml = `<thead><tr>${th('chargeback_date','CB Date')}${th('sale_date','Sale Date')}${th('agent','Agent')}${th('product','Product')}<th style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:4px 8px;">Customer</th>${th('premium','Premium')}</tr></thead>`;
+  const waiveTh = canWaive ? `<th style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:4px 8px;text-align:center;">Waive</th>` : '';
+  const theadHtml = `<thead><tr>${th('chargeback_date','CB Date')}${th('sale_date','Sale Date')}${th('agent','Agent')}${th('product','Product')}<th style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:4px 8px;">Customer</th>${th('premium','Premium')}${waiveTh}</tr></thead>`;
 
   const orgGroups = _getOrgGroups();
   if (orgGroups && _cbAgentFilter === 'all') {
@@ -794,6 +805,19 @@ function renderChargebackReport() {
     const sorted = [...filtered].sort(cbSortFn);
     listEl.innerHTML = `<table style="width:100%;border-collapse:collapse;">${theadHtml}<tbody>${sorted.map(renderCbRow).join('')}</tbody></table>`;
   }
+}
+
+async function toggleCbExempt(hash, exempt) {
+  try {
+    await fetch('/api/sales', {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hash, chargeback_exempt: exempt }),
+    });
+    const entry = _cbAllEntries.find(e => e.hash === hash);
+    if (entry) entry.chargeback_exempt = exempt;
+    renderChargebackReport();
+  } catch(e) { console.error('toggleCbExempt:', e); }
 }
 
 function _renderSlScorecard(entries) {

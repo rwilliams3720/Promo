@@ -204,7 +204,23 @@ export default async function handler(req, res) {
       toDate = req.query.toDate;
     }
 
-    const COLS = 'hash, agent_id, product, subcategory, sale_date, issued_date, written_premium, issued_premium, source, customer_name, lead_source, period, auto_issued, split_sale, split_ratio, teammate, checklist_id, hidden, location, is_cancelled, chargeback_date';
+    const COLS = 'hash, agent_id, product, subcategory, sale_date, issued_date, written_premium, issued_premium, source, customer_name, lead_source, period, auto_issued, split_sale, split_ratio, teammate, checklist_id, hidden, location, is_cancelled, chargeback_date, chargeback_exempt';
+
+    // Chargeback mode: return only cancelled sales where chargeback_date is in the requested range
+    if (req.query.chargebackMode === '1') {
+      let cbQ = supabase.from('sales_log').select(COLS)
+        .eq('user_id', dataUserId)
+        .in('source', ['manual', 'checklist'])
+        .eq('is_cancelled', true)
+        .gte('chargeback_date', fromDate)
+        .lte('chargeback_date', toDate)
+        .order('chargeback_date', { ascending: false });
+      if (ctx.isMember && !ctx.isCapOrCO && ctx.memberAgentId) cbQ = cbQ.eq('agent_id', ctx.memberAgentId);
+      const { data: cbData, error: cbErr } = await cbQ;
+      if (cbErr) return res.status(500).json({ error: cbErr.message });
+      const entries = (cbData || []).map(row => ({ ...row, customer_name: decryptField(row.customer_name) }));
+      return res.status(200).json({ entries });
+    }
 
     // Selected month
     let q1 = supabase.from('sales_log').select(COLS)
@@ -317,7 +333,7 @@ export default async function handler(req, res) {
 
     const allowed = ['agent_id','product','subcategory','sale_date','issued_date','written_premium','issued_premium',
                      'customer_name','lead_source','period','auto_issued','split_sale','split_ratio','teammate','hidden','location',
-                     'is_cancelled','chargeback_date','sale_weight'];
+                     'is_cancelled','chargeback_date','sale_weight','chargeback_exempt'];
     const update = {};
     for (const k of allowed) {
       if (fields[k] !== undefined) update[k] = fields[k];
@@ -328,6 +344,7 @@ export default async function handler(req, res) {
     if (update.split_ratio != null) update.split_ratio = parseFloat(update.split_ratio) || null;
     if (fields.is_cancelled !== undefined) update.is_cancelled = !!fields.is_cancelled;
     if (fields.chargeback_date !== undefined) update.chargeback_date = fields.chargeback_date || null;
+    if (fields.chargeback_exempt !== undefined) update.chargeback_exempt = !!fields.chargeback_exempt;
     if (update.auto_issued && update.sale_date) update.issued_date = update.sale_date;
     else if (update.auto_issued && !update.sale_date) {
       const { data: cur } = await supabase.from('sales_log').select('sale_date').eq('user_id', dataUserId).eq('hash', hash).single();

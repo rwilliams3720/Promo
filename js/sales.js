@@ -1318,6 +1318,13 @@ function renderManageActivityLog() {
     const entries = _bonusLogEntries.filter(x => x.activity_type_id === t.id);
     if (!entries.length) return '';
     const total = entries.reduce((s,e)=>s+e.count,0);
+    const requiresApproval = !!_selfReportConfig?.requires_approval;
+    const manageStatusBadge = s => {
+      if (!requiresApproval) return '';
+      if (s === 'approved') return '<span style="font-size:10px;background:rgba(74,222,128,.12);color:#4ade80;border:1px solid rgba(74,222,128,.3);border-radius:4px;padding:1px 6px;">Approved</span>';
+      if (s === 'rejected') return '<span style="font-size:10px;background:rgba(255,107,107,.12);color:#ff6b6b;border:1px solid rgba(255,107,107,.3);border-radius:4px;padding:1px 6px;">Rejected</span>';
+      return '<span style="font-size:10px;background:rgba(255,179,0,.12);color:#ffb300;border:1px solid rgba(255,179,0,.3);border-radius:4px;padding:1px 6px;">Pending</span>';
+    };
     return `<div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.65rem .75rem;margin-bottom:.5rem;">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:.4rem;">
         <span style="font-size:11px;background:${catBg};border-radius:4px;padding:1px 7px;">${escHtml(catLb)}</span>
@@ -1330,15 +1337,27 @@ function renderManageActivityLog() {
           <th style="padding:3px 8px 3px 0;">Date</th>
           <th style="padding:3px 8px 3px 0;">Count</th>
           <th style="padding:3px 8px 3px 0;">Notes</th>
+          ${requiresApproval ? '<th style="padding:3px 8px 3px 0;">Status</th>' : ''}
           <th></th>
         </tr></thead>
-        <tbody>${entries.map(e=>`<tr style="border-top:1px solid var(--border2);">
-          <td style="padding:4px 8px 4px 0;">${escHtml(getAgentName(e.agent_id))}</td>
-          <td style="padding:4px 8px 4px 0;">${escHtml(e.activity_date||'')}</td>
-          <td style="padding:4px 8px 4px 0;"><strong>${e.count}</strong></td>
-          <td style="padding:4px 8px 4px 0;color:var(--muted);">${escHtml(e.notes||'')}</td>
-          <td style="padding:4px 0;text-align:right;"><button onclick="deleteManageActivityEntry('${escHtml(e.id)}',this)" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;opacity:.6;" title="Delete">✕</button></td>
-        </tr>`).join('')}</tbody>
+        <tbody>${entries.map(e => {
+          const isPending = requiresApproval && (e.status === 'pending' || !e.status);
+          const approveButtons = isPending
+            ? `<button onclick="approveActivityInline('${escHtml(e.id)}','approved',this)" style="background:none;border:none;color:#4ade80;cursor:pointer;font-size:14px;padding:0 3px;" title="Approve">✓</button><button onclick="approveActivityInline('${escHtml(e.id)}','rejected',this)" style="background:none;border:none;color:#ff6b6b;cursor:pointer;font-size:14px;padding:0 3px;" title="Reject">✗</button>`
+            : '';
+          return `<tr id="act-entry-row-${escHtml(e.id)}" style="border-top:1px solid var(--border2);">
+            <td style="padding:4px 8px 4px 0;">${escHtml(getAgentName(e.agent_id))}</td>
+            <td style="padding:4px 8px 4px 0;">${escHtml(e.activity_date||'')}</td>
+            <td style="padding:4px 8px 4px 0;"><strong>${e.count}</strong></td>
+            <td style="padding:4px 8px 4px 0;color:var(--muted);">${escHtml(e.notes||'')}</td>
+            ${requiresApproval ? `<td style="padding:4px 8px 4px 0;">${manageStatusBadge(e.status)}</td>` : ''}
+            <td style="padding:4px 0;text-align:right;white-space:nowrap;">
+              ${approveButtons}
+              <button onclick="startEditManageActivity('${escHtml(e.id)}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;opacity:.7;padding:0 4px;" title="Edit">✎</button>
+              <button onclick="deleteManageActivityEntry('${escHtml(e.id)}',this)" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;opacity:.6;" title="Delete">✕</button>
+            </td>
+          </tr>`;
+        }).join('')}</tbody>
       </table>
     </div>`;
   }).filter(Boolean).join('') || '<span style="color:var(--muted);">No activities logged for this month.</span>';
@@ -1390,6 +1409,79 @@ async function deleteManageActivityEntry(id, btn) {
   try {
     const r = await fetch(`/api/bonus-activities?resource=entries&id=${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders() });
     if (r.ok) { _bonusLogEntries = _bonusLogEntries.filter(e => e.id !== id); renderManageActivityLog(); }
+  } finally { btn.disabled = false; }
+}
+
+function startEditManageActivity(id) {
+  const e = _bonusLogEntries.find(x => x.id === id);
+  const row = document.getElementById('act-entry-row-' + id);
+  if (!e || !row) return;
+  const manualTypes = _activityTypes.filter(t => t.source === 'manual' && t.active !== false);
+  const agentOpts = _agentRoster.filter(a => a.active !== false)
+    .map(a => `<option value="${escHtml(a.agent_id)}"${a.agent_id===e.agent_id?' selected':''}>${escHtml(a.name)}</option>`).join('');
+  const typeOpts = manualTypes
+    .map(t => `<option value="${escHtml(t.id)}"${t.id===e.activity_type_id?' selected':''}>${escHtml(t.name)}${t.subcategory?' · '+escHtml(t.subcategory):''}</option>`).join('');
+  const si = 'background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:3px 6px;font-size:12px;outline:none;';
+  const colspan = _selfReportConfig?.requires_approval ? 6 : 5;
+  row.innerHTML = `<td colspan="${colspan}" style="padding:6px 0;">
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+      <select id="ae-agent-${escHtml(id)}" style="${si}min-width:110px;"><option value="">— Agent —</option>${agentOpts}</select>
+      <select id="ae-type-${escHtml(id)}" style="${si}min-width:110px;">${typeOpts}</select>
+      <input id="ae-date-${escHtml(id)}" type="date" value="${escHtml(e.activity_date||'')}" style="${si}">
+      <input id="ae-count-${escHtml(id)}" type="number" min="1" value="${e.count||1}" style="${si}width:56px;">
+      <input id="ae-notes-${escHtml(id)}" type="text" placeholder="Notes" value="${escHtml(e.notes||'')}" style="${si}flex:1;min-width:100px;">
+      <button onclick="saveEditManageActivity('${escHtml(id)}',this)" style="background:var(--accent);border:none;color:#000;border-radius:5px;padding:3px 10px;font-size:12px;cursor:pointer;font-weight:600;">Save</button>
+      <button onclick="renderManageActivityLog()" style="background:none;border:1px solid var(--border2);color:var(--muted);border-radius:5px;padding:3px 10px;font-size:12px;cursor:pointer;">Cancel</button>
+    </div>
+    <div id="ae-msg-${escHtml(id)}" style="display:none;font-size:11px;margin-top:4px;color:var(--danger);"></div>
+  </td>`;
+}
+
+async function saveEditManageActivity(id, btn) {
+  const agent_id         = document.getElementById('ae-agent-' + id)?.value;
+  const activity_type_id = document.getElementById('ae-type-' + id)?.value;
+  const activity_date    = document.getElementById('ae-date-' + id)?.value;
+  const count            = parseInt(document.getElementById('ae-count-' + id)?.value) || 1;
+  const notes            = (document.getElementById('ae-notes-' + id)?.value || '').trim() || null;
+  const msgEl = document.getElementById('ae-msg-' + id);
+  if (!agent_id || !activity_type_id || !activity_date) {
+    if (msgEl) { msgEl.style.display = ''; msgEl.textContent = 'Agent, type, and date are required.'; }
+    return;
+  }
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/bonus-activities', {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'update_entry', id, agent_id, activity_type_id, activity_date, count, notes }),
+    });
+    if (!r.ok) {
+      const d = await r.json();
+      if (msgEl) { msgEl.style.display = ''; msgEl.textContent = d.error || 'Failed to save.'; }
+      return;
+    }
+    loadManageActivityLog();
+  } catch(_) {
+    if (msgEl) { msgEl.style.display = ''; msgEl.textContent = 'Error saving.'; }
+  } finally { btn.disabled = false; }
+}
+
+async function approveActivityInline(id, status, btn) {
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/bonus-activities', {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'set_status', id, status }),
+    });
+    if (r.ok) {
+      const entry = _bonusLogEntries.find(e => e.id === id);
+      if (entry) entry.status = status;
+      renderManageActivityLog();
+      // refresh pending badge if visible
+      const badge = document.getElementById('pending-count-badge');
+      if (badge) loadPendingApprovals();
+    }
   } finally { btn.disabled = false; }
 }
 
@@ -1837,6 +1929,17 @@ function updateCommMonthDisplay() {
   if (el) el.textContent = label;
 }
 
+async function waiveCbFromCommReport(hash, exempt) {
+  try {
+    await fetch('/api/sales', {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hash, chargeback_exempt: exempt }),
+    });
+    loadCommissions();
+  } catch(e) { console.error('waiveCbFromCommReport:', e); }
+}
+
 async function loadCommissions() {
   if (!_commMonth) {
     const now = new Date();
@@ -2133,6 +2236,8 @@ function renderCommissions() {
             })() : ''}
             ${(r.chargebacks && r.chargebacks.length) ? (() => {
               const fmt = n => '$' + (n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+              const canWaiveCb = !_isMember || _isAdmin;
+              const waiveTh = canWaiveCb ? `<th style="text-align:center;padding:3px 8px;color:var(--muted);">Waive</th>` : '';
               return `<div style="margin-top:10px;padding:8px;background:rgba(255,107,107,.05);border:1px solid rgba(255,107,107,.15);border-radius:6px;">
                 <div style="font-size:11px;font-weight:700;color:#ff6b6b;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Chargebacks This Month</div>
                 <table style="font-size:12px;border-collapse:collapse;width:100%;">
@@ -2142,14 +2247,20 @@ function renderCommissions() {
                     <th style="text-align:right;padding:3px 8px;color:var(--muted);">Share</th>
                     <th style="text-align:right;padding:3px 8px;color:var(--muted);">Commission</th>
                     <th style="text-align:right;padding:3px 8px;color:var(--muted);">CB Date</th>
+                    ${waiveTh}
                   </tr></thead>
-                  <tbody>${r.chargebacks.map(cb => `<tr style="border-bottom:1px solid rgba(255,107,107,.1);">
+                  <tbody>${r.chargebacks.map(cb => {
+                    const waiveTd = canWaiveCb
+                      ? `<td style="padding:3px 8px;text-align:center;"><label style="display:inline-flex;align-items:center;gap:3px;cursor:pointer;font-size:11px;color:var(--muted);"><input type="checkbox" ${cb.exempt?'checked':''} onchange="waiveCbFromCommReport('${escHtml(cb.hash)}',this.checked)" style="accent-color:var(--accent2);cursor:pointer;">Waive</label></td>`
+                      : '';
+                    return `<tr style="border-bottom:1px solid rgba(255,107,107,.1);">
                     <td style="padding:3px 8px;">${escHtml(cb.product)}</td>
                     <td style="padding:3px 8px;text-align:right;">${fmt(cb.premium)}</td>
                     <td style="padding:3px 8px;text-align:right;">${fmt(cb.share)}</td>
-                    <td style="padding:3px 8px;text-align:right;color:#ff6b6b;font-weight:600;">-${fmt(cb.commission)}</td>
+                    <td style="padding:3px 8px;text-align:right;color:#ff6b6b;font-weight:600;">${cb.exempt ? '<span style="font-size:10px;background:rgba(0,229,180,.12);color:var(--accent2);border:1px solid rgba(0,229,180,.2);border-radius:3px;padding:1px 5px;">Waived</span>' : '-'+fmt(cb.commission)}</td>
                     <td style="padding:3px 8px;text-align:right;color:var(--muted);">${escHtml(cb.chargeback_date)}</td>
-                  </tr>`).join('')}</tbody>
+                    ${waiveTd}
+                  </tr>`;}).join('')}</tbody>
                 </table>
               </div>`;
             })() : ''}

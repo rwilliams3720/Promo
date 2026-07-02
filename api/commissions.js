@@ -310,9 +310,9 @@ export default async function handler(req, res) {
     // Sales: broad OR filter — sale_date OR issued_date within the month (for pay_on_issue support)
     const [salesRes, rosterRes, structuresRes, subcatsRes, agentStructsRes, bankLedgerRes] = await Promise.all([
       supabase.from('sales_log')
-        .select('hash, agent_id, product, subcategory, written_premium, split_sale, split_ratio, teammate, sale_date, issued_date, is_cancelled, chargeback_date, customer_name')
+        .select('hash, agent_id, product, subcategory, written_premium, split_sale, split_ratio, teammate, sale_date, issued_date, is_cancelled, chargeback_date, chargeback_exempt, customer_name')
         .eq('user_id', dataUserId)
-        .or(`and(sale_date.gte.${fromDate},sale_date.lte.${toDate}),and(issued_date.gte.${fromDate},issued_date.lte.${toDate})`),
+        .or(`and(sale_date.gte.${fromDate},sale_date.lte.${toDate}),and(issued_date.gte.${fromDate},issued_date.lte.${toDate}),and(is_cancelled.eq.true,chargeback_date.gte.${fromDate},chargeback_date.lte.${toDate})`),
       supabase.from('agent_roster')
         .select('agent_id, name, commission_structure_id, commission_all_must_qualify, commission_cap_total')
         .eq('user_id', dataUserId),
@@ -470,13 +470,23 @@ export default async function handler(req, res) {
       const isSplit   = !!sale.split_sale;
       const isFS      = isFinancialService[sale.subcategory] || false;
       if (primaryId) {
-        const struct       = getStructureList(primaryId)[0] || null;
-        const defaultRatio = struct?.default_split_ratio ?? 0.5;
+        const structList   = getStructureList(primaryId);
+        const firstStruct  = structList[0] || null;
+        const defaultRatio = firstStruct?.default_split_ratio ?? 0.5;
         const ratio        = isSplit ? (sale.split_ratio ?? defaultRatio) : 1;
         const share        = premium * ratio;
-        const commission   = applyRate(struct, product, sale.subcategory || null, share, premium, isFS);
+        const exempt       = !!sale.chargeback_exempt;
+        // Use the first structure that yields a non-zero rate for this product.
+        // Summing all structures doubles the deduction when multiple structures cover the same product.
+        let commission = 0;
+        if (!exempt) {
+          for (const st of structList) {
+            const c = applyRate(st, product, sale.subcategory || null, share, premium, isFS);
+            if (c > 0) { commission = c; break; }
+          }
+        }
         if (!chargebacks[primaryId]) chargebacks[primaryId] = [];
-        chargebacks[primaryId].push({ hash: sale.hash, product, premium, share, commission, chargeback_date: cbDate });
+        chargebacks[primaryId].push({ hash: sale.hash, product, premium, share, commission, chargeback_date: cbDate, exempt });
       }
     }
 

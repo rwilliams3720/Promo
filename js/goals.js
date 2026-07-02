@@ -440,6 +440,7 @@ function renderRaceGoalsRow(ag) {
 async function loadGoalsTab() {
   const el = document.getElementById('goals-content');
   if (!el) return;
+  _goalsViewFilter = 'all';
   syncGoalsFilterButtons();
   el.innerHTML = '<div style="color:var(--muted);font-size:13px;text-align:center;padding:2rem;">Loading…</div>';
   await loadMemberOrgTree();

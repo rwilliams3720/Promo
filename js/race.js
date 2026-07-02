@@ -10,13 +10,11 @@ async function refreshRaceData(btn) {
 async function loadRaceData() {
   if (!_dataUserId) return;
 
-  const [rdRes, scRes, rcRes, vmRes, msRes, slRes] = await Promise.all([
+  // Step 1: fetch config and race rows first so we can scope date-sensitive queries to the current month
+  const [rdRes, scRes, rcRes] = await Promise.all([
     _supabase.from('race_data').select('*').eq('user_id', _dataUserId),
     _supabase.from('scoring_config').select('config_key,config_value').eq('user_id', _dataUserId),
     _supabase.from('race_config').select('key,value').eq('user_id', _dataUserId),
-    _supabase.from('call_log').select('*', { count: 'exact', head: true }).eq('user_id', _dataUserId).eq('disposition', 'voicemail'),
-    _supabase.from('call_log').select('*', { count: 'exact', head: true }).eq('user_id', _dataUserId).eq('disposition', 'missed'),
-    _supabase.from('sales_log').select('agent_id,product').eq('user_id', _dataUserId).in('product', ['deposit','other','other2','other3','other4','other5']),
   ]);
 
   if (rdRes.error) console.error('race_data read error:', rdRes.error);
@@ -33,9 +31,6 @@ async function loadRaceData() {
       }
     });
   }
-
-  _raceWideVm     = vmRes.count || 0;
-  _raceWideMissed = msRes.count || 0;
 
   const month = (rcRes.data || []).find(r => r.key === 'current_month')?.value || '';
   document.getElementById('header-month').textContent = month || 'No race data uploaded';
@@ -57,6 +52,38 @@ async function loadRaceData() {
   const lastUploadAt = (rcRes.data || []).find(r => r.key === 'last_upload_at')?.value || '';
   const luEl = document.getElementById('last-upload-time');
   if (luEl) luEl.textContent = lastUploadAt ? new Date(lastUploadAt).toLocaleString() : '—';
+
+  // Compute date range for the current race month so queries are scoped to the right month
+  let fromDate = null, toDate = null;
+  if (month) {
+    const FULL12 = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const ABBR12 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const parts = month.trim().split(' ');
+    let idx = FULL12.indexOf(parts[0]);
+    if (idx === -1) idx = ABBR12.indexOf(parts[0]);
+    const yr = parseInt(parts[1]);
+    if (idx !== -1 && !isNaN(yr)) {
+      const m = idx + 1;
+      fromDate = `${yr}-${String(m).padStart(2,'0')}-01`;
+      const lastDay = new Date(yr, m, 0).getDate();
+      toDate = `${yr}-${String(m).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+    }
+  }
+
+  // Step 2: fetch call and sales data scoped to the current race month
+  let vmQ = _supabase.from('call_log').select('*', { count: 'exact', head: true }).eq('user_id', _dataUserId).eq('disposition', 'voicemail');
+  let msQ = _supabase.from('call_log').select('*', { count: 'exact', head: true }).eq('user_id', _dataUserId).eq('disposition', 'missed');
+  let slQ = _supabase.from('sales_log').select('agent_id,product').eq('user_id', _dataUserId).in('product', ['deposit','other','other2','other3','other4','other5']);
+  if (fromDate && toDate) {
+    vmQ = vmQ.gte('call_dt', fromDate).lte('call_dt', toDate);
+    msQ = msQ.gte('call_dt', fromDate).lte('call_dt', toDate);
+    slQ = slQ.gte('sale_date', fromDate).lte('sale_date', toDate);
+  }
+
+  const [vmRes, msRes, slRes] = await Promise.all([vmQ, msQ, slQ]);
+
+  _raceWideVm     = vmRes.count || 0;
+  _raceWideMissed = msRes.count || 0;
 
   const EXTRA_CATS = ['deposit','other','other2','other3','other4','other5'];
   const depOthCounts = {};
