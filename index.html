@@ -1184,12 +1184,13 @@
       <div class="panel">
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.2rem;">
           <div class="panel-title" style="margin:0">Agent Goals</div>
-          <div style="display:flex;gap:5px;flex-wrap:wrap;" id="goals-period-filter">
+          <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;" id="goals-period-filter">
             <button data-filter="all"         onclick="setGoalsFilter('all')"         style="font-size:11px;padding:3px 10px;background:var(--accent2);color:#000;border:none;border-radius:4px;cursor:pointer;font-weight:600;">All</button>
             <button data-filter="monthly"     onclick="setGoalsFilter('monthly')"     style="font-size:11px;padding:3px 10px;background:var(--card2);color:var(--muted);border:1px solid var(--border2);border-radius:4px;cursor:pointer;">Monthly</button>
             <button data-filter="quarterly"   onclick="setGoalsFilter('quarterly')"   style="font-size:11px;padding:3px 10px;background:var(--card2);color:var(--muted);border:1px solid var(--border2);border-radius:4px;cursor:pointer;">Quarterly</button>
             <button data-filter="semi_annual" onclick="setGoalsFilter('semi_annual')" style="font-size:11px;padding:3px 10px;background:var(--card2);color:var(--muted);border:1px solid var(--border2);border-radius:4px;cursor:pointer;">Semi-Annual</button>
             <button data-filter="annual"      onclick="setGoalsFilter('annual')"      style="font-size:11px;padding:3px 10px;background:var(--card2);color:var(--muted);border:1px solid var(--border2);border-radius:4px;cursor:pointer;">Annual</button>
+            <select id="goals-month-sel" onchange="goalsSetMonth(this.value)" style="background:var(--card2);border:1px solid var(--border2);color:var(--text);border-radius:4px;padding:3px 7px;font-size:11px;outline:none;cursor:pointer;margin-left:6px;"></select>
           </div>
         </div>
         <div id="goals-content">

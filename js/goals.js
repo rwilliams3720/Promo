@@ -382,6 +382,14 @@ function renderRaceGoalsRow(ag) {
     return d.getUTCFullYear() === raceMo.year && d.getUTCMonth() === raceMo.month;
   });
   if (!agGoal) agGoal = _agentGoals.find(g => monthlyVisible(g) && g.is_recurring);
+  // Fall back to monthly goal for current calendar month (handles race month lag when month just turned)
+  if (!agGoal) {
+    const calMoStr = `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}`;
+    agGoal = _agentGoals.find(g => {
+      if (!monthlyVisible(g) || g.is_recurring) return false;
+      return g.period_start.startsWith(calMoStr);
+    });
+  }
   // Fall back to any currently-active non-monthly goal (quarterly / semi-annual / annual)
   if (!agGoal) {
     const todayStr = new Date().toISOString().slice(0, 10);
@@ -440,19 +448,52 @@ function renderRaceGoalsRow(ag) {
   </div>`;
 }
 
+let _goalsSelectedMonth = ''; // YYYY-MM format for Goals tab month filter
+let _goalsTabGoals = [];      // goals with actuals for the selected Goals tab month (kept separate from _agentGoals used by race tab)
+
+function _populateGoalsMonthPicker() {
+  const sel = document.getElementById('goals-month-sel');
+  if (!sel) return;
+  const MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const now = new Date();
+  let opts = '';
+  for (let off = -11; off <= 2; off++) {
+    let m = now.getMonth() + off, y = now.getFullYear();
+    while (m < 0)  { m += 12; y--; }
+    while (m > 11) { m -= 12; y++; }
+    const val = `${y}-${String(m+1).padStart(2,'0')}`;
+    opts += `<option value="${val}"${val === _goalsSelectedMonth ? ' selected' : ''}>${MO[m]} ${y}</option>`;
+  }
+  sel.innerHTML = opts;
+}
+
+async function goalsSetMonth(yyyyMm) {
+  if (_goalsSelectedMonth === yyyyMm) return;
+  _goalsSelectedMonth = yyyyMm;
+  await loadGoalsTab();
+}
+
 async function loadGoalsTab() {
   const el = document.getElementById('goals-content');
   if (!el) return;
   _goalsViewFilter = 'all';
   syncGoalsFilterButtons();
+  if (!_goalsSelectedMonth) {
+    const now = new Date();
+    _goalsSelectedMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  }
+  _populateGoalsMonthPicker();
   el.innerHTML = '<div style="color:var(--muted);font-size:13px;text-align:center;padding:2rem;">Loading…</div>';
   await loadMemberOrgTree();
   try {
-    const r = await fetch('/api/agent-goals?withActuals=1', { headers: authHeaders() });
+    const r = await fetch(`/api/agent-goals?withActuals=1&refDate=${_goalsSelectedMonth}`, { headers: authHeaders() });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || 'Load failed');
-    _agentGoals  = Array.isArray(d) ? d : [];
-    _goalsLoaded = true;
+    _goalsTabGoals = Array.isArray(d) ? d : [];
+    // Also update _agentGoals (used by race tab) only when showing the current month
+    const _nowMo = new Date();
+    const _curMoStr = `${_nowMo.getFullYear()}-${String(_nowMo.getMonth()+1).padStart(2,'0')}`;
+    if (_goalsSelectedMonth === _curMoStr) { _agentGoals = _goalsTabGoals; _goalsLoaded = true; }
     renderGoalsTab();
   } catch(e) {
     el.innerHTML = `<div style="color:var(--danger);font-size:13px;text-align:center;padding:2rem;">${escHtml(e.message)}</div>`;
@@ -526,10 +567,14 @@ function _renderAgencyGoalsSection() {
     return vis.includes(myRole);
   });
   if (!visibleLocs.length) return '';
-  const now = new Date();
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const monthLabel = MONTHS[now.getMonth()] + ' ' + now.getFullYear();
-  const yearLabel  = String(now.getFullYear());
+  let agRefYr, agRefMo;
+  if (_goalsSelectedMonth) {
+    const parts = _goalsSelectedMonth.split('-').map(Number);
+    agRefYr = parts[0]; agRefMo = parts[1] - 1;
+  } else { const now = new Date(); agRefYr = now.getFullYear(); agRefMo = now.getMonth(); }
+  const monthLabel = MONTHS[agRefMo] + ' ' + agRefYr;
+  const yearLabel  = String(agRefYr);
   const prodRow = (goals, period) => {
     const entries = Object.entries(goals || {}).filter(([,v]) => v);
     if (!entries.length) return '';
@@ -567,14 +612,24 @@ function renderGoalsTab() {
   const agencyHtml = _renderAgencyGoalsSection();
 
   let filtered = _goalsViewFilter === 'all'
-    ? _agentGoals
-    : _agentGoals.filter(g => g.period_type === _goalsViewFilter);
+    ? _goalsTabGoals
+    : _goalsTabGoals.filter(g => g.period_type === _goalsViewFilter);
   if (_isMember && _managedAgentIds.length > 0) {
     filtered = filtered.filter(g => _managedAgentIds.includes(g.agent_id));
   }
+  if (_goalsSelectedMonth) {
+    filtered = filtered.filter(g => {
+      if (g.is_recurring) return true;
+      if (g.period_type === 'monthly') return g.period_start.startsWith(_goalsSelectedMonth);
+      const mid = `${_goalsSelectedMonth}-15`;
+      return mid >= g.period_start && mid <= g.period_end;
+    });
+  }
 
   if (!filtered.length && !agencyHtml) {
-    el.innerHTML = '<div style="color:var(--muted);font-size:13px;text-align:center;padding:2rem;">No goals found. Set goals in <button class="btn btn-secondary" style="padding:2px 8px;font-size:12px;" onclick="goToAccountTab(\'sales\',\'ma-agents-section\')">Account → Sales → Team</button></div>';
+    const MO_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const moLabel = _goalsSelectedMonth ? (() => { const [y,m] = _goalsSelectedMonth.split('-').map(Number); return ` for ${MO_FULL[m-1]} ${y}`; })() : '';
+    el.innerHTML = `<div style="color:var(--muted);font-size:13px;text-align:center;padding:2rem;">No goals found${moLabel}. Set goals in <button class="btn btn-secondary" style="padding:2px 8px;font-size:12px;" onclick="goToAccountTab('sales','ma-agents-section')">Account → Sales → Team</button></div>`;
     return;
   }
 

@@ -54,7 +54,8 @@ export default async function handler(req, res) {
     if (error) return res.status(500).json({ error: error.message });
 
     if (req.query.withActuals === '1') {
-      return res.status(200).json(await computeActuals(data || [], dataUserId));
+      const refDate = req.query.refDate || null; // YYYY-MM — sets reference month for recurring goal actuals
+      return res.status(200).json(await computeActuals(data || [], dataUserId, refDate));
     }
     return res.status(200).json(data || []);
   }
@@ -114,10 +115,17 @@ export default async function handler(req, res) {
   return res.status(405).json({ error: 'Method not allowed' });
 }
 
-function currentPeriodDates(periodType) {
-  const now = new Date();
-  const yr  = now.getUTCFullYear();
-  const mo  = now.getUTCMonth();
+function currentPeriodDates(periodType, refDateStr) {
+  let yr, mo;
+  if (refDateStr) {
+    const parts = refDateStr.split('-').map(Number);
+    yr = parts[0];
+    mo = parts[1] - 1; // 0-indexed
+  } else {
+    const now = new Date();
+    yr = now.getUTCFullYear();
+    mo = now.getUTCMonth();
+  }
   if (periodType === 'monthly') {
     const s = new Date(Date.UTC(yr, mo, 1)), e = new Date(Date.UTC(yr, mo + 1, 0));
     return { start: s.toISOString().slice(0,10), end: e.toISOString().slice(0,10) };
@@ -136,13 +144,13 @@ function currentPeriodDates(periodType) {
   return { start: s, end: e };
 }
 
-async function computeActuals(goals, dataUserId) {
+async function computeActuals(goals, dataUserId, refDateStr) {
   if (!goals.length) return goals;
 
-  // Recurring goals use the current period's date range for actuals
+  // Recurring goals use the reference period's date range for actuals
   const effective = goals.map(g => {
     if (!g.is_recurring) return g;
-    const curr = currentPeriodDates(g.period_type);
+    const curr = currentPeriodDates(g.period_type, refDateStr);
     return { ...g, _eff_start: curr.start, _eff_end: curr.end };
   });
 
