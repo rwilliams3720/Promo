@@ -210,7 +210,6 @@ export default async function handler(req, res) {
     if (req.query.chargebackMode === '1') {
       let cbQ = supabase.from('sales_log').select(COLS)
         .eq('user_id', dataUserId)
-        .in('source', ['manual', 'checklist'])
         .eq('is_cancelled', true)
         .gte('chargeback_date', fromDate)
         .lte('chargeback_date', toDate)
