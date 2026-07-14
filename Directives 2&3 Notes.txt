@@ -1,0 +1,241 @@
+DIRECTIVES 2 & 3 — REVIEW NOTES
+Generated: 2026-04-28
+Status: Pre-build analysis. Nothing here has been built yet. Use this as the brief before starting.
+
+================================================================================
+DIRECTIVE 2 — MANUAL SALES ENTRY & SALES TRACKING ADD-ON
+================================================================================
+
+WHAT THE DIRECTIVE ASKS FOR:
+- Research the three sample XLSX files (buich jan.xlsx, Justin sample.xlsx,
+  admin all product sales April 2026) to understand data shapes
+- Build a UI to manually enter sales data and store it in Supabase (same sales_log table)
+- Manual entries must be editable after the fact
+- Privacy rule: only store first 2 initials of customer's first name + full last name
+  (e.g., "Jo Smith" not "John Smith")
+- Toggle to switch between upload mode and manual entry mode
+  - Toggle OFF upload: deletes currently uploaded data, replaces with manual
+  - Toggle ON upload: resumes file-based flow and deletes manual uploaded
+  - Both directions require a confirmation warning, ideally recommending action
+    at the start of a new month or to save and archive before proceeding
+- Sales tracking (manual entry mode) is a $25/month add-on available at any tier
+- Account tab needs an interface to add the sales tracking add-on to an existing plan
+- Need directions for Stripe subscriptions that can't be auto-handled. Secondary subscription recommended that can be turned off if desired and sales tracker access tied to status.
+
+GAPS & LOGIC ISSUES TO RESOLVE BEFORE BUILDING:
+
+1. SOURCE COLUMN — sales_log has no "source" field distinguishing upload vs. manual.
+   If toggle switching deletes one set and inserts another, this works by full
+   replacement. But if we ever want to preserve both or audit which rows came from
+   where, we'll need to add a `source` column (values: 'upload' | 'manual') to
+   sales_log. Decision needed: delete-and-replace (simple) vs. source-tagged rows
+   (auditable but more complex). Recommend delete-and-replace per month, matching
+   the existing upload behavior, unless the user needs mixed sourcing.
+
+2. MANUAL ENTRY UI — The three sample files need to be opened and column structures
+   mapped before building the form. Known product columns from the directive context:
+   WL, UL, Term, Health, Auto, Fire. The sales_log insert schema needs to match
+   whatever upload.js writes. Open all three files and list every column header
+   before designing the form fields.
+
+3. CUSTOMER NAME PRIVACY RULE — First 2 initials of first name + full last name.
+   Implementation: on form submit, strip the first name down to initials before
+   storing. Example transform: "Jonathan" → "Jo". This should happen client-side
+   before the API call so no full name ever transits the wire. No server-side PII
+   handling needed, but the form label must communicate this clearly to the user.
+
+4. AI ANALYSIS SOURCE PRESERVATION — The directive says: confirm that no matter
+   how data is uploaded or entered, the analyzer fetches from the active source
+   while preserving historical fetches from previously used sources.
+
+   Current behavior: ai-analysis.js reads from sales_log and historical_months.
+   historical_months is written at archive time from whatever was in sales_log then.
+   So if a month was tracked by upload, archived, then the user switches to manual
+   for the next month, the archived month retains its upload-sourced data — that's
+   already correct.
+
+   What's NOT safe: switching modes mid-month (toggle off upload, replace with
+   manual entries) should not corrupt an already-archived month. Since archive
+   copies sales_log → historical_months and then clears sales_log, the switch
+   only affects the current month. This is fine as long as the confirmation warning
+   is shown before toggle.
+
+   No code change to ai-analysis.js should be needed, but add a note in the
+   toggle confirmation: "Switching modes will replace this month's sales data.
+   Archived months are not affected."
+
+5. TOGGLE IMPLEMENTATION DETAIL — Where does the toggle state live?
+   Options:
+   a) In-memory only — reset on page load (bad, user would have to re-toggle)
+   b) In accounts table — add a column `sales_entry_mode` ('upload' | 'manual')
+   c) In race_config — key/value pair for the current user
+
+   Recommend: accounts table column. It's per-user persistent state that the
+   backend and frontend both need to read. race_config is for race-level data,
+   not user preferences. SQL: ALTER TABLE accounts ADD COLUMN sales_entry_mode
+   text NOT NULL DEFAULT 'upload';
+
+   The upload endpoint (api/upload.js) should check this flag when receiving a
+   sales upload — if mode is 'manual', reject with an error message rather than
+   silently overwriting.
+
+6. ADD-ON BILLING — $25/month for sales tracking.
+
+   What needs to be built:
+   a) Supabase: accounts table needs a `has_sales_addon` boolean column
+      (DEFAULT false). This is the gating flag the frontend reads.
+   b) Stripe: a new Price object for the $25 add-on (one-time setup via Stripe
+      dashboard). The price_id needs to go in a Vercel env var.
+   c) api/stripe-checkout.js or a new api/addon-checkout.js: creates a Stripe
+      Checkout session for the add-on, attaches it to the existing customer.
+   d) api/stripe-webhook.js: on subscription activation for the add-on price,
+      set accounts.has_sales_addon = true. On cancellation, set false.
+   e) Account tab UI: show a panel if !has_sales_addon with a button to add it.
+      If has_sales_addon, show current status and a cancel option.
+
+   MANUAL STRIPE STEPS (for subscriptions that can't be auto-handled):
+   - Log in to Stripe Dashboard → Customers → find by stripe_customer_id
+   - Click the customer → Subscriptions → Add product
+   - Select the Sales Tracking add-on price ($25/month)
+   - Save. The webhook will fire invoice.payment_succeeded → set has_sales_addon=true
+   - If the customer already paid out-of-band: manually set has_sales_addon=true
+     via Supabase SQL: UPDATE accounts SET has_sales_addon=true WHERE email='...';
+
+   NOTE: The stripe_customer_id column already exists on the accounts table.
+   The webhook handler (api/stripe-webhook.js) already exists and handles
+   invoice events. Extending it for the add-on is the right approach vs. new file.
+
+7. CRUD API FOR MANUAL ENTRIES — Manual sales will need:
+   - GET /api/sales — fetch current month's manual entries for the user
+   - POST /api/sales — insert a new manual entry (validates field types, applies
+     privacy transform to customer name)
+   - PATCH /api/sales?id= — update an existing entry
+   - DELETE /api/sales?id= — delete an entry
+
+   Alternative: since sales_log already has a hash PK and insert behavior, a single
+   /api/sales endpoint with GET/POST/PATCH/DELETE methods is cleaner than four routes.
+   The hash for manual entries should be a SHA-256 of the agent+date+products to
+   prevent accidental duplicates, same approach as call dedup.
+
+8. FEATURE GATING — Manual entry toggle should only appear if has_sales_addon=true.
+   The upload UI should remain visible regardless of tier (upload is free).
+   Upsell panel should appear in the sales section for users without the add-on,
+   with a "Add Sales Tracking — $25/mo" button.
+
+BUILD ORDER FOR DIRECTIVE 2:
+  Step 1: Add-on infrastructure (Stripe price, webhook extension, accounts column)
+  Step 2: Account tab add-on UI (upsell + manage panel)
+  Step 3: Open all 3 sample files, map column shapes, finalize form fields
+  Step 4: Manual entry form + /api/sales CRUD
+  Step 5: Toggle logic (sales_entry_mode column + frontend enforcement)
+  Step 6: Upload guard in api/upload.js for manual mode
+
+================================================================================
+DIRECTIVE 3 — COMMISSIONS CALCULATOR ADD-ON
+================================================================================
+
+WHAT THE DIRECTIVE ASKS FOR:
+- A commissions calculator for users
+- Interface is explicitly UNDECIDED — further instructions for calculations to come
+- This will be another add-on at each tier (same add-on model as sales tracking)
+- Build the add-on infrastructure with this in mind (shared with Directive 2)
+
+GAPS & BLOCKERS:
+
+1. INTERFACE UNDEFINED — Cannot build the calculator UI or calculation logic until
+   the user provides specifics. The directive is a placeholder. Do not start building
+   until the following are answered:
+   - Is this a flat rate per policy type? A percentage of premium? Tiered?
+   - Who defines the commission rates — the account owner (per-company config) or
+     is it fixed?
+   - Are commissions per-agent, per-team, or both?
+   - Does it pull from sales_log data or is it a standalone input?
+   - Is output a report, a dashboard panel, or a downloadable statement?
+
+2. COMMISSION RATE STORAGE — No table or column exists for commission rates.
+   If rates are configurable per account, a new table is needed:
+   commission_config (user_id, product_key, rate_type ['flat'|'pct'], rate_value)
+   This mirrors the scoring_config pattern and should be designed the same way.
+
+   If rates are fixed/global, a config file or env var may be sufficient.
+   Await user's decision before writing any schema.
+
+3. DEPENDENCY ON DIRECTIVE 2 — If commissions pull from sales_log data, Directive 2
+   must be fully working first (manual entries, proper source tracking). A commissions
+   calculator run against incomplete or mixed-source sales data will produce wrong
+   numbers. Enforce build order: D2 complete → D3 starts.
+
+4. ADD-ON PRICING — Price not specified yet. Directive says "another add-on to each
+   tier." Likely another fixed monthly amount (separate from $25 sales tracking).
+   Same Stripe/webhook infrastructure applies — just a second price_id and a second
+   has_commissions_addon column on accounts.
+
+WHAT CAN BE BUILT NOW (without interface decision):
+- The add-on infrastructure (if built generically in Directive 2 step) will support
+  Directive 3 by adding a second price and a second boolean flag.
+- commission_config table can be scaffolded (matching scoring_config pattern) and
+  left empty until rates are defined.
+- Placeholder in the account tab: "Commissions Calculator (coming soon)" can be
+  shown to prime the upsell slot.
+
+================================================================================
+CROSS-CUTTING NOTES
+================================================================================
+
+1. ADD-ON INFRASTRUCTURE — SHARED DESIGN
+   Both Directives 2 and 3 use the same add-on model. Build it once, generically:
+   - Each add-on: Stripe Price object + Vercel env var for price_id + boolean column
+     on accounts + webhook handler case + account tab UI slot
+   - Design the account tab add-on section to accept N add-ons, not just one.
+     A simple loop over an addons config array renders each panel (name, price,
+     has_addon flag, checkout URL). This avoids copy-pasting per add-on.
+
+2. TRIAL BEHAVIOR FOR ADD-ONS
+   Directive doesn't specify whether the add-ons are trial-eligible. Recommend:
+   - Add-ons are NOT included in the base trial. Users on trial see the upsell panel
+     but cannot activate it without a payment method on file.
+   - Exception: admin accounts (is_admin=true) can use all add-ons without paying,
+     matching the existing admin override pattern.
+   This prevents abuse of the trial to access premium features indefinitely.
+
+3. PRIORITY ORDER
+   1. Add-on infrastructure (Stripe, webhook, accounts columns) — unblocks both D2 and D3
+   2. Directive 2 full build (sales CRUD, toggle, manual entry form, gating)
+   3. Directive 3 after interface decision arrives from user
+
+4. POTENTIAL SCOPE CREEP — The directive mentions "logging sales" as a future
+   expansion of the sub-user (Directive 1) system. Once manual sales entry exists
+   (D2), captain and chief_officer members should be able to use it. The upload.js
+   role guard already grants chief_officer upload access, but the new /api/sales
+   CRUD will need the same member context resolution pattern (check account_members,
+   use owner's user_id). Plan for this when building the sales API.
+
+5. EXISTING INFRASTRUCTURE THAT D2/D3 CAN REUSE
+   - SHA-256 dedup pattern (upload.js) → reuse for manual entry hash generation
+   - scoring_config table pattern → reuse for commission_config
+   - Stripe webhook extension → already has the skeleton in api/stripe-webhook.js
+   - _dataUserId pattern (from Directive 1 build) → ready for /api/sales to use
+
+================================================================================
+OPEN QUESTIONS TO CLARIFY WITH USER BEFORE STARTING
+================================================================================
+
+D2:
+  Q1. Open buich jan.xlsx, Justin sample.xlsx, and admin all product sales April 2026.xlsx
+      — what are all the column headers? Are they consistent across files?
+  Q2. What fields does the manual entry form need? (date, agent, each product type?)
+  Q3. Should the toggle be per-month or persistent across months?
+  Q4. Confirm $25/month is the correct add-on price before creating the Stripe price.
+  Q5. Should manual entries be editable by any user or only the account owner?
+      (i.e., can a captain-role member also edit manual sales entries?)
+
+D3:
+  Q6. How are commission rates defined — per product type, flat or percentage?
+  Q7. Are rates configurable per company or fixed globally?
+  Q8. Should commissions be visible to sub-users (members) or owner only?
+  Q9. What is the price for the commissions add-on?
+  Q10. What format does the output take — table, chart, PDF export, email?
+
+================================================================================
+END OF NOTES
+================================================================================

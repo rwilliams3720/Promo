@@ -122,7 +122,7 @@ export default async function handler(req, res) {
       supabase.from('checklist_config').select('*').eq('user_id', dataUserId).order('sort_order'),
       supabase.from('sales_subcategories').select('*').eq('user_id', dataUserId).order('scoring_category').order('sort_order'),
     ]);
-    const { data: agentData }    = await supabase.from('agent_roster').select('id, agent_id, name, active, commission_structure_id, commission_all_must_qualify').eq('user_id', dataUserId).order('name');
+    const { data: agentData }    = await supabase.from('agent_roster').select('id, agent_id, name, active, commission_structure_id, commission_all_must_qualify, team').eq('user_id', dataUserId).order('name');
     const { data: locationData } = await supabase.from('sales_locations').select('id, name, active, sort_order, address, phone, hours, goal_count, goal_premium, goals_enabled, activity_goals, goal_count_annual, goal_premium_annual, goals_visibility, product_goals_monthly, product_goals_annual').eq('user_id', dataUserId).order('sort_order').order('created_at');
     const { data: lsRow }        = await supabase.from('accounts').select('lead_sources').eq('user_id', dataUserId).single();
     const { data: agentStructData } = await supabase
@@ -333,7 +333,8 @@ export default async function handler(req, res) {
 
     // Lead sources update (full replace; null resets to defaults)
     if (leadSources !== undefined) {
-      await supabase.from('accounts').update({ lead_sources: leadSources }).eq('user_id', user.id);
+      const { error: lsErr } = await supabase.from('accounts').update({ lead_sources: leadSources }).eq('user_id', user.id);
+      if (lsErr) return res.status(500).json({ error: lsErr.message });
     }
 
     // Location CRUD

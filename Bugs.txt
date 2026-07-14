@@ -1,0 +1,4 @@
+Debug Sign in script:
+1. Sign in successful on first load only.  
+2. On refresh it signs out and should not.  follow previous rules remaining signed in unless session limit was hit.
+3. After being signed out on refresh, sign in timeout occurs and will not reset for sign in unless hard refresh or new private browsing window.  Using sign out function does not create same error, only on refresh.

@@ -83,6 +83,7 @@ Browser (index.html, served by Vercel)
   ↓ GET /api/commissions  (Authorization: Bearer <jwt>)
     → calculates per-agent commissions for a month; requires has_commissions_addon
     → returns earned, bonus_earned, chargebacks, net_earned, recalculated flag, structure_details
+    → breakdown items include customer_name (decrypted), sale_date, subcategory per sale
     → supports multiple structures per agent via agent_commission_structures junction table
   ↓ GET|POST|PATCH|DELETE /api/commission-structures  (Authorization: Bearer <jwt>)
     → CRUD for commission_structures table (rate tiers, thresholds, escalators, floors)
@@ -338,6 +339,8 @@ Shown when `_salesEntryMode === 'manual'` (or `_isAdmin`). Entry row fields:
 
 Submitted via `POST /api/sales`. On success: row removed, `loadRaceData()` refreshed, and `manualAddRow()` is called automatically to seed a fresh blank row for sequential entry.
 
+**Duplicate detection**: the API computes a hash of `[agentId, product, subcategory, saleDate, writtenPremium, normalizedName]`. If that hash already exists and `force` is not set, the API returns `{ duplicate: true }` (HTTP 409). The frontend (`_msrShowDupWarning` in `sales-log.js`) shows an amber warning on the row with **Add anyway** / **Skip** buttons. "Add anyway" sets `row.dataset.dupForce='1'` and resubmits with `force: true`; the API then salts the hash with `Date.now()` to insert a new row without overwriting the existing one.
+
 ### Sales Log (Performance tab → Sales Log sub-tab)
 Shows last 200 manual + checklist entries. Gated by `_hasSalesAddon || _isAdmin`.
 
@@ -461,7 +464,7 @@ Multiple structures can be assigned to a single agent via the `agent_commission_
 
 ### api/commissions.js — Key Patterns
 
-**`calcStructurePayout(agentId, struct, sales, roster, isFinancialService, actCounts, fromDate, toDate)`** — standalone helper called once per structure per agent. Returns `{ earned, breakdown, threshold_note, group_details, ungrouped_earned }`.
+**`calcStructurePayout(agentId, struct, sales, roster, isFinancialService, actCounts, fromDate, toDate)`** — standalone helper called once per structure per agent. Returns `{ earned, breakdown, threshold_note, group_details, ungrouped_earned }`. Each `breakdown` item includes `{ hash, product, premium, share, commission, split, role, customer_name, sale_date, subcategory }` — `customer_name` is decrypted via `decryptField` (same AES-256-GCM as `api/sales.js`, key from `CUSTOMER_ENCRYPTION_KEY` env var).
 
 **Ungrouped commissions blocking rule**: products with rates in a structure but NOT assigned to any threshold group go to `ungrouped` and normally always pay. Exception: if any threshold group has activity (counts > 0 or earned > 0) and fails its floor, AND no group with activity passes, `effectiveUngrouped = 0` — the entire structure earns $0. This prevents ungrouped products from double-counting when the same products are also rated in a second passing structure. Multi-group case: if at least one group with activity passes, ungrouped still pays.
 
@@ -491,7 +494,11 @@ Single-structure agents: `structure_details` is null; compat fields (`earned`, `
 Gated by `_hasCommissionsAddon || _isAdmin`. Teaser shows $25/mo price and "Add to Plan" button linking to Billing.
 
 Commissions table columns: Agent | Structures | Earned | Bonus | Chargebacks | Net | Status (Paid/Unpaid).
-Expanding a row shows per-structure breakdown when multiple structures assigned.
+Expanding a row (↓ button) opens the breakdown panel. The breakdown is rendered by `_buildCommBreakdownHtml(breakdown, sdPrefix)` in `js/sales.js`:
+- Sales are **grouped by product** with a bold header row showing count, total premium, total share, and total commission per product
+- Each individual sale has a **+ button** (`toggleCommSaleDetail`) that expands an inline detail row showing date, customer name, subcategory, and split role
+- `_fmtCommDate(d)` formats `YYYY-MM-DD` → `"Jan 15, 2026"` for display
+- Multi-structure agents: `_buildCommBreakdownHtml` is called once per structure with a prefix of `agentId + '-' + structureId.slice(0,6)` to keep detail row IDs unique across structures
 
 ### api/agent-roster.js — PATCH Actions
 - `set_team`: updates `agent_roster.team` for an agent — accessible to both **owners and captain members** (all other actions are owner-only)

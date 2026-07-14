@@ -4,3 +4,8 @@ node_modules/
 .vercel
 .env*.local
 stripe_backup_code.txt
+.DS_Store
+.claude/
+Mobile app/
+*.xlsx
+*.xls

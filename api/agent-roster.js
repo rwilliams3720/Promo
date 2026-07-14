@@ -17,14 +17,28 @@ export default async function handler(req, res) {
   if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
 
   const { data: acct } = await supabase.from('accounts').select('user_id').eq('user_id', user.id).single();
-  if (!acct) return res.status(403).json({ error: 'Owner access required' });
 
-  const userId = user.id;
+  let userId;
+  let isCaptainMember = false;
+  if (acct) {
+    userId = user.id;
+  } else {
+    const { data: memberRow } = await supabase
+      .from('account_members')
+      .select('owner_user_id, role')
+      .eq('member_user_id', user.id)
+      .eq('status', 'active')
+      .single();
+    if (!memberRow || memberRow.role !== 'captain') return res.status(403).json({ error: 'Owner access required' });
+    userId = memberRow.owner_user_id;
+    isCaptainMember = true;
+  }
 
   if (req.method === 'GET') {
+    if (isCaptainMember) return res.status(403).json({ error: 'Owner access required' });
     const { data, error } = await supabase
       .from('agent_roster')
-      .select('id, agent_id, name, active, commission_structure_id, commission_all_must_qualify, commission_cap_total, created_at')
+      .select('id, agent_id, name, active, commission_structure_id, commission_all_must_qualify, commission_cap_total, team, created_at')
       .eq('user_id', userId)
       .order('name');
     if (error) return res.status(500).json({ error: error.message });
@@ -32,6 +46,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
+    if (isCaptainMember) return res.status(403).json({ error: 'Owner access required' });
     const { name } = req.body || {};
     if (!name) return res.status(400).json({ error: 'name required' });
     const agent_id = slugify(name);
@@ -49,6 +64,16 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'PATCH') {
+    if (req.body.action === 'set_team') {
+      const { agent_id, team } = req.body;
+      if (!agent_id || !['sales', 'service'].includes(team)) return res.status(400).json({ error: 'agent_id and team required' });
+      const { error } = await supabase.from('agent_roster').update({ team }).eq('user_id', userId).eq('agent_id', agent_id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ ok: true });
+    }
+
+    if (isCaptainMember) return res.status(403).json({ error: 'Owner access required' });
+
     if (req.body.action === 'add_commission_structure') {
       const { agent_id, commission_structure_id } = req.body;
       if (!agent_id || !commission_structure_id) return res.status(400).json({ error: 'agent_id and commission_structure_id required' });
@@ -104,6 +129,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'DELETE') {
+    if (isCaptainMember) return res.status(403).json({ error: 'Owner access required' });
     const { id } = req.query;
     if (!id) return res.status(400).json({ error: 'id required' });
     const { error } = await supabase

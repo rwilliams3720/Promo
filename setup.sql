@@ -186,6 +186,9 @@ ALTER TABLE accounts ADD COLUMN IF NOT EXISTS timezone          text NOT NULL DE
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS report_hour       smallint NOT NULL DEFAULT 7;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS last_report_date  date;
 
+-- Lead sources (array of label strings stored as JSONB)
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS lead_sources jsonb;
+
 
 -- ─── 4. ADD user_id TO DATA TABLES (no-op if already created above) ──────────────────────────────
 
