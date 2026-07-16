@@ -240,7 +240,7 @@ Added by `split-sale-migration.sql`: `sale_weight (numeric NOT NULL DEFAULT 1)` 
 `other` and `deposit` products do NOT increment policy counts in race_data (excluded in `rebuildRaceData`).
 
 ### agent_roster columns
-`id (uuid PK), user_id, agent_id (text, slugified name), name (text), active (boolean default true), commission_structure_id (uuid nullable — legacy single-structure), commission_all_must_qualify (boolean default false), roster_agent_id (text nullable — links a member user to this agent for self-reporting), team (text default 'sales')`
+`id (uuid PK), user_id, agent_id (text, slugified name), name (text), active (boolean default true), commission_structure_id (uuid nullable — legacy single-structure), commission_all_must_qualify (boolean default false), commission_product_overrides (jsonb default '{}' — see Overlapping-product attribution under Commission Structures), roster_agent_id (text nullable — links a member user to this agent for self-reporting), team (text default 'sales')`
 UNIQUE(user_id, agent_id).
 
 `team`: `'sales'` or `'service'`. **Persistent team assignment** — this is the source of truth for team, not `race_data.team`. `setAgentTeam()` writes to both `race_data` and `agent_roster` (via `PATCH /api/agent-roster` `set_team` action) so assignments survive month-end archive. `ensureRaceDataRows()` (upload.js) and `setRaceMonth()` seed `race_data.team` from this column instead of defaulting to `'sales'`. Migration SQL:
@@ -462,9 +462,15 @@ Managed in Account → Sales → Commissions sub-tab. Each structure has: name, 
 
 Multiple structures can be assigned to a single agent via the `agent_commission_structures` junction table. The agent roster UI (in renderAgentRoster()) shows each agent's assigned structures with remove buttons, an "Add structure" dropdown for unassigned ones, and (when >1 structure) an "All structures must qualify" checkbox.
 
+**Overlapping-product attribution** (`agent_roster.commission_product_overrides jsonb`, shape `{ [productKey]: structureId | 'both' }`): when an agent has 2+ structures both rating the same product (e.g. two structures each configure a flat $25 `deposit` rate), the DEFAULT behavior sums commission across every structure that rates it — this is the original/unchanged behavior, so no one's pay changes automatically. The Agent Roster UI shows a "⚠ Overlapping products rated in multiple structures" panel (only when 2+ overlapping products are detected from `_commissionStructures` rates) with a per-product dropdown so the owner can explicitly restrict a product to one specific structure instead of summing both. `saveCommissionProductOverride()` → `PATCH /api/agent-roster` action `update_product_override`. The override is honored identically by **both** the earned calculation (`calcStructurePayout` skips a sale for a structure when overridden to a different one) and the chargeback deduction (`chargebackCommission` in `api/_lib/commission-calc.js`), so earned and chargeback always stay consistent with each other for a given agent/product.
+
+### api/_lib/commission-calc.js — Shared Commission Math
+
+Not a route (absent from `vercel.json` `builds`/`routes` — plain importable module). Exports `applyRate()` (rate lookup, moved here from `api/commissions.js`) and `chargebackCommission(structList, product, subcategory, share, premium, isFS, override)` — used by both `api/commissions.js` (its own chargeback line items) and `api/sales.js` (`chargebackMode` on the Chargeback Report) so the two reports always agree on dollar amounts. `chargebackCommission` honors `commission_product_overrides`: a specific structure ID restricts the deduction to that structure only; `'both'` or unset sums every assigned structure with a non-zero rate (mirroring earned's default). Also exports `buildStructureListLookup(roster, structureById, junctionRows)` for building a `getStructureList(agentId)` lookup outside `api/commissions.js`.
+
 ### api/commissions.js — Key Patterns
 
-**`calcStructurePayout(agentId, struct, sales, roster, isFinancialService, actCounts, fromDate, toDate)`** — standalone helper called once per structure per agent. Returns `{ earned, breakdown, threshold_note, group_details, ungrouped_earned }`. Each `breakdown` item includes `{ hash, product, premium, share, commission, split, role, customer_name, sale_date, subcategory }` — `customer_name` is decrypted via `decryptField` (same AES-256-GCM as `api/sales.js`, key from `CUSTOMER_ENCRYPTION_KEY` env var).
+**`calcStructurePayout(agentId, struct, sales, roster, isFinancialService, actCounts, fromDate, toDate, overrides)`** — standalone helper called once per structure per agent. `overrides` is the agent's `commission_product_overrides`; a sale's product is skipped for this structure when overridden to a different structure ID. Returns `{ earned, breakdown, threshold_note, group_details, ungrouped_earned }`. Each `breakdown` item includes `{ hash, product, premium, share, commission, split, role, customer_name, sale_date, subcategory }` — `customer_name` is decrypted via `decryptField` (same AES-256-GCM as `api/sales.js`, key from `CUSTOMER_ENCRYPTION_KEY` env var).
 
 **Ungrouped commissions blocking rule**: products with rates in a structure but NOT assigned to any threshold group go to `ungrouped` and normally always pay. Exception: if any threshold group has activity (counts > 0 or earned > 0) and fails its floor, AND no group with activity passes, `effectiveUngrouped = 0` — the entire structure earns $0. This prevents ungrouped products from double-counting when the same products are also rated in a second passing structure. Multi-group case: if at least one group with activity passes, ungrouped still pays.
 
@@ -486,7 +492,7 @@ Multiple structures can be assigned to a single agent via the `agent_commission_
 ```
 Single-structure agents: `structure_details` is null; compat fields (`earned`, `breakdown`, `threshold_note`) at top level.
 
-**Chargeback logic**: finds `sales_log` rows for the agent where `is_cancelled=true` and `chargeback_date` falls within the commission month. Calculates commission amount via the same `applyRate` function and returns as a negative.
+**Chargeback logic**: finds `sales_log` rows for the agent where `is_cancelled=true` and `chargeback_date` falls within the commission month. Calculates commission amount via `chargebackCommission()` (`api/_lib/commission-calc.js`), which respects `commission_product_overrides`, and returns as a negative.
 
 **Recalculation detection**: `recalculated = paid != null && Math.abs(paid.amount_paid - net_earned) > 0.01`. Shown as amber row highlight + "⚠ Recalculated" badge in the commissions table.
 
@@ -494,17 +500,20 @@ Single-structure agents: `structure_details` is null; compat fields (`earned`, `
 Gated by `_hasCommissionsAddon || _isAdmin`. Teaser shows $25/mo price and "Add to Plan" button linking to Billing.
 
 Commissions table columns: Agent | Structures | Earned | Bonus | Chargebacks | Net | Status (Paid/Unpaid).
-Expanding a row (↓ button) opens the breakdown panel. The breakdown is rendered by `_buildCommBreakdownHtml(breakdown, sdPrefix)` in `js/sales.js`:
+Expanding a row (↓ button) opens the breakdown panel, rendered by `_buildCommAgentDetailHtml(r)` in `js/sales.js` — structure/group breakdowns (via `_buildCommBreakdownHtml(breakdown, sdPrefix)`), commission bank summary, itemized chargebacks, and carry-forward. This function is shared verbatim between the owner's expandable row and the member's own-commission view (below) so both always show identical numbers:
 - Sales are **grouped by product** with a bold header row showing count, total premium, total share, and total commission per product
 - Each individual sale has a **+ button** (`toggleCommSaleDetail`) that expands an inline detail row showing date, customer name, subcategory, and split role
 - `_fmtCommDate(d)` formats `YYYY-MM-DD` → `"Jan 15, 2026"` for display
 - Multi-structure agents: `_buildCommBreakdownHtml` is called once per structure with a prefix of `agentId + '-' + structureId.slice(0,6)` to keep detail row IDs unique across structures
+
+**Member view** (`_isMember` branch of `renderCommissions()`): shows the member's own agent row(s) with the same `_buildCommSummaryStatsHtml(r)` summary line the owner sees (Earned, Bonus, CB, Prior Debt when carry-forward debt applies, Net) followed by the same `_buildCommAgentDetailHtml(r)` detail panel — full transparency into how the member's own compensation was calculated, not just a bare earned total.
 
 ### api/agent-roster.js — PATCH Actions
 - `set_team`: updates `agent_roster.team` for an agent — accessible to both **owners and captain members** (all other actions are owner-only)
 - `add_commission_structure`: upserts into `agent_commission_structures` with auto sort_order
 - `remove_commission_structure`: deletes from junction table
 - `update_qualifier`: sets `commission_all_must_qualify` on the agent_roster row
+- `update_product_override`: read-modify-write merge into `agent_roster.commission_product_overrides` — `{ agent_id, product, structure_id }`; `structure_id` of `'both'`/falsy deletes the override key (reverts to default sum-both behavior)
 
 ### Commission Bank
 
@@ -612,10 +621,14 @@ The Performance tab has 5 sub-tabs controlled by `showPerfSubTab(name, btn)`:
 
 ### Chargeback Report
 
-`renderChargebackReport()` — shows chargeback stats with org chart grouping when no agent filter is active:
+`GET /api/sales?chargebackMode=1` returns cancelled sales filtered by `chargeback_date` (not `sale_date`) within the requested range — chargebacks always show up in the month they were charged back, not the month they were sold. Each entry includes `chargeback_commission` (computed via the shared `chargebackCommission()` helper — same math and per-agent structure overrides as the Commissions report, so the two always agree).
+
+`renderChargebackReport()` — shows chargeback stats (including a "Commission Charged Back" stat card, not just premium) with org chart grouping when no agent filter is active:
 - Groups results by CO, with each CO's subordinates nested beneath them
 - Falls back to a single flat table when a specific agent is filtered or no org groups exist
 - Bosun members: `loadChargebackReport()` pre-sets `_cbAgentFilter` to their own `_memberAgentId`; `_cbPopulateFilters()` locks the dropdown to their agent only
+- **Commission column**: shows `-$X` per chargeback line, or a "Waived" badge when `chargeback_exempt` is set
+- **Moving a chargeback to a different month**: the CB Date column is an inline `<input type="date">` for owner/admin/captain/chief_officer (`canMoveCb` — bosun/custom cannot). `moveChargebackDate(hash, newDate)` PATCHes `chargeback_date` on `/api/sales` and reloads the report (the row naturally disappears from the current view if moved outside the viewed month/quarter/year, since the report re-queries by the new date)
 
 ### Call Performance Table — Sortable Columns
 

@@ -38,7 +38,7 @@ export default async function handler(req, res) {
     if (isCaptainMember) return res.status(403).json({ error: 'Owner access required' });
     const { data, error } = await supabase
       .from('agent_roster')
-      .select('id, agent_id, name, active, commission_structure_id, commission_all_must_qualify, commission_cap_total, team, created_at')
+      .select('id, agent_id, name, active, commission_structure_id, commission_all_must_qualify, commission_cap_total, commission_product_overrides, team, created_at')
       .eq('user_id', userId)
       .order('name');
     if (error) return res.status(500).json({ error: error.message });
@@ -108,6 +108,22 @@ export default async function handler(req, res) {
         .eq('user_id', userId).eq('agent_id', agent_id);
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ ok: true });
+    }
+
+    if (req.body.action === 'update_product_override') {
+      const { agent_id, product, structure_id } = req.body;
+      if (!agent_id || !product) return res.status(400).json({ error: 'agent_id and product required' });
+      const { data: row, error: fetchErr } = await supabase.from('agent_roster')
+        .select('commission_product_overrides').eq('user_id', userId).eq('agent_id', agent_id).single();
+      if (fetchErr) return res.status(500).json({ error: fetchErr.message });
+      const overrides = { ...(row?.commission_product_overrides || {}) };
+      if (!structure_id || structure_id === 'both') delete overrides[product];
+      else overrides[product] = structure_id;
+      const { error } = await supabase.from('agent_roster')
+        .update({ commission_product_overrides: overrides })
+        .eq('user_id', userId).eq('agent_id', agent_id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ ok: true, commission_product_overrides: overrides });
     }
 
     const { id, name, active, commission_structure_id, agent_id: bodyAgentId } = req.body || {};

@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
+import { applyRate, chargebackCommission } from './_lib/commission-calc.js';
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
@@ -70,37 +71,6 @@ function monthLabel(yyyyMM) {
   return new Date(yr, mo - 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
 }
 
-// Apply commission rate — checks minimum threshold, subcategory override, FS rate, then product default
-function applyRate(structure, product, subcategory, premiumShare, writtenPremium, isFS) {
-  const productCfg = structure?.rates?.[product];
-  if (!productCfg) return 0;
-
-  // Minimum premium threshold — whole sale must exceed this before any commission
-  if (productCfg.minimum != null && writtenPremium < productCfg.minimum) return 0;
-
-  // Subcategory override takes priority over all product-level settings
-  if (subcategory && productCfg.subcategories?.[subcategory]) {
-    const sub = productCfg.subcategories[subcategory];
-    if (!sub.type || sub.type === 'none') return 0;
-    let subComm = 0;
-    if (sub.type === 'percent') subComm = premiumShare * ((sub.rate || 0) / 100);
-    else if (sub.type === 'flat') subComm = sub.rate || 0;
-    if (structure.cap_per_policy != null && subComm > structure.cap_per_policy) subComm = structure.cap_per_policy;
-    return subComm;
-  }
-
-  // No subcategory override — use product default or FS rate
-  if (!productCfg.type || productCfg.type === 'none') return 0;
-
-  // Financial service rate overrides the base rate (still uses product's type)
-  const rate = (isFS && productCfg.fs_rate != null) ? productCfg.fs_rate : (productCfg.rate || 0);
-  let comm = 0;
-  if (productCfg.type === 'percent') comm = premiumShare * (rate / 100);
-  else if (productCfg.type === 'flat') comm = rate;
-  if (structure.cap_per_policy != null && comm > structure.cap_per_policy) comm = structure.cap_per_policy;
-  return comm;
-}
-
 // Build a human-readable note explaining which groups blocked payout
 function buildThresholdNote(thresholds, groupStatus, groupCounts, groupEarned) {
   const parts = thresholds
@@ -118,7 +88,7 @@ function buildThresholdNote(thresholds, groupStatus, groupCounts, groupEarned) {
   return parts.length ? parts.join(' | ') : 'Production minimums not met';
 }
 
-function calcStructurePayout(agentId, struct, sales, roster, isFinancialService, actCounts, fromDate, toDate) {
+function calcStructurePayout(agentId, struct, sales, roster, isFinancialService, actCounts, fromDate, toDate, overrides) {
   if (!struct) return { earned: 0, breakdown: [], threshold_note: null, group_details: null, ungrouped_earned: 0 };
   const payOnIssue = struct.pay_on_issue || false;
   const inMonth = d => d && d >= fromDate && d <= toDate;
@@ -130,6 +100,11 @@ function calcStructurePayout(agentId, struct, sales, roster, isFinancialService,
     const product = sale.product || 'other';
     const isSplit = !!sale.split_sale;
     const isFS = isFinancialService[sale.subcategory] || false;
+
+    // Product is overridden to a different structure — this structure sits it out
+    // so overlapping rates don't double-count the sale (unless override is 'both').
+    const ov = (overrides || {})[product];
+    if (ov && ov !== 'both' && ov !== struct.id) continue;
 
     if (sale.agent_id === agentId) {
       const dateOk = payOnIssue ? inMonth(sale.issued_date) : inMonth(sale.sale_date);
@@ -314,7 +289,7 @@ export default async function handler(req, res) {
         .eq('user_id', dataUserId)
         .or(`and(sale_date.gte.${fromDate},sale_date.lte.${toDate}),and(issued_date.gte.${fromDate},issued_date.lte.${toDate}),and(is_cancelled.eq.true,chargeback_date.gte.${fromDate},chargeback_date.lte.${toDate})`),
       supabase.from('agent_roster')
-        .select('agent_id, name, commission_structure_id, commission_all_must_qualify, commission_cap_total')
+        .select('agent_id, name, commission_structure_id, commission_all_must_qualify, commission_cap_total, commission_product_overrides')
         .eq('user_id', dataUserId),
       supabase.from('commission_structures')
         .select('id, name, default_split_ratio, pay_on_issue, thresholds, rates')
@@ -409,11 +384,12 @@ export default async function handler(req, res) {
     for (const agent of roster) {
       const structList = getStructureList(agent.agent_id);
       const allMustQualify = agent.commission_all_must_qualify || false;
+      const productOverrides = agent.commission_product_overrides || {};
 
       const structureDetails = structList.map(struct => ({
         structure_id:   struct.id,
         structure_name: struct.name,
-        ...calcStructurePayout(agent.agent_id, struct, sales, roster, isFinancialService, actCounts, fromDate, toDate),
+        ...calcStructurePayout(agent.agent_id, struct, sales, roster, isFinancialService, actCounts, fromDate, toDate, productOverrides),
       }));
 
       if (allMustQualify && structureDetails.some(sd => sd.threshold_note)) {
@@ -457,8 +433,10 @@ export default async function handler(req, res) {
       bonusEarned[agent.agent_id] = Math.round(bonus * 100) / 100;
     }
 
-    // Process chargebacks: cancelled sales where chargeback_date falls in this month
-    // Use first structure for chargeback rate calculation (backward-compatible)
+    // Process chargebacks: cancelled sales where chargeback_date falls in this month.
+    // Uses the agent's commission_product_overrides to decide attribution when the
+    // product is rated in more than one assigned structure — same rule as earned,
+    // so a chargeback always deducts exactly what was originally credited.
     const chargebacks = {}; // agentId → [{hash, product, premium, share, commission, chargeback_date}]
     for (const sale of sales) {
       if (!sale.is_cancelled || !sale.chargeback_date) continue;
@@ -471,20 +449,12 @@ export default async function handler(req, res) {
       const isFS      = isFinancialService[sale.subcategory] || false;
       if (primaryId) {
         const structList   = getStructureList(primaryId);
-        const firstStruct  = structList[0] || null;
-        const defaultRatio = firstStruct?.default_split_ratio ?? 0.5;
-        const ratio        = isSplit ? (sale.split_ratio ?? defaultRatio) : 1;
-        const share        = premium * ratio;
-        const exempt       = !!sale.chargeback_exempt;
-        // Use the first structure that yields a non-zero rate for this product.
-        // Summing all structures doubles the deduction when multiple structures cover the same product.
-        let commission = 0;
-        if (!exempt) {
-          for (const st of structList) {
-            const c = applyRate(st, product, sale.subcategory || null, share, premium, isFS);
-            if (c > 0) { commission = c; break; }
-          }
-        }
+        const defaultRatio = structList[0]?.default_split_ratio ?? 0.5;
+        const ratio         = isSplit ? (sale.split_ratio ?? defaultRatio) : 1;
+        const share         = premium * ratio;
+        const exempt        = !!sale.chargeback_exempt;
+        const override      = (agentById[primaryId]?.commission_product_overrides || {})[product];
+        const commission    = exempt ? 0 : chargebackCommission(structList, product, sale.subcategory || null, share, premium, isFS, override);
         if (!chargebacks[primaryId]) chargebacks[primaryId] = [];
         chargebacks[primaryId].push({ hash: sale.hash, product, premium, share, commission, chargeback_date: cbDate, exempt });
       }

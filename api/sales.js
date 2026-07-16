@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+import { chargebackCommission, buildStructureListLookup } from './_lib/commission-calc.js';
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
@@ -217,7 +218,43 @@ export default async function handler(req, res) {
       if (ctx.isMember && !ctx.isCapOrCO && ctx.memberAgentId) cbQ = cbQ.eq('agent_id', ctx.memberAgentId);
       const { data: cbData, error: cbErr } = await cbQ;
       if (cbErr) return res.status(500).json({ error: cbErr.message });
-      const entries = (cbData || []).map(row => ({ ...row, customer_name: decryptField(row.customer_name) }));
+
+      // Compute the commission each chargeback deducts — same math and per-agent
+      // structure overrides as api/commissions.js, so the two reports always agree.
+      const commissionByHash = {};
+      const agentIds = [...new Set((cbData || []).map(r => r.agent_id).filter(Boolean))];
+      if (agentIds.length) {
+        const [rosterRes, structsRes, junctionRes, subcatsRes] = await Promise.all([
+          supabase.from('agent_roster').select('agent_id, commission_structure_id, commission_product_overrides').eq('user_id', dataUserId).in('agent_id', agentIds),
+          supabase.from('commission_structures').select('id, default_split_ratio, rates, cap_per_policy').eq('user_id', dataUserId),
+          supabase.from('agent_commission_structures').select('agent_id, commission_structure_id, sort_order').eq('user_id', dataUserId).in('agent_id', agentIds).order('sort_order'),
+          supabase.from('sales_subcategories').select('label, is_financial_service').eq('user_id', dataUserId),
+        ]);
+        const structureById = Object.fromEntries((structsRes.data || []).map(s => [s.id, s]));
+        const { agentById, getStructureList } = buildStructureListLookup(rosterRes.data || [], structureById, junctionRes.data || []);
+        const isFinancialService = {};
+        for (const s of (subcatsRes.data || [])) isFinancialService[s.label] = s.is_financial_service || false;
+
+        for (const sale of (cbData || [])) {
+          if (sale.chargeback_exempt) { commissionByHash[sale.hash] = 0; continue; }
+          const structList = getStructureList(sale.agent_id);
+          if (!structList.length) { commissionByHash[sale.hash] = 0; continue; }
+          const premium = parseFloat(sale.written_premium) || 0;
+          const isSplit = !!sale.split_sale;
+          const defaultRatio = structList[0]?.default_split_ratio ?? 0.5;
+          const ratio = isSplit ? (sale.split_ratio ?? defaultRatio) : 1;
+          const share = premium * ratio;
+          const isFS = isFinancialService[sale.subcategory] || false;
+          const override = (agentById[sale.agent_id]?.commission_product_overrides || {})[sale.product];
+          commissionByHash[sale.hash] = chargebackCommission(structList, sale.product, sale.subcategory || null, share, premium, isFS, override);
+        }
+      }
+
+      const entries = (cbData || []).map(row => ({
+        ...row,
+        customer_name: decryptField(row.customer_name),
+        chargeback_commission: Math.round((commissionByHash[row.hash] || 0) * 100) / 100,
+      }));
       return res.status(200).json({ entries });
     }
 

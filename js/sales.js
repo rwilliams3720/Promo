@@ -238,6 +238,35 @@ function renderAgentRoster() {
              <input type="checkbox" id="qual-${safeId}" ${a.commission_all_must_qualify ? 'checked' : ''} onchange="saveAgentQualifier('${escHtml(a.id)}',this.checked)">
              All structures must qualify for any payout
            </label>` : '';
+      const overlapHtml = (() => {
+        if (assignedIds.length < 2) return '';
+        const assignedStructs = assignedIds.map(sid => _commissionStructures.find(s => s.id === sid)).filter(Boolean);
+        const productCounts = {};
+        for (const s of assignedStructs) {
+          for (const [prod, cfg] of Object.entries(s.rates || {})) {
+            if (cfg?.type && cfg.type !== 'none') productCounts[prod] = (productCounts[prod] || 0) + 1;
+          }
+        }
+        const overlapping = Object.keys(productCounts).filter(p => productCounts[p] > 1);
+        if (!overlapping.length) return '';
+        const overrides = a.commission_product_overrides || {};
+        const rows = overlapping.map(prod => {
+          const current = overrides[prod] || 'both';
+          const structOpts = assignedStructs.map(s => `<option value="${escHtml(s.id)}" ${current === s.id ? 'selected' : ''}>${escHtml(s.name)}</option>`).join('');
+          return `<div style="display:flex;align-items:center;gap:6px;margin-top:3px;flex-wrap:wrap;">
+            <span style="font-size:11px;color:var(--muted);min-width:70px;">${escHtml(labelForCat(prod))}</span>
+            <select onchange="saveCommissionProductOverride('${safeId}','${escHtml(prod)}',this.value)" style="background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:2px 6px;font-size:11px;outline:none;">
+              ${structOpts}
+              <option value="both" ${current === 'both' ? 'selected' : ''}>Both (sum) — current behavior</option>
+            </select>
+          </div>`;
+        }).join('');
+        return `<div style="margin-top:6px;padding:6px 8px;background:rgba(255,179,0,.06);border:1px solid rgba(255,179,0,.2);border-radius:6px;">
+          <div style="font-size:10px;font-weight:600;color:#ffb300;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">&#x26A0; Overlapping products rated in multiple structures</div>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:4px;">Choose which structure each applies to — affects both earned commission and chargeback deductions. Defaults to summing both.</div>
+          ${rows}
+        </div>`;
+      })();
       const capTotalHtml = `<div style="margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
         <span style="font-size:10px;color:var(--muted);white-space:nowrap;">Max Total Commission $</span>
         <input id="cap-total-${safeId}" type="number" min="0" step="1" placeholder="No cap" value="${a.commission_cap_total != null ? a.commission_cap_total : ''}"
@@ -250,6 +279,7 @@ function renderAgentRoster() {
         ${assignedRows || '<div style="font-size:11px;color:var(--muted);">None assigned</div>'}
         ${addDropdown}
         ${qualLabel}
+        ${overlapHtml}
         ${capTotalHtml}
       </div>`;
     })() : '';
@@ -388,6 +418,20 @@ async function saveAgentQualifier(agentRosterId, checked) {
     method: 'PATCH',
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'update_qualifier', id: agentRosterId, commission_all_must_qualify: checked }),
+  });
+}
+
+async function saveCommissionProductOverride(agentId, product, structureId) {
+  const a = _agentRoster.find(x => x.agent_id === agentId);
+  if (a) {
+    if (!a.commission_product_overrides) a.commission_product_overrides = {};
+    if (structureId === 'both') delete a.commission_product_overrides[product];
+    else a.commission_product_overrides[product] = structureId;
+  }
+  await fetch('/api/agent-roster', {
+    method: 'PATCH',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'update_product_override', agent_id: agentId, product, structure_id: structureId }),
   });
 }
 
@@ -2034,107 +2078,12 @@ function _buildCommBreakdownHtml(breakdown, sdPrefix) {
   return html;
 }
 
-function renderCommissions() {
-  if (!_commData) return;
-  const results = _commData.results || [];
-  const month   = _commData.month   || '';
-
-  if (_isMember) {
-    document.getElementById('comm-owner-view').style.display  = 'none';
-    document.getElementById('comm-member-view').style.display = '';
-    // Find the member's own entry by matching any agent they appear in as primary
-    const memberPane = document.getElementById('comm-member-own');
-    if (!memberPane) return;
-    if (!results.length) { memberPane.innerHTML = '<p style="font-size:13px;color:var(--muted);">No commission data for this month.</p>'; return; }
-    memberPane.innerHTML = results.map(r => `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;gap:.5rem;">
-        <span style="font-size:14px;font-weight:600;">${escHtml(r.name)}</span>
-        <span style="font-size:18px;font-weight:700;color:var(--accent2);">$${r.earned.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-      </div>
-      ${_buildCommBreakdownHtml(r.breakdown, 'mv-' + r.agent_id.replace(/[^a-z0-9]/g,''))}
-    `).join('<hr style="border:none;border-top:1px solid var(--border2);margin:.75rem 0;">');
-    return;
-  }
-
-  // Owner view — rebuild payment lookup map (avoids embedding JSON in onclick attributes)
-  _commPayments = {};
-  for (const r of results) { if (r.paid?.amount_paid != null) _commPayments[r.agent_id] = r.paid; }
-
-  document.getElementById('comm-owner-view').style.display  = '';
-  document.getElementById('comm-member-view').style.display = 'none';
-  const wrap = document.getElementById('comm-table-wrap');
-  if (!wrap) return;
-
-  if (!results.length) {
-    wrap.innerHTML = '<p style="font-size:13px;color:var(--muted);">No agent data found.</p>';
-    return;
-  }
-
-  // Detect if any agent has a carry-forward in or out this month
-  const hasCF = results.some(r => (r.carry_forward_in || 0) !== 0 || (r.carry_forward_out || 0) !== 0);
-  const colCount = hasCF ? 9 : 8;
-  const fmt2 = n => n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-
-  wrap.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px;">
-    <thead>
-      <tr style="border-bottom:1px solid var(--border2);">
-        <th style="text-align:left;padding:8px 10px;color:var(--muted);font-weight:600;">Agent</th>
-        <th style="text-align:right;padding:8px 10px;color:var(--muted);font-weight:600;">Earned</th>
-        <th style="text-align:right;padding:8px 10px;color:var(--muted);font-weight:600;">Bonus</th>
-        <th style="text-align:right;padding:8px 10px;color:var(--muted);font-weight:600;">CB</th>
-        ${hasCF ? '<th style="text-align:right;padding:8px 10px;color:var(--muted);font-weight:600;" title="Carry-forward debt applied from prior month">Prior Debt</th>' : ''}
-        <th style="text-align:right;padding:8px 10px;color:var(--muted);font-weight:600;">Net</th>
-        <th style="text-align:right;padding:8px 10px;color:var(--muted);font-weight:600;">Paid</th>
-        <th style="text-align:center;padding:8px 10px;color:var(--muted);font-weight:600;">Status</th>
-        <th style="padding:8px 10px;"></th>
-      </tr>
-    </thead>
-    <tbody>
-      ${results.map(r => {
-        const isPaid  = r.paid?.amount_paid != null;
-        const notes   = r.paid?.notes || '';
-        const cfIn    = r.carry_forward_in  || 0;
-        const cfOut   = r.carry_forward_out || 0;
-        // net_earned from API = earned + bonus - CB + carry_forward_in (true net; can be negative)
-        const netDisplay = r.net_earned;
-        // Default amount for Mark Paid: bank paid_out if available, otherwise max(0, net)
-        const defaultPay = r.bank_summary ? r.bank_summary.paid_out : Math.max(0, netDisplay);
-        const rowBg = r.recalculated ? 'background:rgba(255,179,0,.06);' : (cfOut < 0 ? 'background:rgba(255,77,109,.04);' : '');
-        return `<tr style="border-bottom:1px solid var(--border2);${rowBg}" id="comm-row-${escHtml(r.agent_id)}">
-          <td style="padding:8px 10px;">${escHtml(r.name)}</td>
-          <td style="padding:8px 10px;text-align:right;font-weight:600;">$${fmt2(r.earned)}</td>
-          <td style="padding:8px 10px;text-align:right;color:var(--accent);">${r.bonus_earned > 0 ? '$'+fmt2(r.bonus_earned) : '<span style="color:var(--muted);">—</span>'}</td>
-          <td style="padding:8px 10px;text-align:right;">${r.chargeback_total > 0 ? `<span style="color:#ff6b6b;">-$${fmt2(r.chargeback_total)}</span>` : '<span style="color:var(--muted);">—</span>'}</td>
-          ${hasCF ? `<td style="padding:8px 10px;text-align:right;">${cfIn < 0 ? `<span style="color:#ff6b6b;" title="Carry-forward from prior month">-$${fmt2(-cfIn)}</span>` : '<span style="color:var(--muted);">—</span>'}</td>` : ''}
-          <td style="padding:8px 10px;text-align:right;font-weight:700;${netDisplay < 0 ? 'color:#ff6b6b;' : ''}">
-            ${netDisplay < 0
-              ? `-$${fmt2(-netDisplay)}<div style="font-size:10px;color:#ff6b6b;font-weight:400;">carries fwd</div>`
-              : `$${fmt2(netDisplay)}`}
-          </td>
-          <td style="padding:8px 10px;text-align:right;">
-            ${isPaid
-              ? `<div style="font-weight:600;">$${fmt2(parseFloat(r.paid.amount_paid))}</div>
-                 ${notes ? `<div style="font-size:10px;color:var(--muted);margin-top:1px;">${escHtml(notes)}</div>` : ''}`
-              : `<span style="color:var(--muted);">—</span>`}
-          </td>
-          <td style="padding:8px 10px;text-align:center;">
-            ${r.threshold_note
-              ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(255,179,0,.12);color:#ffb300;cursor:help;" title="${escHtml(r.threshold_note)}">&#x26A0; Min not met</span>`
-              : r.cap_total_note
-                ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(255,179,0,.12);color:#ffb300;cursor:help;" title="${escHtml(r.cap_total_note)}">&#x2B06; Capped</span>`
-                : r.recalculated
-                  ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(255,179,0,.12);color:#ffb300;">&#x26A0; Recalculated</span>`
-                  : cfOut < 0
-                    ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(255,77,109,.12);color:#ff6b6b;" title="$${fmt2(-cfOut)} carries into next month">&#x21B3; CF Debt</span>`
-                    : `<span style="font-size:11px;padding:2px 8px;border-radius:20px;${isPaid ? 'background:rgba(0,229,180,.15);color:var(--accent2)' : 'background:rgba(255,255,255,.06);color:var(--muted)'};">${isPaid ? 'Paid' : 'Unpaid'}</span>`}
-          </td>
-          <td style="padding:8px 10px;display:flex;gap:4px;align-items:center;">
-            <button class="btn btn-secondary" style="font-size:11px;padding:3px 9px;" onclick="toggleCommBreakdown('${escHtml(r.agent_id)}')">&darr;</button>
-            <button class="btn btn-secondary" style="font-size:11px;padding:3px 9px;" onclick="openPayForm('${escHtml(r.agent_id)}','${escHtml(r.name)}',${defaultPay},'${escHtml(month)}')">${isPaid ? 'Edit' : 'Mark Paid'}</button>
-          </td>
-        </tr>
-        <tr id="comm-breakdown-${escHtml(r.agent_id)}" style="display:none;">
-          <td colspan="${colCount}" style="padding:4px 10px 16px 28px;">
+// Builds the full detail panel for one agent's commission result — structure/group
+// breakdowns, commission bank summary, itemized chargebacks, and carry-forward.
+// Shared by the owner table's expandable row and the member's own-commission view
+// so both audiences see the exact same numbers and layout.
+function _buildCommAgentDetailHtml(r) {
+  return `
             ${r.structure_details ? (() => {
               const fmt = n => '$' + (n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
               return r.structure_details.map(sd => {
@@ -2275,8 +2224,132 @@ function renderCommissions() {
                 <div style="font-size:11px;font-weight:700;color:#ff6b6b;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Carry-Forward</div>
                 <table style="font-size:12px;border-collapse:collapse;width:100%;max-width:320px;">${rows.join('')}</table>
               </div>`;
-            })() : ''}
+            })() : ''}`;
+}
+
+// Builds the Earned/Bonus/CB/Prior Debt/Net summary line shown for one agent —
+// used identically in the owner's table row and the member's own-commission card
+// so a member sees exactly the same compensation breakdown the owner sees.
+function _buildCommSummaryStatsHtml(r) {
+  const fmt2 = n => (n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const cfIn = r.carry_forward_in || 0;
+  const stat = (label, value, color) => `
+    <div style="min-width:80px;">
+      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">${label}</div>
+      <div style="font-size:15px;font-weight:700;${color ? 'color:'+color+';' : ''}">${value}</div>
+    </div>`;
+  return `<div style="display:flex;gap:1.25rem;flex-wrap:wrap;margin:.5rem 0;">
+    ${stat('Earned', '$' + fmt2(r.earned))}
+    ${stat('Bonus', r.bonus_earned > 0 ? '$' + fmt2(r.bonus_earned) : '—', r.bonus_earned > 0 ? 'var(--accent)' : 'var(--muted)')}
+    ${stat('CB', r.chargeback_total > 0 ? '-$' + fmt2(r.chargeback_total) : '—', r.chargeback_total > 0 ? '#ff6b6b' : 'var(--muted)')}
+    ${cfIn < 0 ? stat('Prior Debt', '-$' + fmt2(-cfIn), '#ff6b6b') : ''}
+    ${stat('Net', (r.net_earned < 0 ? '-$' + fmt2(-r.net_earned) : '$' + fmt2(r.net_earned)), r.net_earned < 0 ? '#ff6b6b' : 'var(--accent2)')}
+  </div>`;
+}
+
+function renderCommissions() {
+  if (!_commData) return;
+  const results = _commData.results || [];
+  const month   = _commData.month   || '';
+
+  if (_isMember) {
+    document.getElementById('comm-owner-view').style.display  = 'none';
+    document.getElementById('comm-member-view').style.display = '';
+    // Find the member's own entry by matching any agent they appear in as primary
+    const memberPane = document.getElementById('comm-member-own');
+    if (!memberPane) return;
+    if (!results.length) { memberPane.innerHTML = '<p style="font-size:13px;color:var(--muted);">No commission data for this month.</p>'; return; }
+    // Same Earned/Bonus/CB/Prior Debt/Net summary + full breakdown the owner sees —
+    // transparency into exactly how compensation was calculated.
+    memberPane.innerHTML = results.map(r => `
+      <div style="margin-bottom:.5rem;">
+        <span style="font-size:14px;font-weight:600;">${escHtml(r.name)}</span>
+      </div>
+      ${_buildCommSummaryStatsHtml(r)}
+      ${_buildCommAgentDetailHtml(r)}
+    `).join('<hr style="border:none;border-top:1px solid var(--border2);margin:.75rem 0;">');
+    return;
+  }
+
+  // Owner view — rebuild payment lookup map (avoids embedding JSON in onclick attributes)
+  _commPayments = {};
+  for (const r of results) { if (r.paid?.amount_paid != null) _commPayments[r.agent_id] = r.paid; }
+
+  document.getElementById('comm-owner-view').style.display  = '';
+  document.getElementById('comm-member-view').style.display = 'none';
+  const wrap = document.getElementById('comm-table-wrap');
+  if (!wrap) return;
+
+  if (!results.length) {
+    wrap.innerHTML = '<p style="font-size:13px;color:var(--muted);">No agent data found.</p>';
+    return;
+  }
+
+  // Detect if any agent has a carry-forward in or out this month
+  const hasCF = results.some(r => (r.carry_forward_in || 0) !== 0 || (r.carry_forward_out || 0) !== 0);
+  const colCount = hasCF ? 9 : 8;
+  const fmt2 = n => n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  wrap.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px;">
+    <thead>
+      <tr style="border-bottom:1px solid var(--border2);">
+        <th style="text-align:left;padding:8px 10px;color:var(--muted);font-weight:600;">Agent</th>
+        <th style="text-align:right;padding:8px 10px;color:var(--muted);font-weight:600;">Earned</th>
+        <th style="text-align:right;padding:8px 10px;color:var(--muted);font-weight:600;">Bonus</th>
+        <th style="text-align:right;padding:8px 10px;color:var(--muted);font-weight:600;">CB</th>
+        ${hasCF ? '<th style="text-align:right;padding:8px 10px;color:var(--muted);font-weight:600;" title="Carry-forward debt applied from prior month">Prior Debt</th>' : ''}
+        <th style="text-align:right;padding:8px 10px;color:var(--muted);font-weight:600;">Net</th>
+        <th style="text-align:right;padding:8px 10px;color:var(--muted);font-weight:600;">Paid</th>
+        <th style="text-align:center;padding:8px 10px;color:var(--muted);font-weight:600;">Status</th>
+        <th style="padding:8px 10px;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      ${results.map(r => {
+        const isPaid  = r.paid?.amount_paid != null;
+        const notes   = r.paid?.notes || '';
+        const cfIn    = r.carry_forward_in  || 0;
+        const cfOut   = r.carry_forward_out || 0;
+        // net_earned from API = earned + bonus - CB + carry_forward_in (true net; can be negative)
+        const netDisplay = r.net_earned;
+        // Default amount for Mark Paid: bank paid_out if available, otherwise max(0, net)
+        const defaultPay = r.bank_summary ? r.bank_summary.paid_out : Math.max(0, netDisplay);
+        const rowBg = r.recalculated ? 'background:rgba(255,179,0,.06);' : (cfOut < 0 ? 'background:rgba(255,77,109,.04);' : '');
+        return `<tr style="border-bottom:1px solid var(--border2);${rowBg}" id="comm-row-${escHtml(r.agent_id)}">
+          <td style="padding:8px 10px;">${escHtml(r.name)}</td>
+          <td style="padding:8px 10px;text-align:right;font-weight:600;">$${fmt2(r.earned)}</td>
+          <td style="padding:8px 10px;text-align:right;color:var(--accent);">${r.bonus_earned > 0 ? '$'+fmt2(r.bonus_earned) : '<span style="color:var(--muted);">—</span>'}</td>
+          <td style="padding:8px 10px;text-align:right;">${r.chargeback_total > 0 ? `<span style="color:#ff6b6b;">-$${fmt2(r.chargeback_total)}</span>` : '<span style="color:var(--muted);">—</span>'}</td>
+          ${hasCF ? `<td style="padding:8px 10px;text-align:right;">${cfIn < 0 ? `<span style="color:#ff6b6b;" title="Carry-forward from prior month">-$${fmt2(-cfIn)}</span>` : '<span style="color:var(--muted);">—</span>'}</td>` : ''}
+          <td style="padding:8px 10px;text-align:right;font-weight:700;${netDisplay < 0 ? 'color:#ff6b6b;' : ''}">
+            ${netDisplay < 0
+              ? `-$${fmt2(-netDisplay)}<div style="font-size:10px;color:#ff6b6b;font-weight:400;">carries fwd</div>`
+              : `$${fmt2(netDisplay)}`}
           </td>
+          <td style="padding:8px 10px;text-align:right;">
+            ${isPaid
+              ? `<div style="font-weight:600;">$${fmt2(parseFloat(r.paid.amount_paid))}</div>
+                 ${notes ? `<div style="font-size:10px;color:var(--muted);margin-top:1px;">${escHtml(notes)}</div>` : ''}`
+              : `<span style="color:var(--muted);">—</span>`}
+          </td>
+          <td style="padding:8px 10px;text-align:center;">
+            ${r.threshold_note
+              ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(255,179,0,.12);color:#ffb300;cursor:help;" title="${escHtml(r.threshold_note)}">&#x26A0; Min not met</span>`
+              : r.cap_total_note
+                ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(255,179,0,.12);color:#ffb300;cursor:help;" title="${escHtml(r.cap_total_note)}">&#x2B06; Capped</span>`
+                : r.recalculated
+                  ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(255,179,0,.12);color:#ffb300;">&#x26A0; Recalculated</span>`
+                  : cfOut < 0
+                    ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(255,77,109,.12);color:#ff6b6b;" title="$${fmt2(-cfOut)} carries into next month">&#x21B3; CF Debt</span>`
+                    : `<span style="font-size:11px;padding:2px 8px;border-radius:20px;${isPaid ? 'background:rgba(0,229,180,.15);color:var(--accent2)' : 'background:rgba(255,255,255,.06);color:var(--muted)'};">${isPaid ? 'Paid' : 'Unpaid'}</span>`}
+          </td>
+          <td style="padding:8px 10px;display:flex;gap:4px;align-items:center;">
+            <button class="btn btn-secondary" style="font-size:11px;padding:3px 9px;" onclick="toggleCommBreakdown('${escHtml(r.agent_id)}')">&darr;</button>
+            <button class="btn btn-secondary" style="font-size:11px;padding:3px 9px;" onclick="openPayForm('${escHtml(r.agent_id)}','${escHtml(r.name)}',${defaultPay},'${escHtml(month)}')">${isPaid ? 'Edit' : 'Mark Paid'}</button>
+          </td>
+        </tr>
+        <tr id="comm-breakdown-${escHtml(r.agent_id)}" style="display:none;">
+          <td colspan="${colCount}" style="padding:4px 10px 16px 28px;">${_buildCommAgentDetailHtml(r)}</td>
         </tr>`;
       }).join('')}
     </tbody>

@@ -189,6 +189,13 @@ ALTER TABLE accounts ADD COLUMN IF NOT EXISTS last_report_date  date;
 -- Lead sources (array of label strings stored as JSONB)
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS lead_sources jsonb;
 
+-- Per-product commission structure override for agents with 2+ assigned structures.
+-- Shape: { [productKey]: structureId | 'both' }. Missing key or 'both' = sum all
+-- assigned structures with a non-zero rate for that product (current/default behavior).
+-- A specific structureId restricts both earned commission and chargeback deduction
+-- for that product to that one structure only.
+ALTER TABLE agent_roster ADD COLUMN IF NOT EXISTS commission_product_overrides jsonb DEFAULT '{}';
+
 
 -- ─── 4. ADD user_id TO DATA TABLES (no-op if already created above) ──────────────────────────────
 

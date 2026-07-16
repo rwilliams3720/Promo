@@ -715,6 +715,7 @@ function renderChargebackReport() {
   const cbCount  = filtered.length;
   const cbRate   = total > 0 ? (cbCount / total * 100).toFixed(1) : '0.0';
   const cbPrem   = filtered.reduce((s, e) => s + (parseFloat(e.written_premium) || 0), 0);
+  const cbComm   = filtered.reduce((s, e) => s + (e.chargeback_exempt ? 0 : (parseFloat(e.chargeback_commission) || 0)), 0);
   const rateColor = parseFloat(cbRate) > 10 ? '#ff6b6b' : parseFloat(cbRate) > 5 ? '#fbbf24' : 'var(--accent2)';
 
   if (statsEl) {
@@ -731,6 +732,10 @@ function renderChargebackReport() {
       <div class="stat-card" style="padding:.75rem 1rem;min-width:110px;">
         <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Premium at Risk</div>
         <div style="font-size:1.4rem;font-weight:700;color:#ff6b6b;">$${cbPrem.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})}</div>
+      </div>
+      <div class="stat-card" style="padding:.75rem 1rem;min-width:110px;">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Commission Charged Back</div>
+        <div style="font-size:1.4rem;font-weight:700;color:#ff6b6b;">$${cbComm.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})}</div>
       </div>`;
   }
 
@@ -746,6 +751,7 @@ function renderChargebackReport() {
     if (_cbSortCol === 'agent')           { av = _agentRoster.find(x => x.agent_id === a.agent_id)?.name || a.agent_id || ''; bv = _agentRoster.find(x => x.agent_id === b.agent_id)?.name || b.agent_id || ''; return _cbSortDir * av.localeCompare(bv); }
     if (_cbSortCol === 'product')         { return _cbSortDir * labelForCat(a.product).localeCompare(labelForCat(b.product)); }
     if (_cbSortCol === 'premium')         { return _cbSortDir * ((parseFloat(a.written_premium)||0) - (parseFloat(b.written_premium)||0)); }
+    if (_cbSortCol === 'commission')      { return _cbSortDir * ((parseFloat(a.chargeback_commission)||0) - (parseFloat(b.chargeback_commission)||0)); }
     return 0;
   };
 
@@ -754,10 +760,15 @@ function renderChargebackReport() {
     return `<th style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:4px 8px;text-align:left;cursor:pointer;user-select:none;white-space:nowrap;" onclick="setCbSort('${col}')">${label}${arrow}</th>`;
   };
 
-  const canWaive = !_isMember || _isAdmin;
+  const canWaive  = !_isMember || _isAdmin;
+  const canMoveCb = !_isMember || _isAdmin || ['captain','chief_officer'].includes(_memberRole);
   const renderCbRow = e => {
     const ag = _agentRoster.find(a => a.agent_id === e.agent_id)?.name || e.agent_id || '—';
     const pr = e.written_premium ? '$' + Number(e.written_premium).toFixed(2) : '—';
+    const cm = e.chargeback_exempt ? '<span style="font-size:10px;background:rgba(0,229,180,.12);color:var(--accent2);border:1px solid rgba(0,229,180,.2);border-radius:3px;padding:1px 5px;">Waived</span>' : ('-$' + (parseFloat(e.chargeback_commission)||0).toFixed(2));
+    const cbDateCell = canMoveCb
+      ? `<input type="date" value="${escHtml(e.chargeback_date || '')}" onchange="moveChargebackDate('${escHtml(e.hash)}',this.value)" style="background:var(--deep);border:1px solid var(--border);color:#ff6b6b;border-radius:4px;padding:2px 4px;font-size:11px;outline:none;width:126px;">`
+      : (e.chargeback_date || '—');
     const waiveCell = canWaive
       ? `<td style="padding:6px 8px;text-align:center;">
            <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:11px;color:var(--muted);">
@@ -767,18 +778,19 @@ function renderChargebackReport() {
          </td>`
       : '';
     return `<tr style="border-bottom:1px solid var(--border2);">
-      <td style="padding:6px 8px;font-size:12px;color:#ff6b6b;">${e.chargeback_date || '—'}</td>
+      <td style="padding:6px 8px;font-size:12px;color:#ff6b6b;">${cbDateCell}</td>
       <td style="padding:6px 8px;font-size:12px;color:var(--muted);">${e.sale_date || '—'}</td>
       <td style="padding:6px 8px;font-size:13px;font-weight:600;">${escHtml(ag)}</td>
       <td style="padding:6px 8px;font-size:12px;">${escHtml(labelForCat(e.product))}${e.subcategory ? '<span style="color:var(--muted);font-size:11px;"> · ' + escHtml(e.subcategory) + '</span>' : ''}</td>
       <td style="padding:6px 8px;font-size:12px;color:var(--muted);">${escHtml(e.customer_name || '—')}</td>
       <td style="padding:6px 8px;font-size:12px;color:var(--danger);">${pr}</td>
+      <td style="padding:6px 8px;font-size:12px;color:var(--danger);">${cm}</td>
       ${waiveCell}
     </tr>`;
   };
 
   const waiveTh = canWaive ? `<th style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:4px 8px;text-align:center;">Waive</th>` : '';
-  const theadHtml = `<thead><tr>${th('chargeback_date','CB Date')}${th('sale_date','Sale Date')}${th('agent','Agent')}${th('product','Product')}<th style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:4px 8px;">Customer</th>${th('premium','Premium')}${waiveTh}</tr></thead>`;
+  const theadHtml = `<thead><tr>${th('chargeback_date','CB Date')}${th('sale_date','Sale Date')}${th('agent','Agent')}${th('product','Product')}<th style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:4px 8px;">Customer</th>${th('premium','Premium')}${th('commission','Commission')}${waiveTh}</tr></thead>`;
 
   const orgGroups = _getOrgGroups();
   if (orgGroups && _cbAgentFilter === 'all') {
@@ -818,6 +830,26 @@ async function toggleCbExempt(hash, exempt) {
     if (entry) entry.chargeback_exempt = exempt;
     renderChargebackReport();
   } catch(e) { console.error('toggleCbExempt:', e); }
+}
+
+// Moves a chargeback to a different month by editing chargeback_date directly on
+// the report (captain/CO/owner/admin only — gated by canMoveCb in renderChargebackReport).
+// Reloads from the server since the row may now fall outside the viewed month/quarter/year.
+async function moveChargebackDate(hash, newDate) {
+  if (!newDate) return;
+  try {
+    const r = await fetch('/api/sales', {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hash, chargeback_date: newDate }),
+    });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      alert(d.error || 'Failed to move chargeback date');
+      return;
+    }
+    loadChargebackReport();
+  } catch(e) { console.error('moveChargebackDate:', e); }
 }
 
 function _renderSlScorecard(entries) {
