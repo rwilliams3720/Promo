@@ -102,15 +102,25 @@ export default async function handler(req, res) {
       .eq('member_user_id', user.id)
       .eq('status', 'active')
       .single();
-    if (!member || !['captain', 'chief_officer'].includes(member.role)) {
-      return res.status(403).json({ error: 'Owner access required' });
-    }
+    if (!member) return res.status(403).json({ error: 'Owner access required' });
+
     const { data: ownerAcct } = await supabase
       .from('accounts')
       .select('has_sales_addon, is_admin, sales_entry_mode, has_commissions_addon, company_name, sales_product_types, self_report_config')
       .eq('user_id', member.owner_user_id)
       .single();
     if (!ownerAcct) return res.status(403).json({ error: 'Owner account not found' });
+
+    const isCapOrCO   = ['captain', 'chief_officer'].includes(member.role);
+    const selfReport  = ownerAcct.self_report_config || {};
+    // Bosun/custom members get read-only access when the owner has enabled self-reporting
+    // for them — loadAddonConfig() (js/addons.js) needs this GET to populate
+    // _selfReportConfig, _activityTypes, and _agentRoster for the Manage tab self-report
+    // forms. Without this, activities_enabled/sales_enabled bosuns see the self-report
+    // panel but it has no activity types or agents to submit against.
+    if (!isCapOrCO && !selfReport.activities_enabled && !selfReport.sales_enabled) {
+      return res.status(403).json({ error: 'Owner access required' });
+    }
     acct = ownerAcct;
     dataUserId = member.owner_user_id;
     isMember = true;

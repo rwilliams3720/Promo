@@ -570,6 +570,11 @@ Managed in Account → Sales → Access sub-tab. Saved via `PATCH /api/checklist
 ### api/bonus-activities.js — resolveUser
 Returns `{ userId, dataUserId, hasAddon, isMember, memberRole, memberAgentId, canApprove, selfReportConfig }`. Non-captain/CO members without `activities_enabled` are rejected (401). Members who are captain/CO always have access regardless of config.
 
+### GET /api/checklist-config must also allow self-reporting bosun/custom members
+`js/addons.js` `loadAddonConfig()` fetches `GET /api/checklist-config` to populate `_selfReportConfig`, `_activityTypes` (via a follow-up call gated on `_selfReportConfig.activities_enabled`), and `_agentRoster` — all required for the Manage tab self-report forms to actually work, not just be visible. `js/init.js` (`checkAccountAndShow`, member path) deliberately calls `loadAddonConfig()` for any member with `activities_enabled` or `sales_enabled`, not just captain/chief_officer.
+
+**The endpoint's member-resolution block must mirror that same condition** — allow the request through when `!isCapOrCO && (selfReport.activities_enabled || selfReport.sales_enabled)`, not just `isCapOrCO`. If it doesn't, `loadAddonConfig()`'s `fetch` gets a 403, `if (!r.ok) return;` bails out silently, and `_activityTypes` stays `[]` — the bosun sees "My Activity Log" and a "+ Log Activity" button, but the Activity Type dropdown is empty and unusable. This exact regression happened once already (fixed 2026-07-16) — if bosun/custom self-reporters lose activity-log access again, check this gate first before touching frontend gating logic (`getAllowedTabs()`, panel `display` toggles), since the frontend gating was already correct and the bug was entirely server-side.
+
 ## Account Status & Access
 | Status | Dashboard | Uploads | Notes |
 |--------|-----------|---------|-------|
