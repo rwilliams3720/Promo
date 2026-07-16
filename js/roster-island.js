@@ -38,6 +38,8 @@
           ' onchange="saveAgentQualifier(\'' + escHtml(a.id) + '\',this.checked)"> All structures must qualify for any payout' +
         '</label>' : '';
 
+    var overlapHtml = buildOverlapHtml(a, safeId, assignedIds, structures);
+
     var capTotalHtml =
       '<div style="margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
       '<span style="font-size:10px;color:var(--muted);white-space:nowrap;">Max Total Commission $</span>' +
@@ -51,7 +53,47 @@
     return '<div style="margin-top:6px;padding:6px 8px;background:var(--deep);border-radius:6px;border:1px solid var(--border2);">' +
       '<div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Commission Structures</div>' +
       (assignedRows || '<div style="font-size:11px;color:var(--muted);">None assigned</div>') +
-      addDropdown + qualLabel + capTotalHtml + '</div>';
+      addDropdown + qualLabel + overlapHtml + capTotalHtml + '</div>';
+  }
+
+  // Detects products rated by 2+ of an agent's assigned structures and renders a
+  // per-product picker so the owner can restrict a product to one structure instead
+  // of the default (sum every structure that rates it — unchanged pay unless set).
+  function buildOverlapHtml(a, safeId, assignedIds, structures) {
+    if (assignedIds.length < 2) return '';
+    var assignedStructs = assignedIds.map(function(sid) {
+      return structures.find(function(s) { return s.id === sid; });
+    }).filter(Boolean);
+
+    var productCounts = {};
+    assignedStructs.forEach(function(s) {
+      Object.entries(s.rates || {}).forEach(function(entry) {
+        var prod = entry[0], cfg = entry[1];
+        if (cfg && cfg.type && cfg.type !== 'none') productCounts[prod] = (productCounts[prod] || 0) + 1;
+      });
+    });
+    var overlapping = Object.keys(productCounts).filter(function(p) { return productCounts[p] > 1; });
+    if (!overlapping.length) return '';
+
+    var overrides = a.commission_product_overrides || {};
+    var rows = overlapping.map(function(prod) {
+      var current = overrides[prod] || 'both';
+      var structOpts = assignedStructs.map(function(s) {
+        return '<option value="' + escHtml(s.id) + '" ' + (current === s.id ? 'selected' : '') + '>' + escHtml(s.name) + '</option>';
+      }).join('');
+      return '<div style="display:flex;align-items:center;gap:6px;margin-top:3px;flex-wrap:wrap;">' +
+        '<span style="font-size:11px;color:var(--muted);min-width:70px;">' + escHtml(labelForCat(prod)) + '</span>' +
+        '<select onchange="saveCommissionProductOverride(\'' + safeId + '\',\'' + escHtml(prod) + '\',this.value)" ' +
+          'style="background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:2px 6px;font-size:11px;outline:none;">' +
+          structOpts +
+          '<option value="both" ' + (current === 'both' ? 'selected' : '') + '>Both (sum) — current behavior</option>' +
+        '</select></div>';
+    }).join('');
+
+    return '<div style="margin-top:6px;padding:6px 8px;background:rgba(255,179,0,.06);border:1px solid rgba(255,179,0,.2);border-radius:6px;">' +
+      '<div style="font-size:10px;font-weight:600;color:#ffb300;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">&#x26A0; Overlapping products rated in multiple structures</div>' +
+      '<div style="font-size:10px;color:var(--muted);margin-bottom:4px;">Choose which structure each applies to — affects both earned commission and chargeback deductions. Defaults to summing both.</div>' +
+      rows + '</div>';
   }
 
   function buildAgentCardHtml(a) {
