@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
-import { chargebackCommission, buildStructureListLookup } from './_lib/commission-calc.js';
+import { computeChargebackAmount, buildStructureListLookup } from './_lib/commission-calc.js';
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
@@ -219,34 +219,28 @@ export default async function handler(req, res) {
       const { data: cbData, error: cbErr } = await cbQ;
       if (cbErr) return res.status(500).json({ error: cbErr.message });
 
-      // Compute the commission each chargeback deducts — same math and per-agent
-      // structure overrides as api/commissions.js, so the two reports always agree.
+      // Compute the commission each chargeback deducts — same math (marginal contribution
+      // to the earned month, not a flat rate) and per-agent structure overrides as
+      // api/commissions.js, via the shared helper, so the two reports always agree.
       const commissionByHash = {};
-      const agentIds = [...new Set((cbData || []).map(r => r.agent_id).filter(Boolean))];
-      if (agentIds.length) {
+      if ((cbData || []).length) {
         const [rosterRes, structsRes, junctionRes, subcatsRes] = await Promise.all([
-          supabase.from('agent_roster').select('agent_id, commission_structure_id, commission_product_overrides').eq('user_id', dataUserId).in('agent_id', agentIds),
-          supabase.from('commission_structures').select('id, default_split_ratio, rates, cap_per_policy').eq('user_id', dataUserId),
-          supabase.from('agent_commission_structures').select('agent_id, commission_structure_id, sort_order').eq('user_id', dataUserId).in('agent_id', agentIds).order('sort_order'),
+          supabase.from('agent_roster').select('agent_id, name, commission_structure_id, commission_product_overrides').eq('user_id', dataUserId),
+          supabase.from('commission_structures').select('id, name, default_split_ratio, pay_on_issue, thresholds, rates, cap_per_policy, cap_per_structure').eq('user_id', dataUserId),
+          supabase.from('agent_commission_structures').select('agent_id, commission_structure_id, sort_order').eq('user_id', dataUserId).order('sort_order'),
           supabase.from('sales_subcategories').select('label, is_financial_service').eq('user_id', dataUserId),
         ]);
+        const roster = rosterRes.data || [];
         const structureById = Object.fromEntries((structsRes.data || []).map(s => [s.id, s]));
-        const { agentById, getStructureList } = buildStructureListLookup(rosterRes.data || [], structureById, junctionRes.data || []);
+        const { agentById, getStructureList } = buildStructureListLookup(roster, structureById, junctionRes.data || []);
         const isFinancialService = {};
         for (const s of (subcatsRes.data || [])) isFinancialService[s.label] = s.is_financial_service || false;
 
+        const chargebackCtx = { supabase, dataUserId, roster, isFinancialService, decryptField, cache: {} };
         for (const sale of (cbData || [])) {
-          if (sale.chargeback_exempt) { commissionByHash[sale.hash] = 0; continue; }
           const structList = getStructureList(sale.agent_id);
-          if (!structList.length) { commissionByHash[sale.hash] = 0; continue; }
-          const premium = parseFloat(sale.written_premium) || 0;
-          const isSplit = !!sale.split_sale;
-          const defaultRatio = structList[0]?.default_split_ratio ?? 0.5;
-          const ratio = isSplit ? (sale.split_ratio ?? defaultRatio) : 1;
-          const share = premium * ratio;
-          const isFS = isFinancialService[sale.subcategory] || false;
-          const override = (agentById[sale.agent_id]?.commission_product_overrides || {})[sale.product];
-          commissionByHash[sale.hash] = chargebackCommission(structList, sale.product, sale.subcategory || null, share, premium, isFS, override);
+          const overrides  = agentById[sale.agent_id]?.commission_product_overrides || {};
+          commissionByHash[sale.hash] = await computeChargebackAmount(chargebackCtx, sale, structList, overrides);
         }
       }
 

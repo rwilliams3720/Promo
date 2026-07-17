@@ -196,6 +196,14 @@ ALTER TABLE accounts ADD COLUMN IF NOT EXISTS lead_sources jsonb;
 -- for that product to that one structure only.
 ALTER TABLE agent_roster ADD COLUMN IF NOT EXISTS commission_product_overrides jsonb DEFAULT '{}';
 
+-- Split/partial commission payments — amount_paid keeps meaning "the full computed
+-- obligation for that month" (unchanged); amount_disbursed is how much has actually been
+-- physically paid out so far. NULL means fully disbursed (matches amount_paid), so every
+-- existing row keeps its current behavior with no backfill needed. Any shortfall
+-- (amount_paid - amount_disbursed) is treated as still owed to the agent and carries
+-- forward into later months via the commission bank / carry-forward calculation.
+ALTER TABLE commission_payments ADD COLUMN IF NOT EXISTS amount_disbursed numeric;
+
 
 -- ─── 4. ADD user_id TO DATA TABLES (no-op if already created above) ──────────────────────────────
 

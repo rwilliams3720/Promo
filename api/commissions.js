@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
-import { applyRate, chargebackCommission } from './_lib/commission-calc.js';
+import { calcStructurePayout, computeChargebackAmount, monthLabel, monthKey } from './_lib/commission-calc.js';
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
@@ -65,196 +65,6 @@ async function resolveUser(token) {
   };
 }
 
-// Format month label: "2026-05" → "May 2026"
-function monthLabel(yyyyMM) {
-  const [yr, mo] = yyyyMM.split('-').map(Number);
-  return new Date(yr, mo - 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
-}
-
-// Build a human-readable note explaining which groups blocked payout
-function buildThresholdNote(thresholds, groupStatus, groupCounts, groupEarned) {
-  const parts = thresholds
-    .filter(grp => !groupStatus[grp.id]?.passes)
-    .map(grp => {
-      const name    = grp.label || 'Group';
-      const earned  = groupEarned[grp.id] || 0;
-      const count   = groupCounts[grp.id] || 0;
-      const reasons = [];
-      if (grp.min_count && count < grp.min_count) reasons.push(`${count}/${grp.min_count} policies`);
-      if (grp.min_commission && earned <= grp.min_commission) reasons.push(`$${earned.toFixed(0)} of $${grp.min_commission} floor`);
-      if ((grp.requires||[]).some(r => !groupStatus[r]?.passes)) reasons.push('prerequisite group not met');
-      return `${name}: ${reasons.join(', ') || 'not met'}`;
-    });
-  return parts.length ? parts.join(' | ') : 'Production minimums not met';
-}
-
-function calcStructurePayout(agentId, struct, sales, roster, isFinancialService, actCounts, fromDate, toDate, overrides) {
-  if (!struct) return { earned: 0, breakdown: [], threshold_note: null, group_details: null, ungrouped_earned: 0 };
-  const payOnIssue = struct.pay_on_issue || false;
-  const inMonth = d => d && d >= fromDate && d <= toDate;
-  const breakdown = [];
-
-  for (const sale of sales) {
-    if (sale.is_cancelled) continue; // cancelled handled separately as chargebacks
-    const premium = parseFloat(sale.written_premium) || 0;
-    const product = sale.product || 'other';
-    const isSplit = !!sale.split_sale;
-    const isFS = isFinancialService[sale.subcategory] || false;
-
-    // Product is overridden to a different structure — this structure sits it out
-    // so overlapping rates don't double-count the sale (unless override is 'both').
-    const ov = (overrides || {})[product];
-    if (ov && ov !== 'both' && ov !== struct.id) continue;
-
-    if (sale.agent_id === agentId) {
-      const dateOk = payOnIssue ? inMonth(sale.issued_date) : inMonth(sale.sale_date);
-      if (dateOk) {
-        const defaultRatio = struct.default_split_ratio ?? 0.5;
-        const ratio = isSplit ? (sale.split_ratio ?? defaultRatio) : 1;
-        const share = premium * ratio;
-        const commission = applyRate(struct, product, sale.subcategory || null, share, premium, isFS);
-        breakdown.push({ hash: sale.hash, product, premium, share, commission, split: isSplit, role: 'primary', customer_name: decryptField(sale.customer_name), sale_date: sale.sale_date || null, subcategory: sale.subcategory || null });
-      }
-    }
-
-    if (isSplit && sale.teammate) {
-      const tmName = (sale.teammate || '').toLowerCase().trim();
-      const tmAgent = roster.find(a => a.name.toLowerCase().trim() === tmName);
-      if (tmAgent && tmAgent.agent_id === agentId) {
-        const dateOk = payOnIssue ? inMonth(sale.issued_date) : inMonth(sale.sale_date);
-        if (dateOk) {
-          const defaultRatio = struct.default_split_ratio ?? 0.5;
-          const primaryRatio = sale.split_ratio ?? defaultRatio;
-          const tmShare = premium * (1 - primaryRatio);
-          const commission = applyRate(struct, product, sale.subcategory || null, tmShare, premium, isFS);
-          breakdown.push({ hash: sale.hash, product, premium, share: tmShare, commission, split: true, role: 'teammate', customer_name: decryptField(sale.customer_name), sale_date: sale.sale_date || null, subcategory: sale.subcategory || null });
-        }
-      }
-    }
-  }
-
-  const thresholds = struct.thresholds || [];
-  if (!thresholds.length) {
-    const total = Math.round(breakdown.reduce((s, b) => s + b.commission, 0) * 100) / 100;
-    return { earned: struct.cap_per_structure != null ? Math.min(total, struct.cap_per_structure) : total, breakdown, threshold_note: null, group_details: null, ungrouped_earned: total };
-  }
-
-  const productToGroup = {};
-  for (const grp of thresholds) {
-    for (const pk of (grp.products || [])) {
-      if (!productToGroup[pk]) productToGroup[pk] = grp.id;
-    }
-  }
-
-  const groupCounts = {}, groupEarned = {}, groupShares = {};
-  let ungrouped = 0;
-  for (const b of breakdown) {
-    const gId = productToGroup[b.product];
-    if (gId) {
-      if (b.role === 'primary') groupCounts[gId] = (groupCounts[gId] || 0) + 1;
-      groupEarned[gId] = (groupEarned[gId] || 0) + b.commission;
-      groupShares[gId] = (groupShares[gId] || 0) + b.share;
-    } else {
-      ungrouped += b.commission;
-    }
-  }
-
-  const groupStatus = {};
-  for (let pass = 0; pass <= thresholds.length; pass++) {
-    for (const grp of thresholds) {
-      if (groupStatus[grp.id] !== undefined) continue;
-      const requiresDone = (grp.requires || []).every(r => groupStatus[r] !== undefined);
-      if (!requiresDone) continue;
-      const countOk    = !grp.min_count || (groupCounts[grp.id] || 0) >= grp.min_count;
-      const requiresOk = (grp.requires || []).every(r => groupStatus[r]?.passes);
-      const agActs     = actCounts[agentId] || {};
-      const reqActsOk  = (grp.required_activities || []).every(ra =>
-        (agActs[ra.activity_type_id] || 0) >= (ra.min_count || 1)
-      );
-      if (!countOk || !requiresOk || !reqActsOk) {
-        groupStatus[grp.id] = { passes: false, payout: 0 };
-      } else {
-        const earned = groupEarned[grp.id] || 0;
-        const floor  = grp.min_commission || 0;
-        if (floor === 0) {
-          groupStatus[grp.id] = { passes: true, payout: earned };
-        } else if (earned > floor) {
-          groupStatus[grp.id] = { passes: true, payout: earned - floor };
-        } else {
-          groupStatus[grp.id] = { passes: false, payout: 0 };
-        }
-      }
-    }
-  }
-  for (const grp of thresholds) {
-    if (groupStatus[grp.id] === undefined) groupStatus[grp.id] = { passes: false, payout: 0 };
-  }
-
-  for (const grp of thresholds) {
-    if (!groupStatus[grp.id]?.passes) continue;
-    for (const esc of (grp.escalators || [])) {
-      const triggerCount = esc.trigger_group_id
-        ? (groupCounts[esc.trigger_group_id] || 0)
-        : esc.activity_type_id
-          ? ((actCounts[agentId] || {})[esc.activity_type_id] || 0)
-          : -1;
-      if (triggerCount < 0) continue;
-      const tier = (esc.tiers || []).find(tr =>
-        triggerCount >= (tr.min ?? 0) && (tr.max == null || triggerCount <= tr.max)
-      );
-      if (tier?.bonus_pct) {
-        groupStatus[grp.id].payout += (groupShares[grp.id] || 0) * (tier.bonus_pct / 100);
-      }
-    }
-  }
-
-  const groupPayout = thresholds.reduce((s, grp) => s + (groupStatus[grp.id]?.payout || 0), 0);
-
-  // When a group has activity and fails its floor, and no group with activity passes,
-  // block ungrouped commissions so a failing structure contributes $0 total.
-  const anyGroupActivelyFailed = thresholds.some(grp =>
-    !groupStatus[grp.id]?.passes && ((groupCounts[grp.id] || 0) > 0 || (groupEarned[grp.id] || 0) > 0)
-  );
-  const anyGroupActivelyPassed = thresholds.some(grp =>
-    groupStatus[grp.id]?.passes && ((groupCounts[grp.id] || 0) > 0 || (groupEarned[grp.id] || 0) > 0)
-  );
-  const effectiveUngrouped = (anyGroupActivelyFailed && !anyGroupActivelyPassed) ? 0 : ungrouped;
-
-  const totalEarned = Math.round((effectiveUngrouped + groupPayout) * 100) / 100;
-  const cappedEarned = struct.cap_per_structure != null ? Math.min(totalEarned, struct.cap_per_structure) : totalEarned;
-
-  const group_details = thresholds.map(grp => {
-    const basePayout = (() => {
-      const e = groupEarned[grp.id] || 0;
-      const f = grp.min_commission || 0;
-      if (!groupStatus[grp.id]?.passes) return 0;
-      return f === 0 ? e : Math.max(0, e - f);
-    })();
-    return {
-      label:     grp.label || grp.id,
-      count:     groupCounts[grp.id] || 0,
-      earned:    Math.round((groupEarned[grp.id] || 0) * 100) / 100,
-      shares:    Math.round((groupShares[grp.id] || 0) * 100) / 100,
-      floor:     grp.min_commission || 0,
-      passes:    groupStatus[grp.id]?.passes || false,
-      payout:    Math.round((groupStatus[grp.id]?.payout || 0) * 100) / 100,
-      esc_bonus: Math.round(((groupStatus[grp.id]?.payout || 0) - basePayout) * 100) / 100,
-    };
-  });
-
-  const anyFailed = thresholds.some(grp =>
-    !groupStatus[grp.id]?.passes && ((groupCounts[grp.id] || 0) > 0 || (groupEarned[grp.id] || 0) > 0)
-  );
-
-  return {
-    earned: cappedEarned,
-    breakdown,
-    threshold_note: anyFailed ? buildThresholdNote(thresholds, groupStatus, groupCounts, groupEarned) : null,
-    group_details,
-    ungrouped_earned: Math.round(effectiveUngrouped * 100) / 100,
-  };
-}
-
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -283,7 +93,7 @@ export default async function handler(req, res) {
 
     // Fetch all needed data in parallel
     // Sales: broad OR filter — sale_date OR issued_date within the month (for pay_on_issue support)
-    const [salesRes, rosterRes, structuresRes, subcatsRes, agentStructsRes, bankLedgerRes] = await Promise.all([
+    const [salesRes, rosterRes, structuresRes, subcatsRes, agentStructsRes, bankLedgerRes, allPaymentsRes] = await Promise.all([
       supabase.from('sales_log')
         .select('hash, agent_id, product, subcategory, written_premium, split_sale, split_ratio, teammate, sale_date, issued_date, is_cancelled, chargeback_date, chargeback_exempt, customer_name')
         .eq('user_id', dataUserId)
@@ -306,6 +116,11 @@ export default async function handler(req, res) {
         .select('agent_id, month, bank_balance_after')
         .eq('user_id', dataUserId)
         .order('created_at', { ascending: false }),
+      // All recorded payments — used to find outstanding split/partial-payment balances
+      // from prior months (amount_paid was recorded but not fully disbursed yet).
+      supabase.from('commission_payments')
+        .select('agent_id, month, amount_paid, amount_disbursed')
+        .eq('user_id', dataUserId),
     ]);
 
     if (salesRes.error)      return res.status(500).json({ error: salesRes.error.message });
@@ -389,7 +204,7 @@ export default async function handler(req, res) {
       const structureDetails = structList.map(struct => ({
         structure_id:   struct.id,
         structure_name: struct.name,
-        ...calcStructurePayout(agent.agent_id, struct, sales, roster, isFinancialService, actCounts, fromDate, toDate, productOverrides),
+        ...calcStructurePayout(agent.agent_id, struct, sales, roster, isFinancialService, actCounts, fromDate, toDate, productOverrides, decryptField),
       }));
 
       if (allMustQualify && structureDetails.some(sd => sd.threshold_note)) {
@@ -434,9 +249,10 @@ export default async function handler(req, res) {
     }
 
     // Process chargebacks: cancelled sales where chargeback_date falls in this month.
-    // Uses the agent's commission_product_overrides to decide attribution when the
-    // product is rated in more than one assigned structure — same rule as earned,
-    // so a chargeback always deducts exactly what was originally credited.
+    // computeChargebackAmount deducts the sale's MARGINAL contribution to the agent's
+    // payout in the month it was actually earned, not a flat per-sale rate — see
+    // api/_lib/commission-calc.js for why (floor cliffs, escalator tiers).
+    const chargebackCtx = { supabase, dataUserId, roster, isFinancialService, decryptField, cache: {} };
     const chargebacks = {}; // agentId → [{hash, product, premium, share, commission, chargeback_date}]
     for (const sale of sales) {
       if (!sale.is_cancelled || !sale.chargeback_date) continue;
@@ -446,24 +262,22 @@ export default async function handler(req, res) {
       const premium   = parseFloat(sale.written_premium) || 0;
       const product   = sale.product || 'other';
       const isSplit   = !!sale.split_sale;
-      const isFS      = isFinancialService[sale.subcategory] || false;
       if (primaryId) {
         const structList   = getStructureList(primaryId);
         const defaultRatio = structList[0]?.default_split_ratio ?? 0.5;
         const ratio         = isSplit ? (sale.split_ratio ?? defaultRatio) : 1;
         const share         = premium * ratio;
-        const exempt        = !!sale.chargeback_exempt;
-        const override      = (agentById[primaryId]?.commission_product_overrides || {})[product];
-        const commission    = exempt ? 0 : chargebackCommission(structList, product, sale.subcategory || null, share, premium, isFS, override);
+        const overrides     = agentById[primaryId]?.commission_product_overrides || {};
+        const commission    = await computeChargebackAmount(chargebackCtx, sale, structList, overrides);
         if (!chargebacks[primaryId]) chargebacks[primaryId] = [];
-        chargebacks[primaryId].push({ hash: sale.hash, product, premium, share, commission, chargeback_date: cbDate, exempt });
+        chargebacks[primaryId].push({ hash: sale.hash, product, premium, share, commission, chargeback_date: cbDate, exempt: !!sale.chargeback_exempt });
       }
     }
 
     // Fetch commission payments for this month
     const { data: payments } = await supabase
       .from('commission_payments')
-      .select('agent_id, amount_paid, paid_date, notes')
+      .select('agent_id, amount_paid, amount_disbursed, paid_date, notes')
       .eq('user_id', dataUserId)
       .eq('month', label);
 
@@ -475,13 +289,38 @@ export default async function handler(req, res) {
     const bankCap       = bankConfig?.cap_per_period != null ? parseFloat(bankConfig.cap_per_period) : null;
     const bankRate      = parseFloat(bankConfig?.interest_rate || 0) / 100; // annual rate → decimal
 
-    // Most recent prior bank_balance_after per agent (excluding current month)
+    // Closest chronologically-prior bank_balance_after per agent — must compare by
+    // calendar month, NOT by created_at/updated_at. Ordering by save time alone let a
+    // later-saved row (e.g. a future month re-rendered after the current one) leak into
+    // an earlier month's "prior debt", cross-contaminating months that never had any
+    // real activity. See CLAUDE.md "Commission carry-forward" note.
+    const currentKey = yr * 12 + (mo - 1);
     const priorBankBalance = {};
+    const priorBankKey     = {};
     for (const row of (bankLedgerRes.data || [])) {
-      if (row.month === label) continue; // skip current month
-      if (priorBankBalance[row.agent_id] == null) {
+      const rowKey = monthKey(row.month);
+      if (rowKey == null || rowKey >= currentKey) continue; // skip current + any non-prior month
+      if (priorBankKey[row.agent_id] == null || rowKey > priorBankKey[row.agent_id]) {
+        priorBankKey[row.agent_id]     = rowKey;
         priorBankBalance[row.agent_id] = parseFloat(row.bank_balance_after) || 0;
       }
+    }
+
+    // Outstanding split/partial-payment balances: sum of (amount_paid - amount_disbursed)
+    // across every PRIOR month for each agent. amount_paid is the full obligation that
+    // was already correctly computed and recorded that month; amount_disbursed (NULL =
+    // fully disbursed) is how much has actually been physically paid out. Any shortfall
+    // is money still owed TO the agent, so it's added to their prior balance the same way
+    // banked savings would be — a later chargeback nets against it before creating new
+    // carry-forward debt, instead of stacking a separate debt on top of an unpaid amount.
+    const outstandingReceivable = {};
+    for (const row of (allPaymentsRes?.data || [])) {
+      const rowKey = monthKey(row.month);
+      if (rowKey == null || rowKey >= currentKey) continue; // only strictly-prior months
+      const paid      = parseFloat(row.amount_paid) || 0;
+      const disbursed = row.amount_disbursed != null ? parseFloat(row.amount_disbursed) : paid;
+      const owed = Math.max(0, Math.round((paid - disbursed) * 100) / 100);
+      if (owed > 0) outstandingReceivable[row.agent_id] = (outstandingReceivable[row.agent_id] || 0) + owed;
     }
 
     // Build final results — include all agents from roster (even those with no sales)
@@ -492,10 +331,15 @@ export default async function handler(req, res) {
       const chargeback_total = Math.round(cbList.reduce((s, c) => s + c.commission, 0) * 100) / 100;
       const agentBonus       = bonusEarned[agent.agent_id] || 0;
 
-      // Prior balance from commission_bank:
-      //   > 0 → banked savings (bank-enabled accounts)
+      // Prior balance from commission_bank, plus any outstanding split-payment receivable:
+      //   > 0 → banked savings (bank-enabled accounts) and/or still-owed prior payments
       //   < 0 → carry-forward debt from a prior month (any account type)
-      const priorBalance     = priorBankBalance[agent.agent_id] || 0;
+      // Note: non-bank accounts have no rolling-positive-balance mechanism (bankBalanceIn
+      // is always 0 for them, same as before this change), so an outstanding receivable
+      // only offsets future debt on bank-enabled accounts. Susan Navarro's account has
+      // the bank enabled, so this is exactly what nets her July chargeback against what's
+      // still owed from June instead of stacking a second, separate debt.
+      const priorBalance     = (priorBankBalance[agent.agent_id] || 0) + (outstandingReceivable[agent.agent_id] || 0);
       const carry_forward_in = Math.min(0, priorBalance);          // prior debt: 0 or negative
       const bankBalanceIn    = bankEnabled ? Math.max(0, priorBalance) : 0; // savings: positive (bank only)
 
@@ -578,6 +422,7 @@ export default async function handler(req, res) {
         net_earned,         // gross_net + carry_forward_in (can be negative)
         recalculated,
         bank_summary,
+        outstanding_receivable: outstandingReceivable[agent.agent_id] || 0, // still owed from a prior split/partial payment
       };
     });
 
@@ -596,18 +441,21 @@ export default async function handler(req, res) {
   if (req.method === 'PATCH') {
     if (!isOwner) return res.status(403).json({ error: 'Only the account owner can record payments' });
 
-    const { month, agentId, amountPaid, paidDate, notes, bankEntry } = req.body || {};
+    const { month, agentId, amountPaid, amountDisbursed, paidDate, notes, bankEntry } = req.body || {};
     if (!month || !agentId) return res.status(400).json({ error: 'month and agentId required' });
 
     const { error } = await supabase
       .from('commission_payments')
       .upsert({
-        user_id:     dataUserId,
+        user_id:          dataUserId,
         month,
-        agent_id:    agentId,
-        amount_paid: amountPaid != null ? parseFloat(amountPaid) : null,
-        paid_date:   paidDate || null,
-        notes:       notes    || null,
+        agent_id:         agentId,
+        amount_paid:      amountPaid      != null ? parseFloat(amountPaid)      : null,
+        // NULL = fully disbursed (matches amount_paid). A caller only sends a lower
+        // amountDisbursed for a split/partial payment — see "Mark Paid" split checkbox.
+        amount_disbursed: amountDisbursed != null ? parseFloat(amountDisbursed) : null,
+        paid_date:        paidDate || null,
+        notes:            notes    || null,
       }, { onConflict: 'user_id,month,agent_id' });
 
     if (error) return res.status(500).json({ error: error.message });

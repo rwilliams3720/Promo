@@ -2311,7 +2311,9 @@ function renderCommissions() {
                   ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(255,179,0,.12);color:#ffb300;">&#x26A0; Recalculated</span>`
                   : cfOut < 0
                     ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(255,77,109,.12);color:#ff6b6b;" title="$${fmt2(-cfOut)} carries into next month">&#x21B3; CF Debt</span>`
-                    : `<span style="font-size:11px;padding:2px 8px;border-radius:20px;${isPaid ? 'background:rgba(0,229,180,.15);color:var(--accent2)' : 'background:rgba(255,255,255,.06);color:var(--muted)'};">${isPaid ? 'Paid' : 'Unpaid'}</span>`}
+                    : (r.outstanding_receivable || 0) > 0
+                      ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(0,212,255,.12);color:var(--accent);" title="From a prior split payment — still owed to the agent">$${fmt2(r.outstanding_receivable)} owed</span>`
+                      : `<span style="font-size:11px;padding:2px 8px;border-radius:20px;${isPaid ? 'background:rgba(0,229,180,.15);color:var(--accent2)' : 'background:rgba(255,255,255,.06);color:var(--muted)'};">${isPaid ? 'Paid' : 'Unpaid'}</span>`}
           </td>
           <td style="padding:8px 10px;display:flex;gap:4px;align-items:center;">
             <button class="btn btn-secondary" style="font-size:11px;padding:3px 9px;" onclick="toggleCommBreakdown('${escHtml(r.agent_id)}')">&darr;</button>
@@ -2330,17 +2332,20 @@ function renderCommissions() {
 
 async function _autoSaveCarryForwards(results, month) {
   for (const r of results) {
-    const cfOut = r.carry_forward_out || 0;
-    if (cfOut === 0) continue;               // nothing to carry forward
     if (r.paid?.amount_paid != null) continue; // Mark Paid already saved the bank entry
-    // Build a bank entry representing the carry-forward debt
+    const cfOut = r.carry_forward_out || 0;
+    const cfIn  = r.carry_forward_in  || 0;
+    // Always persist the ledger snapshot, including $0 — skipping the zero case (old
+    // behavior: "if (cfOut === 0) continue") meant a stale nonzero balance saved before a
+    // calculation bug fix could never self-heal to the now-correct value; it just sat
+    // there and kept cross-contaminating later months via priorBankBalance.
     let bankEntry = r.bank_summary ? { ...r.bank_summary } : {
       earned:          (r.earned || 0) + (r.bonus_earned || 0) - (r.chargeback_total || 0),
       cap:             null,
       paid_out:        Math.max(0, r.net_earned || 0),
       banked:          0,
       interest:        0,
-      balance_before:  r.carry_forward_in || 0,
+      balance_before:  cfIn,
       balance_after:   cfOut,
       drawdown:        0,
     };
@@ -2385,13 +2390,15 @@ function openPayForm(agentId, agentName, earned, month) {
   if (!container) return;
   const existing = _commPayments[agentId] || null;
   const paid = existing?.amount_paid != null;
+  // A payment is a split/partial one when amount_disbursed was recorded lower than amount_paid.
+  const isSplit = paid && existing.amount_disbursed != null && existing.amount_disbursed < existing.amount_paid;
   container.style.display = '';
   container.innerHTML = `
     <div class="panel" style="margin-top:1rem;border:1px solid var(--border);border-radius:10px;padding:1rem;">
       <div style="font-size:13px;font-weight:700;margin-bottom:.75rem;">Record Payment — ${escHtml(agentName)}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;margin-bottom:.75rem;">
         <div>
-          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">AMOUNT PAID</label>
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">AMOUNT EARNED (full obligation)</label>
           <input id="pay-amount" type="number" min="0" step="0.01" value="${paid ? existing.amount_paid : earned}" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 8px;font-size:13px;outline:none;box-sizing:border-box;">
         </div>
         <div>
@@ -2402,6 +2409,15 @@ function openPayForm(agentId, agentName, earned, month) {
           <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">NOTES</label>
           <input id="pay-notes" type="text" value="${paid ? escHtml(existing.notes || '') : ''}" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 8px;font-size:13px;outline:none;box-sizing:border-box;">
         </div>
+      </div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;margin-bottom:.5rem;">
+        <input type="checkbox" id="pay-split" ${isSplit ? 'checked' : ''} onchange="document.getElementById('pay-disbursed-row').style.display=this.checked?'':'none'">
+        Split payment — only part of this has actually been paid out so far
+      </label>
+      <div id="pay-disbursed-row" style="display:${isSplit ? '' : 'none'};margin-bottom:.75rem;max-width:220px;">
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">AMOUNT ACTUALLY PAID NOW</label>
+        <input id="pay-disbursed" type="number" min="0" step="0.01" value="${isSplit ? existing.amount_disbursed : ''}" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 8px;font-size:13px;outline:none;box-sizing:border-box;">
+        <div style="font-size:10px;color:var(--muted);margin-top:3px;">The remainder stays on the books as owed to the agent — a later chargeback nets against it instead of stacking new debt.</div>
       </div>
       <div id="pay-msg" style="font-size:12px;margin-bottom:.5rem;display:none;"></div>
       <div style="display:flex;gap:8px;">
@@ -2416,7 +2432,14 @@ async function saveCommissionPayment(agentId, month, btn, bankSummaryJson) {
   const amountPaid = parseFloat(document.getElementById('pay-amount')?.value);
   const paidDate   = document.getElementById('pay-date')?.value || null;
   const notes      = document.getElementById('pay-notes')?.value || null;
+  const isSplit    = document.getElementById('pay-split')?.checked || false;
   if (isNaN(amountPaid) || amountPaid < 0) { showInlineMsg('pay-msg', 'Enter a valid amount.', 'err'); return; }
+  let amountDisbursed = amountPaid; // default: fully disbursed
+  if (isSplit) {
+    amountDisbursed = parseFloat(document.getElementById('pay-disbursed')?.value);
+    if (isNaN(amountDisbursed) || amountDisbursed < 0) { showInlineMsg('pay-msg', 'Enter a valid "amount actually paid now".', 'err'); return; }
+    if (amountDisbursed > amountPaid) { showInlineMsg('pay-msg', 'Amount paid now can\'t exceed the full obligation.', 'err'); return; }
+  }
   btn.disabled = true;
   let bankEntry = null;
   if (bankSummaryJson) {
@@ -2426,7 +2449,7 @@ async function saveCommissionPayment(agentId, month, btn, bankSummaryJson) {
     const r = await fetch('/api/commissions', {
       method: 'PATCH',
       headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ agentId, month, amountPaid, paidDate, notes, bankEntry }),
+      body: JSON.stringify({ agentId, month, amountPaid, amountDisbursed, paidDate, notes, bankEntry }),
     });
     if (!r.ok) { const d = await r.json(); showInlineMsg('pay-msg', d.error || 'Error', 'err'); return; }
     document.getElementById('comm-pay-modal').style.display = 'none';

@@ -532,6 +532,24 @@ Managed in Account → Sales → Commissions sub-tab.
 **`commission_bank` table** — ledger of deferred/banked amounts per agent per month:
 PK `(user_id, agent_id, month)`. Each row records how much was deferred that period and whether it has been released.
 
+### Chargeback amount — marginal contribution, not a flat rate
+
+`computeChargebackAmount()` (`api/_lib/commission-calc.js`) deducts the sale's MARGINAL contribution to the agent's payout in the month it was actually earned — `(month's earned WITH the sale) − (WITHOUT it)`, computed per structure via `calcStructurePayout()` with the sale's cancelled flag temporarily flipped. A flat per-sale rate is wrong whenever a structure has threshold groups: a sale that tipped a group over its floor is worth the group's WHOLE payout, not its own raw rate; a sale that didn't change the outcome is worth $0. Both `api/commissions.js` (its own chargeback processing) and `api/sales.js` (`chargebackMode` — the Chargeback Report) call this same function, so the two reports always agree. Known limitation: this evaluates each structure independently and does not replicate `commission_all_must_qualify` / `commission_cap_total` cross-structure interactions for the historical earned-month recompute.
+
+### Carry-forward — chronological ordering, not save order
+
+`priorBankBalance` lookup (`api/commissions.js`) must find the closest **chronologically-prior** `commission_bank` row per agent, via `monthKey()` (parses `"April 2026"` → sortable int) filtered to `< currentKey`. **Never** order by `created_at`/`updated_at` alone — a later-saved row (e.g. a future month re-rendered after the current one) can otherwise leak into an earlier month's "prior debt" and cross-contaminate months that never had any real activity. This exact bug caused two unrelated months to show an identical stale negative balance in production (2026-07-17 incident — see task history) because the more-recently-touched month's balance leaked backward into an earlier, actually-inactive month.
+
+`_autoSaveCarryForwards()` (`js/sales.js`) must always persist a fresh ledger snapshot, including `$0` — **do not** re-add an `if (cfOut === 0) continue` early-skip. Skipping the zero case means a stale nonzero balance saved before a calculation bug fix can never self-heal to the now-correct value; it just sits there forever and keeps propagating via `priorBankBalance`. The only skip that's safe is `if (r.paid?.amount_paid != null) continue` — an already-recorded payment freezes that month's ledger row intentionally (see split payments below).
+
+### Split / partial payments
+
+`commission_payments.amount_disbursed` (nullable — NULL means fully disbursed, matching `amount_paid`) tracks how much of a month's full computed obligation (`amount_paid`) has actually been physically paid out. The "Mark Paid" form (`openPayForm`/`saveCommissionPayment` in `js/sales.js`) has a "Split payment" checkbox that reveals an "Amount Actually Paid Now" field for `amount_disbursed`; unchecked, `amount_disbursed` defaults to the full `amount_paid`.
+
+`GET /api/commissions` sums `Math.max(0, amount_paid - amount_disbursed)` across every strictly-prior month for an agent (`outstandingReceivable`) and folds it into `priorBalance` alongside the `commission_bank` chain — this is what lets a later chargeback net against a still-unpaid balance instead of stacking a second, separate debt on top of money that was already correctly earned but not yet disbursed. Exposed per-agent as `outstanding_receivable` in the response; shown as a `$X owed` badge in the owner's status column.
+
+**Display quirk (pre-existing, not fixed)**: on a bank-enabled account, the top-level "Net" column only reflects `carry_forward_in` (the *negative* portion of prior balance) — a positive prior balance (savings or an outstanding receivable) only offsets through the separate bank-drawdown calculation, which is not reflected in "Net". A chargeback that's fully absorbed by an existing positive bank balance can make "Net" show negative even though the expanded Commission Bank panel correctly shows a positive remaining balance. Check `bank_summary.balance_after`, not top-level `net_earned`, to see what an agent is actually owed on a bank-enabled account.
+
 ## Activity Bonuses
 
 Managed in Account → Sales → Bonus sub-tab. Requires commissions add-on.
