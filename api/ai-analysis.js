@@ -1,8 +1,29 @@
 import Anthropic from '@anthropic-ai/sdk';
+import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase  = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// call_log.agent_id is AES-256-GCM encrypted with a random IV — the same agent produces
+// a different ciphertext on every write, so it must always be decrypted before being used
+// as a lookup/aggregation key (never compared or grouped on raw ciphertext).
+const ENCRYPTION_KEY = process.env.CUSTOMER_ENCRYPTION_KEY
+  ? Buffer.from(process.env.CUSTOMER_ENCRYPTION_KEY, 'hex')
+  : null;
+
+function decryptField(ciphertext) {
+  if (!ciphertext) return null;
+  if (!ENCRYPTION_KEY || !ciphertext.includes(':')) return ciphertext;
+  try {
+    const [ivB64, encB64, tagB64] = ciphertext.split(':');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', ENCRYPTION_KEY, Buffer.from(ivB64, 'base64'));
+    decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
+    return decipher.update(Buffer.from(encB64, 'base64')) + decipher.final('utf8');
+  } catch {
+    return ciphertext;
+  }
+}
 
 
 const MONTH_ABBR     = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -347,9 +368,10 @@ export default async function handler(req, res) {
       if (row.disposition === 'voicemail') { m.voicemail++; w.vm++; r90.vm++; }
       if (row.disposition === 'missed')    { m.missed++; w.ms++; r90.ms++; }
 
-      if (!row.agent_id) continue;
-      if (!agents[row.agent_id]) agents[row.agent_id] = { placed:0, answered:0, talkMin:0, policies:0 };
-      const ag = agents[row.agent_id];
+      const decryptedAgentId = decryptField(row.agent_id);
+      if (!decryptedAgentId) continue;
+      if (!agents[decryptedAgentId]) agents[decryptedAgentId] = { placed:0, answered:0, talkMin:0, policies:0 };
+      const ag = agents[decryptedAgentId];
       if (row.disposition === 'placed')   { ag.placed++;   ag.talkMin += (row.talk_secs||0)/60; }
       if (row.disposition === 'answered') { ag.answered++; ag.talkMin += (row.talk_secs||0)/60; }
     }

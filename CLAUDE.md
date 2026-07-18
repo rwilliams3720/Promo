@@ -290,7 +290,7 @@ ALTER TABLE sales_locations ADD COLUMN IF NOT EXISTS product_goals_annual  jsonb
 ### call_log columns
 `user_id, hash, agent_id, disposition, talk_secs, call_dt (DATE), call_slot (SMALLINT 0–47)`
 
-**`agent_id` is AES-256-GCM encrypted** with a random IV — the same value produces a different ciphertext on every write. Always use `decryptField(r.agent_id)` when reading agent_id back from call_log (implemented in both `upload.js` and `sales.js`). Never compare raw ciphertext to plain agent IDs.
+**`agent_id` is AES-256-GCM encrypted** with a random IV — the same value produces a different ciphertext on every write. Always use `decryptField(r.agent_id)` when reading agent_id back from call_log (implemented in `upload.js`, `sales.js`, and `ai-analysis.js`). Never compare raw ciphertext to plain agent IDs, and never use it as an aggregation/dictionary key without decrypting first — since the ciphertext differs on every row, doing so silently creates one fake "agent" per call_log row instead of grouping by real agent. This exact bug existed in `api/ai-analysis.js`'s Team AI Analysis for months (never decrypted `call_log.agent_id` before using it as an object key): a real ~13-agent team's call history exploded into thousands of single-call "agents" with garbled ciphertext names, bloating the Claude prompt to 350k+ characters and hitting the API's 200k-token limit (`prompt is too long`), while `ai_analysis_at` stayed `null` forever since the request never succeeded. Fixed 2026-07-18 — if any AI-analysis-adjacent feature starts hitting token-limit errors or shows garbled agent names, check for a raw (undecrypted) `call_log.agent_id` read first.
 
 ### scoring_config columns
 `user_id, config_key, config_value`
