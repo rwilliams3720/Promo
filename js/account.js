@@ -725,6 +725,22 @@ async function confirmArchive() {
   alert('Month archived and race reset.');
 }
 
+// Tallies sales_log rows into per-agent policy counts. Split sales are represented as
+// TWO independent rows (one per agent, each with its own agent_id and sale_weight=0.5),
+// not one row with a "teammate" field standing in for a second agent — so a plain
+// per-row credit on row.agent_id is correct and can't double-count. Shared by
+// recalcSales() and setRaceMonth() so this logic can't drift between the two again.
+function _tallySalesTotals(salesRows) {
+  const totals = {};
+  for (const r of (salesRows || [])) {
+    const cat = r.product;
+    if (!r.agent_id || cat === 'other' || cat === 'deposit' || cat === 'skip') continue;
+    if (!totals[r.agent_id]) totals[r.agent_id] = { wl:0, ul:0, term:0, health:0, auto:0, fire:0 };
+    if (totals[r.agent_id][cat] !== undefined) totals[r.agent_id][cat] += (r.sale_weight ?? 1);
+  }
+  return totals;
+}
+
 // ── SET RACE MONTH ───────────────────────────────────────────────────────────
 async function setRaceMonth() {
   if (_isMember && _memberRole !== 'captain') return;
@@ -759,14 +775,7 @@ async function setRaceMonth() {
     .gte('sale_date', from)
     .lt('sale_date', to);
 
-  // Tally per-agent sales
-  const totals = {};
-  for (const r of (salesRows || [])) {
-    const cat = r.product;
-    if (!r.agent_id || cat === 'other' || cat === 'deposit' || cat === 'skip') continue;
-    if (!totals[r.agent_id]) totals[r.agent_id] = { wl:0, ul:0, term:0, health:0, auto:0, fire:0 };
-    if (totals[r.agent_id][cat] !== undefined) totals[r.agent_id][cat] += (r.sale_weight ?? 1);
-  }
+  const totals = _tallySalesTotals(salesRows);
 
   // Seed race_data rows for agents in sales_log that don't have an existing row
   const agentIdsWithSales = Object.keys(totals);
@@ -791,12 +800,19 @@ async function setRaceMonth() {
 
   // Apply to race_data — zero agents with no sales, set totals for agents with sales
   const { data: raceAgents } = await _supabase.from('race_data').select('agent_id').eq('user_id', _dataUserId);
+  const updateFailures = [];
   for (const row of (raceAgents || [])) {
     const t = totals[row.agent_id] || { wl:0, ul:0, term:0, health:0, auto:0, fire:0 };
-    await _supabase.from('race_data').update(t).eq('user_id', _dataUserId).eq('agent_id', row.agent_id);
+    const { error } = await _supabase.from('race_data').update(t).eq('user_id', _dataUserId).eq('agent_id', row.agent_id);
+    if (error) updateFailures.push(row.agent_id);
   }
 
-  if (msg) { msg.textContent = `Set to ${monthLabel}.`; msg.style.color = 'var(--accent)'; }
+  if (msg) {
+    msg.textContent = updateFailures.length
+      ? `Set to ${monthLabel}, but failed to update: ${updateFailures.join(', ')}.`
+      : `Set to ${monthLabel}.`;
+    msg.style.color = updateFailures.length ? 'var(--danger)' : 'var(--accent)';
+  }
   await loadRaceData();
 }
 
@@ -832,13 +848,7 @@ async function recalcSales(btn) {
       .gte('sale_date', from)
       .lt('sale_date', to);
 
-    const totals = {};
-    for (const r of (salesRows || [])) {
-      const cat = r.product;
-      if (!r.agent_id || cat === 'other' || cat === 'deposit' || cat === 'skip') continue;
-      if (!totals[r.agent_id]) totals[r.agent_id] = { wl:0, ul:0, term:0, health:0, auto:0, fire:0 };
-      if (totals[r.agent_id][cat] !== undefined) totals[r.agent_id][cat] += (r.sale_weight ?? 1);
-    }
+    const totals = _tallySalesTotals(salesRows);
 
     const agentIdsWithSales = Object.keys(totals);
     if (agentIdsWithSales.length) {
@@ -858,12 +868,19 @@ async function recalcSales(btn) {
     }
 
     const { data: raceAgents } = await _supabase.from('race_data').select('agent_id').eq('user_id', _dataUserId);
+    const updateFailures = [];
     for (const row of (raceAgents || [])) {
       const t = totals[row.agent_id] || { wl:0, ul:0, term:0, health:0, auto:0, fire:0 };
-      await _supabase.from('race_data').update(t).eq('user_id', _dataUserId).eq('agent_id', row.agent_id);
+      const { error } = await _supabase.from('race_data').update(t).eq('user_id', _dataUserId).eq('agent_id', row.agent_id);
+      if (error) updateFailures.push(row.agent_id);
     }
 
-    if (msg) { msg.textContent = 'Sales recalculated.'; msg.style.color = 'var(--accent)'; }
+    if (msg) {
+      msg.textContent = updateFailures.length
+        ? `Sales recalculated, but failed to update: ${updateFailures.join(', ')}.`
+        : 'Sales recalculated.';
+      msg.style.color = updateFailures.length ? 'var(--danger)' : 'var(--accent)';
+    }
     await loadRaceData();
   } catch(e) {
     if (msg) { msg.textContent = e.message; msg.style.color = 'var(--danger)'; }

@@ -1,76 +1,11 @@
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+import { rebuildRaceData as sharedRebuildRaceData } from './_lib/race-data.js';
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
-async function rebuildRaceData(dataUserId, agentIds) {
-  const ids = [...new Set(agentIds.filter(Boolean))];
-  if (!ids.length) return;
-
-  const { data: rosterRows } = await supabase
-    .from('agent_roster')
-    .select('agent_id, name')
-    .eq('user_id', dataUserId)
-    .in('agent_id', ids);
-  const nameMap = {};
-  for (const r of (rosterRows || [])) nameMap[r.agent_id] = r.name;
-
-  const ensureRows = ids.map(id => ({
-    user_id: dataUserId,
-    agent_id: id,
-    name: nameMap[id] || id,
-    team: 'sales',
-    wl: 0, ul: 0, term: 0, health: 0, auto: 0, fire: 0,
-    placed: 0, answered: 0, missed: 0, voicemail: 0,
-    talk_min: 0, avg_min: 0,
-    race_wide_missed: 0, race_wide_voicemail: 0,
-  }));
-  await supabase.from('race_data').upsert(ensureRows, { onConflict: 'user_id,agent_id', ignoreDuplicates: true });
-
-  const { data: cfgRow } = await supabase
-    .from('race_config')
-    .select('value')
-    .eq('user_id', dataUserId)
-    .eq('key', 'current_month')
-    .single();
-  const currentMonth = cfgRow?.value || '';
-  let fromDate = null, toDate = null;
-  if (currentMonth) {
-    const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-    const ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const parts = currentMonth.trim().split(' ');
-    let idx = MONTH_NAMES.indexOf(parts[0]);
-    if (idx === -1) idx = ABBR.indexOf(parts[0]);
-    const yr = parseInt(parts[1]);
-    if (idx !== -1 && !isNaN(yr)) {
-      fromDate = `${yr}-${String(idx + 1).padStart(2, '0')}-01`;
-      const nextMo = idx === 11 ? 1 : idx + 2;
-      const nextYr = idx === 11 ? yr + 1 : yr;
-      toDate = `${nextYr}-${String(nextMo).padStart(2, '0')}-01`;
-    }
-  }
-
-  let q = supabase.from('sales_log').select('agent_id, product, sale_weight').eq('user_id', dataUserId).in('agent_id', ids);
-  if (fromDate) q = q.gte('sale_date', fromDate);
-  if (toDate)   q = q.lt('sale_date', toDate);
-  const { data: salesRows } = await q;
-
-  const totals = {};
-  for (const id of ids) totals[id] = { wl: 0, ul: 0, term: 0, health: 0, auto: 0, fire: 0 };
-  for (const row of (salesRows || [])) {
-    const cat = row.product;
-    if (cat === 'other' || cat === 'deposit' || cat === 'skip' || !row.agent_id) continue;
-    if (!totals[row.agent_id]) continue;
-    if (totals[row.agent_id][cat] !== undefined) totals[row.agent_id][cat] += (row.sale_weight ?? 1);
-  }
-
-  const now = new Date().toISOString();
-  for (const id of ids) {
-    await supabase.from('race_data').update({
-      ...totals[id],
-      last_updated: now,
-    }).eq('user_id', dataUserId).eq('agent_id', id);
-  }
+function rebuildRaceData(dataUserId, agentIds) {
+  return sharedRebuildRaceData(supabase, dataUserId, agentIds);
 }
 
 const DEFAULT_FORM_TYPES = [
@@ -305,28 +240,70 @@ export default async function handler(req, res) {
 
     const submissionId = submission.id;
 
-    // Write sales_log rows
+    // Write sales_log rows. A split sale becomes TWO independent rows (one per agent,
+    // each with its own agent_id, half the premium, and sale_weight 0.5) — matching the
+    // manual-entry model — not one row with a "teammate" field standing in for a second
+    // agent, which left the teammate with no sales_log row of their own at all: no race
+    // credit, no commission, invisible in their own Sales Log.
     if (sales.length > 0) {
       const missingSrc = sales.find(s => !s.leadSource);
       if (missingSrc) return res.status(400).json({ error: 'Lead source required for all sales rows' });
-      const logInserts = sales.map(s => ({
-        user_id:        userId,
-        hash:           sha256Short([salespersonId || '', s.product, s.subcategory || '', subDate, s.writtenPremium || ''].join('|') + Date.now() + Math.random()),
-        agent_id:       salespersonId || null,
-        product:        s.product,
-        subcategory:    s.subcategory  || null,
-        sale_date:      subDate,
-        written_premium: s.writtenPremium ? parseFloat(s.writtenPremium) : null,
-        source:         'checklist',
-        customer_name:  encryptedName,
-        lead_source:    s.leadSource   || null,
-        period:         s.period       ? parseInt(s.period)  : null,
-        auto_issued:    s.autoIssued   ?? null,
-        split_sale:     s.splitSale    ?? null,
-        teammate:       s.teammate     || null,
-        checklist_id:   submissionId,
-        location:       (location || '').trim() || null,
-      }));
+      const missingTeammate = sales.find(s => s.splitSale && !s.teammate);
+      if (missingTeammate) return res.status(400).json({ error: 'Teammate required for a split sale' });
+
+      const mkHash = (agentId, s) => sha256Short([agentId || '', s.product, s.subcategory || '', subDate, s.writtenPremium || ''].join('|') + Date.now() + Math.random());
+
+      const logInserts = sales.flatMap(s => {
+        const base = {
+          product:        s.product,
+          subcategory:    s.subcategory  || null,
+          sale_date:      subDate,
+          source:         'checklist',
+          customer_name:  encryptedName,
+          lead_source:    s.leadSource   || null,
+          period:         s.period       ? parseInt(s.period)  : null,
+          auto_issued:    s.autoIssued   ?? null,
+          split_sale:     s.splitSale    ?? null,
+          checklist_id:   submissionId,
+          location:       (location || '').trim() || null,
+        };
+        const premium = s.writtenPremium ? parseFloat(s.writtenPremium) : null;
+
+        if (!s.splitSale || !s.teammate) {
+          return [{
+            ...base,
+            user_id:          userId,
+            hash:             mkHash(salespersonId, s),
+            agent_id:         salespersonId || null,
+            written_premium:  premium,
+            teammate:         null,
+          }];
+        }
+
+        const half = premium != null ? Math.round((premium / 2) * 100) / 100 : null;
+        return [
+          {
+            ...base,
+            user_id:          userId,
+            hash:             mkHash(salespersonId, s),
+            agent_id:         salespersonId,
+            teammate:         s.teammate,
+            written_premium:  half,
+            split_ratio:      0.5,
+            sale_weight:      0.5,
+          },
+          {
+            ...base,
+            user_id:          userId,
+            hash:             mkHash(s.teammate, s),
+            agent_id:         s.teammate,
+            teammate:         salespersonId,
+            written_premium:  half,
+            split_ratio:      0.5,
+            sale_weight:      0.5,
+          },
+        ];
+      });
       const { error: salesErr } = await supabase.from('sales_log').insert(logInserts);
       if (salesErr) console.error('sales_log insert error:', salesErr);
 

@@ -1,78 +1,12 @@
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { computeChargebackAmount, buildStructureListLookup } from './_lib/commission-calc.js';
+import { rebuildRaceData as sharedRebuildRaceData } from './_lib/race-data.js';
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
-async function rebuildRaceData(dataUserId, agentIds) {
-  const ids = [...new Set(agentIds.filter(Boolean))];
-  if (!ids.length) return;
-
-  const { data: rosterRows } = await supabase
-    .from('agent_roster')
-    .select('agent_id, name')
-    .eq('user_id', dataUserId)
-    .in('agent_id', ids);
-  const nameMap = {};
-  for (const r of (rosterRows || [])) nameMap[r.agent_id] = r.name;
-
-  const ensureRows = ids.map(id => ({
-    user_id: dataUserId,
-    agent_id: id,
-    name: nameMap[id] || id,
-    team: 'sales',
-    wl: 0, ul: 0, term: 0, health: 0, auto: 0, fire: 0,
-    placed: 0, answered: 0, missed: 0, voicemail: 0,
-    talk_min: 0, avg_min: 0,
-    race_wide_missed: 0, race_wide_voicemail: 0,
-  }));
-  await supabase.from('race_data').upsert(ensureRows, { onConflict: 'user_id,agent_id', ignoreDuplicates: true });
-
-  // Scope to current race month so historical sales don't inflate live race totals
-  const { data: cfgRow } = await supabase
-    .from('race_config')
-    .select('value')
-    .eq('user_id', dataUserId)
-    .eq('key', 'current_month')
-    .single();
-  const currentMonth = cfgRow?.value || '';
-  let fromDate = null, toDate = null;
-  if (currentMonth) {
-    const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-    const ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const parts = currentMonth.trim().split(' ');
-    let idx = MONTH_NAMES.indexOf(parts[0]);
-    if (idx === -1) idx = ABBR.indexOf(parts[0]);
-    const yr = parseInt(parts[1]);
-    if (idx !== -1 && !isNaN(yr)) {
-      fromDate = `${yr}-${String(idx + 1).padStart(2, '0')}-01`;
-      const nextMo = idx === 11 ? 1 : idx + 2;
-      const nextYr = idx === 11 ? yr + 1 : yr;
-      toDate = `${nextYr}-${String(nextMo).padStart(2, '0')}-01`;
-    }
-  }
-
-  let q = supabase.from('sales_log').select('agent_id, product').eq('user_id', dataUserId).eq('is_cancelled', false).in('agent_id', ids);
-  if (fromDate) q = q.gte('sale_date', fromDate);
-  if (toDate)   q = q.lt('sale_date', toDate);
-  const { data: salesRows } = await q;
-
-  const totals = {};
-  for (const id of ids) totals[id] = { wl: 0, ul: 0, term: 0, health: 0, auto: 0, fire: 0 };
-  for (const row of (salesRows || [])) {
-    const cat = row.product;
-    if (cat === 'other' || cat === 'deposit' || cat === 'skip' || !row.agent_id) continue;
-    if (!totals[row.agent_id]) continue;
-    if (totals[row.agent_id][cat] !== undefined) totals[row.agent_id][cat] += 1;
-  }
-
-  const now = new Date().toISOString();
-  for (const id of ids) {
-    await supabase.from('race_data').update({
-      ...totals[id],
-      last_updated: now,
-    }).eq('user_id', dataUserId).eq('agent_id', id);
-  }
+function rebuildRaceData(dataUserId, agentIds) {
+  return sharedRebuildRaceData(supabase, dataUserId, agentIds);
 }
 
 function sha256Short(input) {
@@ -355,7 +289,7 @@ export default async function handler(req, res) {
     const { hash, ...fields } = req.body || {};
     if (!hash) return res.status(400).json({ error: 'hash required' });
 
-    const { data: existing } = await supabase.from('sales_log').select('agent_id').eq('user_id', dataUserId).eq('hash', hash).single();
+    const { data: existing } = await supabase.from('sales_log').select('agent_id, teammate').eq('user_id', dataUserId).eq('hash', hash).single();
     // Non-captain/CO members can only edit their own entries
     if (ctx.isMember && !ctx.isCapOrCO && ctx.memberAgentId && existing?.agent_id !== ctx.memberAgentId) {
       return res.status(403).json({ error: 'You can only edit your own entries' });
@@ -388,7 +322,12 @@ export default async function handler(req, res) {
       .eq('hash', hash);
 
     if (error) return res.status(500).json({ error: error.message });
-    const rebuildIds = [...new Set([existing?.agent_id, fields.agent_id].filter(Boolean))];
+    // Include both old and new agent_id/teammate — a split sale's teammate must get
+    // their race_data refreshed too, whether they were the teammate before the edit,
+    // after it, or both (e.g. issuing a split sale, or swapping who the teammate is).
+    const rebuildIds = [...new Set([
+      existing?.agent_id, existing?.teammate, fields.agent_id, fields.teammate,
+    ].filter(Boolean))];
     await rebuildRaceData(dataUserId, rebuildIds);
     await logAccess({ actorUserId: ctx.userId, actorEmail: ctx.actorEmail, dataUserId, action: 'edit', recordHash: hash, metadata: { fields: Object.keys(update) } });
     return res.status(200).json({ ok: true });
@@ -402,7 +341,7 @@ export default async function handler(req, res) {
     const hash = req.query.hash;
     if (!hash) return res.status(400).json({ error: 'hash required' });
 
-    const { data: existing } = await supabase.from('sales_log').select('agent_id').eq('user_id', dataUserId).eq('hash', hash).single();
+    const { data: existing } = await supabase.from('sales_log').select('agent_id, teammate').eq('user_id', dataUserId).eq('hash', hash).single();
     // Non-captain/CO members can only delete their own entries
     if (ctx.isMember && !ctx.isCapOrCO && ctx.memberAgentId && existing?.agent_id !== ctx.memberAgentId) {
       return res.status(403).json({ error: 'You can only delete your own entries' });
@@ -415,7 +354,7 @@ export default async function handler(req, res) {
       .eq('hash', hash);
 
     if (error) return res.status(500).json({ error: error.message });
-    await rebuildRaceData(dataUserId, existing?.agent_id ? [existing.agent_id] : []);
+    await rebuildRaceData(dataUserId, [existing?.agent_id, existing?.teammate].filter(Boolean));
     await logAccess({ actorUserId: ctx.userId, actorEmail: ctx.actorEmail, dataUserId, action: 'delete', recordHash: hash });
     return res.status(200).json({ ok: true });
   }

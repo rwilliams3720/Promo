@@ -52,12 +52,12 @@ CREATE TABLE IF NOT EXISTS race_data (
   agent_id            text NOT NULL,
   name                text NOT NULL DEFAULT '',
   team                text NOT NULL DEFAULT 'sales',
-  wl                  int  NOT NULL DEFAULT 0,
-  ul                  int  NOT NULL DEFAULT 0,
-  term                int  NOT NULL DEFAULT 0,
-  health              int  NOT NULL DEFAULT 0,
-  auto                int  NOT NULL DEFAULT 0,
-  fire                int  NOT NULL DEFAULT 0,
+  wl                  numeric NOT NULL DEFAULT 0,
+  ul                  numeric NOT NULL DEFAULT 0,
+  term                numeric NOT NULL DEFAULT 0,
+  health              numeric NOT NULL DEFAULT 0,
+  auto                numeric NOT NULL DEFAULT 0,
+  fire                numeric NOT NULL DEFAULT 0,
   placed              int  NOT NULL DEFAULT 0,
   answered            int  NOT NULL DEFAULT 0,
   missed              int  NOT NULL DEFAULT 0,
@@ -100,12 +100,12 @@ CREATE TABLE IF NOT EXISTS historical_wins (
   total_score         int,
   gross_score         int,
   deductions          int,
-  wl                  int NOT NULL DEFAULT 0,
-  ul                  int NOT NULL DEFAULT 0,
-  term                int NOT NULL DEFAULT 0,
-  health              int NOT NULL DEFAULT 0,
-  auto                int NOT NULL DEFAULT 0,
-  fire                int NOT NULL DEFAULT 0,
+  wl                  numeric NOT NULL DEFAULT 0,
+  ul                  numeric NOT NULL DEFAULT 0,
+  term                numeric NOT NULL DEFAULT 0,
+  health              numeric NOT NULL DEFAULT 0,
+  auto                numeric NOT NULL DEFAULT 0,
+  fire                numeric NOT NULL DEFAULT 0,
   placed              int NOT NULL DEFAULT 0,
   answered            int NOT NULL DEFAULT 0,
   missed              int NOT NULL DEFAULT 0,
@@ -203,6 +203,25 @@ ALTER TABLE agent_roster ADD COLUMN IF NOT EXISTS commission_product_overrides j
 -- (amount_paid - amount_disbursed) is treated as still owed to the agent and carries
 -- forward into later months via the commission bank / carry-forward calculation.
 ALTER TABLE commission_payments ADD COLUMN IF NOT EXISTS amount_disbursed numeric;
+
+-- Split-sale policy counts are fractional (sale_weight 0.5 per agent) — these columns
+-- were `int` and could never actually hold that credit. Any current-month split sale
+-- leaving an odd (fractional) per-category total made rebuildRaceData's final UPDATE
+-- fail outright (Postgres "invalid input syntax for type integer"), silently, since
+-- that call had no error handling. Widening to numeric is the correct fix, not
+-- rounding — sale_weight was always meant to feed the scoring formula as a fraction.
+ALTER TABLE race_data       ALTER COLUMN wl     TYPE numeric USING wl::numeric;
+ALTER TABLE race_data       ALTER COLUMN ul     TYPE numeric USING ul::numeric;
+ALTER TABLE race_data       ALTER COLUMN term   TYPE numeric USING term::numeric;
+ALTER TABLE race_data       ALTER COLUMN health TYPE numeric USING health::numeric;
+ALTER TABLE race_data       ALTER COLUMN auto   TYPE numeric USING auto::numeric;
+ALTER TABLE race_data       ALTER COLUMN fire   TYPE numeric USING fire::numeric;
+ALTER TABLE historical_wins ALTER COLUMN wl     TYPE numeric USING wl::numeric;
+ALTER TABLE historical_wins ALTER COLUMN ul     TYPE numeric USING ul::numeric;
+ALTER TABLE historical_wins ALTER COLUMN term   TYPE numeric USING term::numeric;
+ALTER TABLE historical_wins ALTER COLUMN health TYPE numeric USING health::numeric;
+ALTER TABLE historical_wins ALTER COLUMN auto   TYPE numeric USING auto::numeric;
+ALTER TABLE historical_wins ALTER COLUMN fire   TYPE numeric USING fire::numeric;
 
 
 -- ─── 4. ADD user_id TO DATA TABLES (no-op if already created above) ──────────────────────────────

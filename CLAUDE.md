@@ -225,6 +225,23 @@ ALTER TABLE account_members ADD COLUMN IF NOT EXISTS managed_by uuid REFERENCES 
 ### race_data columns
 `user_id, agent_id, name, team, wl, ul, term, health, auto, fire, placed, answered, missed, voicemail, talk_min, avg_min, race_wide_missed, race_wide_voicemail, last_updated`
 
+`wl, ul, term, health, auto, fire` on both `race_data` and `historical_wins` are **`numeric`**, not `integer` — migrated 2026-07-21 after split-sale (`sale_weight=0.5`) totals produced fractional category counts that failed to write against the old integer columns with `22P02 invalid input syntax for type integer`. This failure was silent at every call site (no error handling existed), so a current-month split sale landing on an odd total could quietly fail to update `race_data` with no visible symptom besides a wrong-looking race board. Migration:
+```sql
+ALTER TABLE race_data       ALTER COLUMN wl     TYPE numeric USING wl::numeric;
+ALTER TABLE race_data       ALTER COLUMN ul     TYPE numeric USING ul::numeric;
+ALTER TABLE race_data       ALTER COLUMN term   TYPE numeric USING term::numeric;
+ALTER TABLE race_data       ALTER COLUMN health TYPE numeric USING health::numeric;
+ALTER TABLE race_data       ALTER COLUMN auto   TYPE numeric USING auto::numeric;
+ALTER TABLE race_data       ALTER COLUMN fire   TYPE numeric USING fire::numeric;
+ALTER TABLE historical_wins ALTER COLUMN wl     TYPE numeric USING wl::numeric;
+ALTER TABLE historical_wins ALTER COLUMN ul     TYPE numeric USING ul::numeric;
+ALTER TABLE historical_wins ALTER COLUMN term   TYPE numeric USING term::numeric;
+ALTER TABLE historical_wins ALTER COLUMN health TYPE numeric USING health::numeric;
+ALTER TABLE historical_wins ALTER COLUMN auto   TYPE numeric USING auto::numeric;
+ALTER TABLE historical_wins ALTER COLUMN fire   TYPE numeric USING fire::numeric;
+```
+All four `race_data`-update call sites (`api/_lib/race-data.js`, `js/account.js` `recalcSales()` and `setRaceMonth()`) now log (`console.error`) on write failure instead of swallowing it — still best-effort/non-blocking, but no longer invisible.
+
 ### historical_months columns
 `user_id, month (text, "Apr 2026" format), placed, answered, missed, voicemail, talk_min, policies, created_at`
 
@@ -236,6 +253,19 @@ Added by `directive2-migration.sql`: `source ('upload'|'manual'|'checklist'), cu
 Added manually: `issued_date (date)` — run `ALTER TABLE sales_log ADD COLUMN IF NOT EXISTS issued_date date;`
 Added for chargebacks: `is_cancelled (boolean default false)`, `chargeback_date (date)` — when `is_cancelled=true` and `chargeback_date` falls in the commission month, a negative line item is deducted from the agent's commissions.
 Added by `split-sale-migration.sql`: `sale_weight (numeric NOT NULL DEFAULT 1)` — split sales create two rows each with `sale_weight=0.5`; `api/commissions.js` multiplies policy rates by this weight so split sales count as half a policy each.
+
+### Split sales — always TWO independent rows, never one row with a "teammate" field
+
+A split sale is represented as **two separate `sales_log` rows** — one per agent, each with its own real `agent_id`, its own already-halved `written_premium`, `split_ratio: 0.5`, and `sale_weight: 0.5`. `teammate` on each row just points at the *other* row's agent, for display/attribution — it is not a stand-in for a second agent's credit. This means every consumer of `sales_log` (race_data tallies, commission calc, chargeback calc, the Sales Log UI) can treat every row as fully self-contained and owned by its own `agent_id`; nothing needs to special-case `split_sale`/`teammate` to find "the other half."
+
+**Do not "fix" a missing-teammate-credit bug by crediting `row.teammate` in addition to `row.agent_id`** — if both rows exist (the normal case), that double-counts the sale for both agents. This was tried and reverted during the 2026-07-21 investigation once real production data showed the two-row model was already in place for most split sales; the actual bug was a row *going missing*, not a crediting gap. If you see a split sale under-crediting one agent, check whether their row exists at all before touching the crediting logic.
+
+**Where each row gets created:**
+- Manual entry (`manualSubmitAll` in `js/sales-log.js`): sends two sequential `POST /api/sales` calls (primary, then teammate). The second call is retried once on failure and any remaining failure is surfaced in the save message (`teammateFailures`) rather than silently dropped — this used to fail silently, which is why some historical split sales in production only have one side's row.
+- Checklist form (`api/checklist-form.js`): a single request builds both rows via `flatMap` in one atomic `sales_log` insert — no partial-failure window like the manual-entry two-request approach. (Before 2026-07-21 this only ever wrote the submitter's row; the teammate got no row, no race credit, and never showed up in their own Sales Log.)
+- `rebuildRaceData` (`api/_lib/race-data.js`, shared by `api/sales.js` and `api/checklist-form.js`) and `_tallySalesTotals` (`js/account.js`, shared by `recalcSales()`/`setRaceMonth()`) both do a plain per-row `totals[row.agent_id] += (row.sale_weight ?? 1)` tally — correct precisely because every agent always has their own row.
+
+`api/commissions.js`'s `calcStructurePayout` also has a `teammate`-matching "teammate role" branch (`roster.find(a => a.name.toLowerCase() === tmName)`) left over from an earlier single-row design — `teammate` stores an `agent_id`, not a display name, so this comparison never matches and the branch is effectively dead code. Each agent's own row (matched via the ordinary `sale.agent_id === agentId` branch) already gives them their correct, independently-split commission, so this dead branch is harmless as-is; a future cleanup could remove it, but nothing currently depends on it firing.
 
 `other` and `deposit` products do NOT increment policy counts in race_data (excluded in `rebuildRaceData`).
 

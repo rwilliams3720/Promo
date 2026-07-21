@@ -146,7 +146,7 @@ async function manualSubmitAll(btn) {
   btn.disabled = true;
   const msg = document.getElementById('manual-entry-msg');
   msg.style.display = 'none';
-  let saved = 0, errors = 0;
+  let saved = 0, errors = 0, teammateFailures = [];
   for (const row of rows) {
     const product    = row.querySelector('.msr-product')?.value;
     const subcatRaw  = row.querySelector('.msr-subcat')?.value || '';
@@ -191,7 +191,11 @@ async function manualSubmitAll(btn) {
       continue;
     }
     if (!r.ok) { errors++; continue; }
-    // Second entry for teammate when split sale
+    // Second entry for teammate when split sale — a split sale is two independent
+    // sales_log rows (one per agent), so if this second write fails, the teammate's
+    // half never gets created (they'd get no policy credit at all for the sale). Retry
+    // once, then surface it clearly instead of silently dropping it — the primary's
+    // row has already saved by this point, so it isn't rolled back either way.
     if (isSplit && teammateId) {
       const body2 = {
         ...baseBody,
@@ -203,7 +207,14 @@ async function manualSubmitAll(btn) {
         saleWeight:     0.5,
         force,
       };
-      await fetch('/api/sales', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body2) });
+      let r2 = await fetch('/api/sales', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body2) });
+      if (!r2.ok && r2.status !== 409) {
+        r2 = await fetch('/api/sales', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body2) });
+      }
+      if (!r2.ok && r2.status !== 409) {
+        const teammateName = row.querySelector('.msr-teammate-sel')?.selectedOptions?.[0]?.textContent || teammateId;
+        teammateFailures.push(teammateName);
+      }
     }
     saved++; row.remove();
   }
@@ -211,6 +222,10 @@ async function manualSubmitAll(btn) {
   msg.style.display = 'block';
   if (saved)   { msg.style.color = 'var(--accent2)'; msg.textContent = `${saved} entr${saved===1?'y':'ies'} saved.`; }
   if (errors)  { msg.style.color = 'var(--danger)';  msg.textContent += ` ${errors} failed (product, date, and lead source required).`; }
+  if (teammateFailures.length) {
+    msg.style.color = 'var(--danger)';
+    msg.textContent += ` Teammate entry failed to save for: ${teammateFailures.join(', ')} — add their half manually from the Sales Log.`;
+  }
   if (saved)   { loadRaceData().catch(() => {}); manualAddRow(); }
 }
 
