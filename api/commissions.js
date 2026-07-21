@@ -407,6 +407,24 @@ export default async function handler(req, res) {
       const expectedPaid = bank_summary ? bank_summary.paid_out : Math.max(0, net_earned);
       const recalculated = paid != null && Math.abs(parseFloat(paid.amount_paid) - expectedPaid) > 0.01;
 
+      // "Still owed" for display: reconcile THIS month's bank_summary against a payment
+      // already recorded for it, the same way the PATCH handler does at save time — without
+      // mutating bank_summary itself (that object must stay the raw, unreconciled snapshot,
+      // since openPayForm/saveCommissionPayment capture it verbatim and re-apply this same
+      // reconciliation on every payment save; reconciling it here too would double-apply on
+      // an edit and drive the balance negative). Otherwise a month that's already been fully
+      // paid keeps showing its pre-payment hypothetical balance — and the "$X owed" badge —
+      // forever, even once the agent has actually been paid (2026-07-22 follow-up incident).
+      let settledBankBalance = bank_summary ? bank_summary.balance_after : null;
+      if (bank_summary && paid?.amount_paid != null) {
+        const disbursedNow = paid.amount_disbursed != null ? parseFloat(paid.amount_disbursed) : parseFloat(paid.amount_paid);
+        const extra = Math.round((disbursedNow - (bank_summary.paid_out || 0)) * 100) / 100;
+        settledBankBalance = Math.round((bank_summary.balance_after - extra) * 100) / 100;
+      }
+      const outstanding_receivable = bankEnabled
+        ? Math.max(0, settledBankBalance ?? 0)
+        : (outstandingReceivable[agent.agent_id] || 0);
+
       return {
         agent_id:          agent.agent_id,
         name:              agent.name,
@@ -426,7 +444,7 @@ export default async function handler(req, res) {
         net_earned,         // gross_net + carry_forward_in (can be negative)
         recalculated,
         bank_summary,
-        outstanding_receivable: outstandingReceivable[agent.agent_id] || 0, // still owed from a prior split/partial payment
+        outstanding_receivable, // still owed after reconciling against any payment already recorded this month
       };
     });
 
