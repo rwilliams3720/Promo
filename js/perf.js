@@ -97,6 +97,16 @@ function renderPerf() {
     });
   }
 
+  const totalsRow = totals[0];
+  const answered  = totalsRow ? (Number(totalsRow[4]) || 0) : agents.reduce((s, r) => s + (Number(r[4]) || 0), 0);
+  const voicemail = totalsRow ? (Number(totalsRow[5]) || 0) : agents.reduce((s, r) => s + (Number(r[5]) || 0), 0);
+  const missed    = totalsRow ? (Number(totalsRow[6]) || 0) : agents.reduce((s, r) => s + (Number(r[6]) || 0), 0);
+  const inbound   = answered + voicemail + missed;
+  const handleRatioEl = document.getElementById('perf-handle-ratio');
+  if (handleRatioEl) {
+    handleRatioEl.textContent = inbound > 0 ? `Handle Ratio: ${Math.round(answered / inbound * 100)}%` : '';
+  }
+
   const sorted = [...agents, ...totals];
   document.getElementById('perf-body').innerHTML = sorted.map(r => {
     const isTotal  = r[1] === '— TEAM TOTAL —';

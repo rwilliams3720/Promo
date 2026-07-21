@@ -881,7 +881,10 @@
       </div>
     </div>
     <div id="perf-table-panel" class="panel">
-      <div class="panel-title">Call Performance</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <div class="panel-title" style="margin-bottom:0;">Call Performance</div>
+        <div id="perf-handle-ratio" style="font-size:13px;color:var(--muted);white-space:nowrap;margin-bottom:16px;"></div>
+      </div>
       <div class="perf-controls">
         <select class="perf-select" id="perf-period" onchange="populatePerfDates();renderPerf()">
           <option value="daily">Daily</option>

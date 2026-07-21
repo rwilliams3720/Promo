@@ -103,6 +103,9 @@ function handleFile(type, input) {
         const hasCallData = _raceData.some(ag => (ag.placed||0) + (ag.answered||0) > 0);
         if (!hasCallData) logEl.innerHTML += '<br><span class="warn">No call data on file — upload a call report to show full standings.</span>';
       }
+      if (type === 'calls' && typeof loadPerf === 'function' && document.getElementById('perf-body')) {
+        await loadPerf();
+      }
     } catch(err) {
       document.getElementById('ul-' + type).innerHTML = `<span class="err">Error: ${err.message}</span>`;
     } finally {
