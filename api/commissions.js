@@ -306,13 +306,20 @@ export default async function handler(req, res) {
       }
     }
 
-    // Outstanding split/partial-payment balances: sum of (amount_paid - amount_disbursed)
-    // across every PRIOR month for each agent. amount_paid is the full obligation that
+    // Outstanding split/partial-payment balance, PER AGENT: sum of (amount_paid -
+    // amount_disbursed) across every PRIOR month. amount_paid is the full obligation that
     // was already correctly computed and recorded that month; amount_disbursed (NULL =
-    // fully disbursed) is how much has actually been physically paid out. Any shortfall
-    // is money still owed TO the agent, so it's added to their prior balance the same way
-    // banked savings would be — a later chargeback nets against it before creating new
-    // carry-forward debt, instead of stacking a separate debt on top of an unpaid amount.
+    // fully disbursed) is how much has actually been physically paid out.
+    //
+    // Display-only — NOT added into priorBalance below. The PATCH handler reconciles any
+    // shortfall directly into that same month's commission_bank.bank_balance_after the
+    // moment the payment is recorded (see the PATCH branch), so the bank chain
+    // (priorBankBalance) already carries every dollar of it forward from the very next
+    // month on. Also adding it here double-counted the same money a second time, and
+    // since the inflated total got re-persisted by _autoSaveCarryForwards on every
+    // subsequent render, it compounded forever (see CLAUDE.md "Commission Bank" —
+    // 2026-07-21 compounding-balance incident). Kept here purely so the UI can still show
+    // an informational "$X owed from a prior split payment" badge.
     const outstandingReceivable = {};
     for (const row of (allPaymentsRes?.data || [])) {
       const rowKey = monthKey(row.month);
@@ -331,15 +338,12 @@ export default async function handler(req, res) {
       const chargeback_total = Math.round(cbList.reduce((s, c) => s + c.commission, 0) * 100) / 100;
       const agentBonus       = bonusEarned[agent.agent_id] || 0;
 
-      // Prior balance from commission_bank, plus any outstanding split-payment receivable:
+      // Prior balance comes solely from the commission_bank chain now — any split-payment
+      // shortfall is already folded into it by the PATCH handler at the moment it's
+      // recorded (see outstandingReceivable note above), so it must not be added again here.
       //   > 0 → banked savings (bank-enabled accounts) and/or still-owed prior payments
       //   < 0 → carry-forward debt from a prior month (any account type)
-      // Note: non-bank accounts have no rolling-positive-balance mechanism (bankBalanceIn
-      // is always 0 for them, same as before this change), so an outstanding receivable
-      // only offsets future debt on bank-enabled accounts. Susan Navarro's account has
-      // the bank enabled, so this is exactly what nets her July chargeback against what's
-      // still owed from June instead of stacking a second, separate debt.
-      const priorBalance     = (priorBankBalance[agent.agent_id] || 0) + (outstandingReceivable[agent.agent_id] || 0);
+      const priorBalance     = priorBankBalance[agent.agent_id] || 0;
       const carry_forward_in = Math.min(0, priorBalance);          // prior debt: 0 or negative
       const bankBalanceIn    = bankEnabled ? Math.max(0, priorBalance) : 0; // savings: positive (bank only)
 
@@ -463,6 +467,21 @@ export default async function handler(req, res) {
     // Save commission bank ledger entry if bank data was provided
     if (bankEntry) {
       try {
+        // bankEntry is a snapshot the client captured when the "Mark Paid" form was opened
+        // — i.e. BEFORE the amounts the owner just typed. When this PATCH is an actual
+        // payment (amountPaid/amountDisbursed present, as opposed to _autoSaveCarryForwards's
+        // ledger-only save which sends amountPaid: null), reconcile balance_after against
+        // what was really disbursed instead of writing the stale pre-payment snapshot
+        // verbatim — otherwise a payment that fully settles the bank balance never zeroes
+        // it out, and it sits there as a phantom balance forever (2026-07-21 incident).
+        if (amountPaid != null) {
+          const disbursedNow  = amountDisbursed != null ? parseFloat(amountDisbursed) : parseFloat(amountPaid);
+          const assumedPaidOut = parseFloat(bankEntry.paid_out) || 0;
+          if (!isNaN(disbursedNow)) {
+            const extra = Math.round((disbursedNow - assumedPaidOut) * 100) / 100;
+            bankEntry = { ...bankEntry, balance_after: Math.round(((parseFloat(bankEntry.balance_after) || 0) - extra) * 100) / 100 };
+          }
+        }
         await supabase.from('commission_bank').upsert({
           user_id:             dataUserId,
           agent_id:            agentId,

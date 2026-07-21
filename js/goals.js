@@ -400,7 +400,11 @@ function renderRaceGoalsRow(ag) {
     });
   }
   if (!agGoal) return '';
-  const useActuals = agGoal.period_type !== 'monthly';
+  // Always use the server-computed actuals (same source the Goals tab uses) — race_data's ag[key]
+  // is a different pipeline (race-month-scoped, sale_weight-adjusted, needs an explicit rebuild
+  // trigger) and drifts from agGoal.actuals whenever the race month is set manually, a sale is
+  // edited without a recalc, or the agent has split sales. See CLAUDE.md if this note is stale.
+  const showPeriodTag = agGoal.period_type !== 'monthly';
   const PROD = { wl:'WL', ul:'UL', term:'T', health:'H', auto:'A', fire:'F' };
   const PT_SHORT = { quarterly:'Qtrly', semi_annual:'H1/H2', annual:'Annual' };
   const items = [];
@@ -408,14 +412,12 @@ function renderRaceGoalsRow(ag) {
     if (!target || key === 'combined_groups') continue;
     let actual = 0, label = '';
     if (PROD[key]) {
-      actual = useActuals ? (agGoal.actuals?.[key] ?? 0) : (ag[key] || 0);
+      actual = agGoal.actuals?.[key] ?? 0;
       label = PROD[key];
     } else if (key === 'policies') {
-      actual = useActuals
-        ? (agGoal.actuals?.policies ?? 0)
-        : (ag.wl||0)+(ag.ul||0)+(ag.term||0)+(ag.health||0)+(ag.auto||0)+(ag.fire||0);
+      actual = agGoal.actuals?.policies ?? 0;
       label  = 'Pol';
-    } else if (key === 'premium' && useActuals) {
+    } else if (key === 'premium') {
       actual = agGoal.actuals?.premium ?? 0;
       label  = 'Prem';
     } else continue;
@@ -432,7 +434,7 @@ function renderRaceGoalsRow(ag) {
   }
   if (!items.length) return '';
   const lock = !agGoal.is_public ? ' <span style="font-size:9px;opacity:.7;">🔒</span>' : '';
-  const periodTag = useActuals ? ` <span style="font-size:9px;opacity:.6;">(${PT_SHORT[agGoal.period_type]||agGoal.period_type})</span>` : '';
+  const periodTag = showPeriodTag ? ` <span style="font-size:9px;opacity:.6;">(${PT_SHORT[agGoal.period_type]||agGoal.period_type})</span>` : '';
   return `<div style="margin-top:5px;padding:5px 7px;background:var(--deep);border-radius:5px;border:1px solid var(--border2);">
     <div style="font-size:9px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Goals${periodTag}${lock}</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;">

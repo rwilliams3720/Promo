@@ -340,7 +340,12 @@ function renderSalesTile() {
   if (!panel) return;
   panel.style.display = '';
 
-  const useSalesLog = _hasSalesAddon || _isAdmin;
+  // GET /api/sales scopes results to just the caller's own agent_id for bosun/custom members
+  // (correct for the Sales Log tab) — so _salesTileEntries is never office-wide for them. Force
+  // the race_data fallback below instead of drilling into that per-agent-scoped data, or the tile
+  // narrows from "whole office" down to "just me" the moment loadSalesTileData()'s fetch resolves.
+  const isCapOrCO   = !_isMember || ['captain','chief_officer'].includes(_memberRole);
+  const useSalesLog = (_hasSalesAddon || _isAdmin) && isCapOrCO;
   // Only drill into sales_log when a specific location is selected — "All Locations"
   // must read from race_data so that uploaded sales (source='upload') are included.
   const locationActive = useSalesLog && _salesTileLocation !== 'all';

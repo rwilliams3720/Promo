@@ -2200,6 +2200,32 @@ function _buildCommAgentDetailHtml(r) {
 // Builds the Earned/Bonus/CB/Prior Debt/Net summary line shown for one agent —
 // used identically in the owner's table row and the member's own-commission card
 // so a member sees exactly the same compensation breakdown the owner sees.
+// Mirrors the Paid/Status cell logic from the owner's table (renderCommissions) so the
+// member's own view — which previously had no code path referencing r.paid at all — shows
+// whether a payment was actually recorded, not just the computed Earned/Net figures.
+function _buildCommPaidStatusHtml(r) {
+  const fmt2   = n => (n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const isPaid = r.paid?.amount_paid != null;
+  const cfOut  = r.carry_forward_out || 0;
+  const isSplit = isPaid && r.paid.amount_disbursed != null && r.paid.amount_disbursed < r.paid.amount_paid;
+  const badge = r.recalculated
+    ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(255,179,0,.12);color:#ffb300;">&#x26A0; Recalculated</span>`
+    : cfOut < 0
+      ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(255,77,109,.12);color:#ff6b6b;" title="$${fmt2(-cfOut)} carries into next month">&#x21B3; CF Debt</span>`
+      : (r.outstanding_receivable || 0) > 0
+        ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(0,212,255,.12);color:var(--accent);" title="From a prior split payment — still owed to you">$${fmt2(r.outstanding_receivable)} owed</span>`
+        : `<span style="font-size:11px;padding:2px 8px;border-radius:20px;${isPaid ? 'background:rgba(0,229,180,.15);color:var(--accent2)' : 'background:rgba(255,255,255,.06);color:var(--muted)'};">${isPaid ? 'Paid' : 'Unpaid'}</span>`;
+  return `<div style="display:flex;align-items:center;gap:10px;margin:.5rem 0;font-size:12px;">
+    <span style="color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-size:10px;">Payment</span>
+    ${isPaid
+      ? `<span style="font-weight:600;">$${fmt2(r.paid.amount_paid)}${r.paid.paid_date ? ` on ${escHtml(r.paid.paid_date)}` : ''}</span>
+         ${isSplit ? `<span style="color:var(--muted);">($${fmt2(r.paid.amount_disbursed)} disbursed so far)</span>` : ''}
+         ${r.paid.notes ? `<span style="color:var(--muted);">— ${escHtml(r.paid.notes)}</span>` : ''}`
+      : ''}
+    ${badge}
+  </div>`;
+}
+
 function _buildCommSummaryStatsHtml(r) {
   const fmt2 = n => (n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const cfIn = r.carry_forward_in || 0;
@@ -2236,6 +2262,7 @@ function renderCommissions() {
         <span style="font-size:14px;font-weight:600;">${escHtml(r.name)}</span>
       </div>
       ${_buildCommSummaryStatsHtml(r)}
+      ${_buildCommPaidStatusHtml(r)}
       ${_buildCommAgentDetailHtml(r)}
     `).join('<hr style="border:none;border-top:1px solid var(--border2);margin:.75rem 0;">');
     return;
