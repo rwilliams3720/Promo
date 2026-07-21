@@ -425,6 +425,11 @@ export default async function handler(req, res) {
         ? Math.max(0, settledBankBalance ?? 0)
         : (outstandingReceivable[agent.agent_id] || 0);
 
+      // Additive-only field (never overwrites balance_after — see the note above on why
+      // bank_summary itself must stay unreconciled) so the Commission Bank detail panel can
+      // display the true post-payment balance instead of the pre-payment hypothetical one.
+      if (bank_summary) bank_summary = { ...bank_summary, settled_balance_after: settledBankBalance };
+
       return {
         agent_id:          agent.agent_id,
         name:              agent.name,

@@ -2138,13 +2138,19 @@ function _buildCommAgentDetailHtml(r) {
             ${r.bank_summary ? (() => {
               const bs  = r.bank_summary;
               const fmt = n => '$' + (n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+              // settled_balance_after reconciles balance_after against any payment already
+              // recorded for this month (e.g. a split-payment shortfall that was later paid
+              // off) — bs.balance_after itself stays the pre-payment hypothetical value, so
+              // display the settled one when it differs instead of showing a stale balance.
+              const settled = bs.settled_balance_after ?? bs.balance_after;
               const items = [
                 ['Bank Balance (start)', fmt(bs.balance_before)],
                 bs.interest > 0 ? ['Interest', `+${fmt(bs.interest)}`] : null,
                 bs.banked   > 0 ? ['Banked this month', `+${fmt(bs.banked)}`] : null,
                 bs.drawdown > 0 ? ['Drawn from bank', `-${fmt(bs.drawdown)}`] : null,
                 ['Paid Out', `<strong>${fmt(bs.paid_out)}</strong>`],
-                ['Bank Balance (end)', `<strong>${fmt(bs.balance_after)}</strong>`],
+                Math.abs(settled - bs.balance_after) > 0.01 ? ['Bank Balance (end, before this payment)', fmt(bs.balance_after)] : null,
+                ['Bank Balance (end)', `<strong>${fmt(settled)}</strong>`],
               ].filter(Boolean);
               return `<div style="margin-top:10px;padding:8px 10px;background:rgba(123,97,255,.06);border:1px solid rgba(123,97,255,.2);border-radius:6px;">
                 <div style="font-size:11px;font-weight:700;color:#7b61ff;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Commission Bank${bs.cap != null ? ` — Cap ${fmt(bs.cap)}/mo` : ''}</div>
