@@ -121,6 +121,7 @@ let _hasCommissionsAddon = false;
 let _commissionBankConfig = {};     // { enabled, cap_per_period, interest_rate }
 let _commissionStructures = [];     // [{id, name, default_split_ratio, rates}]
 let _activityTypes        = [];     // [{id, name, category, subcategory, source, call_disposition, active}]
+let _bonusTierDraft       = {};     // typeId -> [{count, bonus, repeat}] — in-progress edit of threshold_tiers, not yet saved
 let _bonusLogEntries      = [];
 let _bonusLogCallTotals   = [];
 let _bonusLogMonth        = new Date().getMonth() + 1;

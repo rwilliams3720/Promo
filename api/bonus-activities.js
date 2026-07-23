@@ -2,6 +2,22 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
+// Sanitizes threshold_tiers input into a clean array of { count, bonus, repeat }.
+// count must be a positive integer, bonus a non-negative number; invalid/empty rows
+// are dropped. Capped at 20 tiers per type — plenty for any real bonus structure,
+// guards against unbounded payload growth.
+function sanitizeThresholdTiers(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map(t => ({
+      count:  parseInt(t?.count, 10),
+      bonus:  parseFloat(t?.bonus),
+      repeat: !!t?.repeat,
+    }))
+    .filter(t => Number.isInteger(t.count) && t.count > 0 && !isNaN(t.bonus) && t.bonus >= 0)
+    .slice(0, 20);
+}
+
 async function resolveUser(token) {
   const { data: { user }, error } = await supabase.auth.getUser(token);
   if (error || !user) return null;
@@ -72,7 +88,7 @@ export default async function handler(req, res) {
     if (req.query.resource === 'types') {
       const { data, error } = await supabase
         .from('bonus_activity_types')
-        .select('id, name, category, subcategory, source, call_disposition, active, sort_order, payment')
+        .select('id, name, category, subcategory, source, call_disposition, active, sort_order, payment, threshold_tiers')
         .eq('user_id', dataUserId)
         .order('sort_order')
         .order('created_at');
@@ -148,7 +164,7 @@ export default async function handler(req, res) {
     const { action } = req.body || {};
 
     if (action === 'add_type') {
-      const { name, category, subcategory, source, call_disposition, payment } = req.body;
+      const { name, category, subcategory, source, call_disposition, payment, threshold_tiers } = req.body;
       if (!name) return res.status(400).json({ error: 'name required' });
       const { data, error } = await supabase
         .from('bonus_activity_types')
@@ -160,8 +176,9 @@ export default async function handler(req, res) {
           source:           source            || 'manual',
           call_disposition: call_disposition  || null,
           payment:          parseFloat(payment) || 0,
+          threshold_tiers:  sanitizeThresholdTiers(threshold_tiers),
         })
-        .select('id, name, category, subcategory, source, call_disposition, active, sort_order, payment')
+        .select('id, name, category, subcategory, source, call_disposition, active, sort_order, payment, threshold_tiers')
         .single();
       if (error) {
         if (error.code === '23505') return res.status(409).json({ error: 'An activity type with that name already exists' });
@@ -211,7 +228,7 @@ export default async function handler(req, res) {
     if (action === 'update_type') {
       // Activity-type config is account-wide (incl. payout rate) — owner/captain/CO only.
       if (!ctx.canApprove) return res.status(403).json({ error: 'Approver access required' });
-      const { name, category, subcategory, source, call_disposition, active, payment } = req.body;
+      const { name, category, subcategory, source, call_disposition, active, payment, threshold_tiers } = req.body;
       const update = {};
       if (name             !== undefined) update.name             = name;
       if (category         !== undefined) update.category         = category;
@@ -220,6 +237,7 @@ export default async function handler(req, res) {
       if (call_disposition !== undefined) update.call_disposition = call_disposition || null;
       if (active           !== undefined) update.active           = !!active;
       if (payment          !== undefined) update.payment          = parseFloat(payment) || 0;
+      if (threshold_tiers  !== undefined) update.threshold_tiers  = sanitizeThresholdTiers(threshold_tiers);
       if (!Object.keys(update).length) return res.status(400).json({ error: 'Nothing to update' });
       const { error } = await supabase
         .from('bonus_activity_types')

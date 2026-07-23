@@ -1104,6 +1104,53 @@ function _bonusInputSt() {
   return 'width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 7px;font-size:12px;outline:none;';
 }
 
+// Threshold-tier editor — one-time "$X once count reaches N" or repeating "$X every N"
+// bonuses layered on top of a bonus_activity_type's flat $/occurrence rate. Draft state
+// lives in _bonusTierDraft[typeId] until "Save" is clicked (mirrors the rest of this
+// edit panel, which is also draft-then-save rather than live-persisting per keystroke).
+function _renderBonusTierEditor(t) {
+  const sid = escHtml(t.id);
+  if (!_bonusTierDraft[t.id]) _bonusTierDraft[t.id] = JSON.parse(JSON.stringify(t.threshold_tiers || []));
+  const tiers = _bonusTierDraft[t.id];
+  const rows = tiers.map((tier, i) => `
+    <div style="display:grid;grid-template-columns:1fr 1fr 90px 22px;gap:6px;align-items:center;margin-bottom:4px;">
+      <input type="number" min="1" step="1" value="${tier.count}" placeholder="Count reaches" oninput="updateBonusTier('${sid}',${i},'count',this.value)" style="${_bonusInputSt()}">
+      <input type="number" min="0" step="0.01" value="${tier.bonus}" placeholder="Bonus $" oninput="updateBonusTier('${sid}',${i},'bonus',this.value)" style="${_bonusInputSt()}">
+      <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap;" title="Pay again every time the count reaches another full multiple of this, instead of just once">
+        <input type="checkbox" ${tier.repeat ? 'checked' : ''} onchange="updateBonusTier('${sid}',${i},'repeat',this.checked)" style="accent-color:var(--accent);cursor:pointer;"> Repeats
+      </label>
+      <button onclick="removeBonusTier('${sid}',${i})" style="background:none;border:none;color:var(--danger);font-size:14px;cursor:pointer;padding:0;line-height:1;opacity:.75;" title="Remove tier">✕</button>
+    </div>`).join('');
+  return `<div style="background:rgba(0,212,255,.04);border:1px solid rgba(0,212,255,.15);border-radius:6px;padding:.5rem .6rem;margin-bottom:.6rem;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:${tiers.length ? '.4rem' : '0'};">
+      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">Threshold Bonuses <span style="text-transform:none;opacity:.8;">— extra $ once a count is reached, on top of $/occurrence</span></div>
+      <button class="btn btn-secondary" style="padding:2px 8px;font-size:11px;flex-shrink:0;margin-left:8px;" onclick="addBonusTier('${sid}')">+ Add Tier</button>
+    </div>
+    ${rows}
+  </div>`;
+}
+
+function addBonusTier(id) {
+  if (!_bonusTierDraft[id]) _bonusTierDraft[id] = [];
+  _bonusTierDraft[id].push({ count: 1, bonus: 0, repeat: false });
+  renderBonusActivityTypes();
+  toggleBonusTypeEdit(id); // renderBonusActivityTypes rebuilds the panel closed — reopen it
+}
+
+function removeBonusTier(id, idx) {
+  if (!_bonusTierDraft[id]) return;
+  _bonusTierDraft[id].splice(idx, 1);
+  renderBonusActivityTypes();
+  toggleBonusTypeEdit(id);
+}
+
+function updateBonusTier(id, idx, field, value) {
+  const tier = _bonusTierDraft[id]?.[idx];
+  if (!tier) return;
+  if (field === 'repeat') tier.repeat = !!value;
+  else tier[field] = value; // kept as raw string from the input; parsed on save
+}
+
 function renderBonusActivityTypes() {
   const el = document.getElementById('bonus-types-list');
   if (!el) return;
@@ -1122,7 +1169,7 @@ function renderBonusActivityTypes() {
       <div style="display:flex;align-items:center;gap:8px;">
         <input type="checkbox" ${t.active !== false ? 'checked' : ''} onchange="toggleBonusTypeActive('${sid}',this.checked)" title="Active">
         <span style="font-size:11px;background:${catBg};border-radius:4px;padding:1px 7px;white-space:nowrap;">${escHtml(catLb)}</span>
-        <span style="font-size:13px;font-weight:600;flex:1;">${escHtml(t.name)}${t.subcategory ? ` <span style="font-size:11px;color:var(--muted);font-weight:400;">· ${escHtml(t.subcategory)}</span>` : ''}${t.payment > 0 ? ` · <span style="color:var(--accent2);">$${t.payment.toFixed(2)}</span>` : ''}${srcBadge}</span>
+        <span style="font-size:13px;font-weight:600;flex:1;">${escHtml(t.name)}${t.subcategory ? ` <span style="font-size:11px;color:var(--muted);font-weight:400;">· ${escHtml(t.subcategory)}</span>` : ''}${t.payment > 0 ? ` · <span style="color:var(--accent2);">$${t.payment.toFixed(2)}</span>` : ''}${(t.threshold_tiers||[]).length ? ` · <span style="color:var(--accent);" title="${(t.threshold_tiers||[]).map(tier=>`$${tier.bonus} ${tier.repeat?'every':'at'} ${tier.count}`).join(', ')}">${t.threshold_tiers.length} tier${t.threshold_tiers.length>1?'s':''}</span>` : ''}${srcBadge}</span>
         <button class="btn btn-secondary" style="padding:2px 9px;font-size:11px;" onclick="toggleBonusTypeEdit('${sid}')">Edit</button>
         <button class="btn btn-secondary" style="padding:2px 8px;font-size:11px;" onclick="deleteBonusActivityType('${sid}',this)">✕</button>
       </div>
@@ -1158,6 +1205,7 @@ function renderBonusActivityTypes() {
               <option value="missed"${t.call_disposition==='missed'?' selected':''}>Missed / Abandon</option>
             </select></div>
         </div>
+        ${_renderBonusTierEditor(t)}
         <div style="display:flex;gap:8px;align-items:center;">
           <button class="btn btn-primary" style="padding:4px 12px;font-size:12px;" onclick="saveBonusActivityType('${sid}',this)">Save</button>
           <button class="btn btn-secondary" style="padding:4px 10px;font-size:12px;" onclick="toggleBonusTypeEdit('${sid}')">Cancel</button>
@@ -1217,16 +1265,22 @@ async function saveBonusActivityType(id, btn) {
   const subcategory      = (document.getElementById('bonus-edit-subcat-' + id)?.value || '').trim() || null;
   const call_disposition = source === 'call_log' ? (document.getElementById('bonus-edit-disp-' + id)?.value || null) : null;
   const payment          = parseFloat(document.getElementById('bonus-edit-payment-' + id)?.value) || 0;
+  const threshold_tiers  = (_bonusTierDraft[id] || []).map(t => ({
+    count:  parseInt(t.count, 10),
+    bonus:  parseFloat(t.bonus),
+    repeat: !!t.repeat,
+  })).filter(t => Number.isInteger(t.count) && t.count > 0 && !isNaN(t.bonus) && t.bonus >= 0);
   btn.disabled = true;
   try {
     const r = await fetch('/api/bonus-activities', {
       method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'update_type', id, name, category, subcategory, source, call_disposition, payment }),
+      body: JSON.stringify({ action: 'update_type', id, name, category, subcategory, source, call_disposition, payment, threshold_tiers }),
     });
     const msgEl = document.getElementById('bonus-type-save-msg-' + id);
     if (r.ok) {
       const t = _activityTypes.find(x => x.id === id);
-      if (t) Object.assign(t, { name, category, subcategory, source, call_disposition, payment });
+      if (t) Object.assign(t, { name, category, subcategory, source, call_disposition, payment, threshold_tiers });
+      _bonusTierDraft[id] = JSON.parse(JSON.stringify(threshold_tiers));
       renderBonusActivityTypes();
     } else {
       if (msgEl) { msgEl.textContent = 'Error saving'; msgEl.style.color='var(--danger)'; msgEl.style.display=''; setTimeout(()=>{ if(msgEl) msgEl.style.display='none'; },2500); }
@@ -1248,7 +1302,7 @@ async function deleteBonusActivityType(id, btn) {
   btn.disabled = true;
   try {
     const r = await fetch(`/api/bonus-activities?resource=types&id=${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders() });
-    if (r.ok) { _activityTypes = _activityTypes.filter(t => t.id !== id); renderBonusActivityTypes(); }
+    if (r.ok) { _activityTypes = _activityTypes.filter(t => t.id !== id); delete _bonusTierDraft[id]; renderBonusActivityTypes(); }
   } finally { btn.disabled = false; }
 }
 
@@ -2135,6 +2189,29 @@ function _buildCommAgentDetailHtml(r) {
                 </table>`;
             })() : ''}`;
             })()}
+            ${(r.bonus_breakdown && r.bonus_breakdown.length) ? (() => {
+              const fmt = n => '$' + (n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+              const tierLine = tier => `${tier.repeat ? `${tier.times}× ` : ''}$${tier.bonus} ${tier.repeat ? `per ${tier.count}` : `at ${tier.count}`}`;
+              return `<div style="margin-top:10px;padding:8px;background:rgba(0,229,180,.05);border:1px solid rgba(0,229,180,.15);border-radius:6px;">
+                <div style="font-size:11px;font-weight:700;color:var(--accent2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Activity Bonuses This Month</div>
+                <table style="font-size:12px;border-collapse:collapse;width:100%;">
+                  <thead><tr style="border-bottom:1px solid rgba(0,229,180,.2);">
+                    <th style="text-align:left;padding:3px 8px;color:var(--muted);">Activity</th>
+                    <th style="text-align:right;padding:3px 8px;color:var(--muted);">Count</th>
+                    <th style="text-align:right;padding:3px 8px;color:var(--muted);">Per-Occurrence</th>
+                    <th style="text-align:right;padding:3px 8px;color:var(--muted);">Threshold Bonus</th>
+                  </tr></thead>
+                  <tbody>${r.bonus_breakdown.map(b => `<tr style="border-bottom:1px solid rgba(0,229,180,.1);">
+                    <td style="padding:3px 8px;">${escHtml(b.type_name)}</td>
+                    <td style="padding:3px 8px;text-align:right;">${b.count}</td>
+                    <td style="padding:3px 8px;text-align:right;">${b.occurrence_pay > 0 ? fmt(b.occurrence_pay) : '—'}</td>
+                    <td style="padding:3px 8px;text-align:right;">${b.threshold_bonus > 0
+                      ? `<span style="color:var(--accent2);font-weight:600;" title="${b.tier_details.map(tierLine).join(', ')}">+${fmt(b.threshold_bonus)}</span>`
+                      : '—'}</td>
+                  </tr>`).join('')}</tbody>
+                </table>
+              </div>`;
+            })() : ''}
             ${r.bank_summary ? (() => {
               const bs  = r.bank_summary;
               const fmt = n => '$' + (n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});

@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
-import { calcStructurePayout, computeChargebackAmount, monthLabel, monthKey } from './_lib/commission-calc.js';
+import { calcStructurePayout, computeChargebackAmount, monthLabel, monthKey, computeThresholdBonus } from './_lib/commission-calc.js';
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
@@ -157,15 +157,21 @@ export default async function handler(req, res) {
       }
     } catch(_) { /* bonus tables may not be migrated yet */ }
 
-    // Fetch activity type payment amounts for bonus calculation
+    // Fetch activity type payment amounts + threshold tiers for bonus calculation
     const actPayments = {}; // typeId → payment
+    const actTiers    = {}; // typeId → threshold_tiers array
+    const actNames    = {}; // typeId → name (for bonus breakdown display)
     try {
       const { data: actTypesFull } = await supabase
         .from('bonus_activity_types')
-        .select('id, payment')
+        .select('id, name, payment, threshold_tiers')
         .eq('user_id', dataUserId)
         .eq('active', true);
-      for (const at of (actTypesFull || [])) actPayments[at.id] = parseFloat(at.payment) || 0;
+      for (const at of (actTypesFull || [])) {
+        actPayments[at.id] = parseFloat(at.payment) || 0;
+        actTiers[at.id]    = at.threshold_tiers || [];
+        actNames[at.id]    = at.name;
+      }
     } catch(_) {}
 
     // Build lookup maps
@@ -237,15 +243,25 @@ export default async function handler(req, res) {
       };
     }
 
-    // Calculate bonus_earned per agent from activity counts × payment rates
+    // Calculate bonus_earned per agent: flat $/occurrence rate PLUS any threshold-tier
+    // bonuses (see computeThresholdBonus in commission-calc.js) — additive, so a type
+    // can be occurrence-only, threshold-only (payment=0), or both at once.
     const bonusEarned = {};
+    const bonusBreakdown = {}; // agentId → [{ type_name, count, occurrence_pay, threshold_bonus, tier_details }]
     for (const agent of roster) {
       const agActs = actCounts[agent.agent_id] || {};
       let bonus = 0;
+      const items = [];
       for (const [typeId, count] of Object.entries(agActs)) {
-        bonus += count * (actPayments[typeId] || 0);
+        const occurrencePay = Math.round(count * (actPayments[typeId] || 0) * 100) / 100;
+        const { bonus: thresholdBonus, details } = computeThresholdBonus(count, actTiers[typeId]);
+        bonus += occurrencePay + thresholdBonus;
+        if (occurrencePay > 0 || thresholdBonus > 0) {
+          items.push({ type_name: actNames[typeId] || 'Activity', count, occurrence_pay: occurrencePay, threshold_bonus: thresholdBonus, tier_details: details });
+        }
       }
       bonusEarned[agent.agent_id] = Math.round(bonus * 100) / 100;
+      bonusBreakdown[agent.agent_id] = items;
     }
 
     // Process chargebacks: cancelled sales where chargeback_date falls in this month.
@@ -442,6 +458,7 @@ export default async function handler(req, res) {
         cap_total_note:    res.cap_total_note || null,
         paid,
         bonus_earned:      agentBonus,
+        bonus_breakdown:   bonusBreakdown[agent.agent_id] || [],
         chargebacks:       cbList,
         chargeback_total,
         carry_forward_in,   // prior debt applied this month (0 or negative)

@@ -616,6 +616,20 @@ Each type has a `payment` field ($/occurrence). Types with `source='call_log'` a
 
 `renderBonusActivityTypes()` shows a `· $X.XX` payment badge when `t.payment > 0`.
 
+**Threshold bonuses (`threshold_tiers jsonb`, default `'[]'`)** — pending SQL migration:
+```sql
+ALTER TABLE bonus_activity_types ADD COLUMN IF NOT EXISTS threshold_tiers jsonb NOT NULL DEFAULT '[]';
+```
+Extra $ awarded once an agent's activity count for that type reaches a set number in the period, ON TOP of the flat $/occurrence rate (occurrence rate can be 0 for a threshold-only type). Array of `{ count, bonus, repeat }`:
+- `repeat: false` (milestone) — pays `bonus` once when `count` first reaches `tier.count`, no matter how far past it it goes.
+- `repeat: true` (per-block) — pays `bonus` once for every complete multiple of `tier.count` (e.g. `count=10` with an actual count of 25 pays 2×).
+
+Multiple tiers on one type are independent and additive — mix milestone and repeating tiers freely (e.g. `$25` once at 10, `+$10` for every 5 after that). Computed by `computeThresholdBonus(count, tiers)` in `api/_lib/commission-calc.js`, called from `api/commissions.js`'s bonus loop alongside the existing `count × payment` occurrence math. `sanitizeThresholdTiers()` in `api/bonus-activities.js` validates/clamps tiers server-side on `add_type`/`update_type` (positive integer count, non-negative bonus, max 20 tiers) — never trust the client array as-is.
+
+Editor UI lives in the type's Edit panel (`_renderBonusTierEditor` in `js/sales.js`) — a small "+ Add Tier" row list, draft-then-save like the rest of the edit panel (draft state in `_bonusTierDraft[typeId]`, not persisted until "Save" is clicked). Not exposed on the "Add Activity Type" form — configure tiers via Edit after creating the type, keeps the add form from getting overloaded.
+
+`GET /api/commissions` returns `bonus_breakdown` per agent (`[{ type_name, count, occurrence_pay, threshold_bonus, tier_details }]`) so the Commissions detail panel can show which activities and which tiers actually contributed to `bonus_earned`, instead of just a lump sum — same transparency pattern as the chargeback and commission-bank breakdowns.
+
 ### bonus_activities
 Manual entries with `status='approved'|'pending'|'rejected'`. Only `approved` entries count toward `bonus_earned` in the commissions calculator.
 

@@ -363,3 +363,30 @@ async function marginalStructureValue(ctx, sale, struct, overrides) {
   const withoutEarned = calcStructurePayout(sale.agent_id, struct, withoutSales, ctx.roster, ctx.isFinancialService, monthActCounts, eFrom, eTo, overrides, ctx.decryptField).earned;
   return Math.max(0, withEarned - withoutEarned);
 }
+
+// Threshold bonuses for a bonus_activity_type — on top of its flat $/occurrence rate.
+// Each tier is { count, bonus, repeat }: `repeat: false` (milestone) pays `bonus` once
+// when `count` first reaches `tier.count` in the period, no matter how far past it it
+// goes; `repeat: true` (per-block) pays `bonus` once for every complete multiple of
+// `tier.count` — e.g. tier.count=10 and an actual count of 25 pays 2x. Tiers are
+// independent and additive — an activity type can mix milestone and repeating tiers.
+export function computeThresholdBonus(count, tiers) {
+  let bonus = 0;
+  const details = [];
+  for (const tier of (tiers || [])) {
+    const c = parseInt(tier.count, 10) || 0;
+    const b = parseFloat(tier.bonus) || 0;
+    if (c <= 0 || b <= 0) continue;
+    if (tier.repeat) {
+      const times = Math.floor(count / c);
+      if (times > 0) {
+        bonus += times * b;
+        details.push({ count: c, bonus: b, repeat: true, times });
+      }
+    } else if (count >= c) {
+      bonus += b;
+      details.push({ count: c, bonus: b, repeat: false, times: 1 });
+    }
+  }
+  return { bonus: Math.round(bonus * 100) / 100, details };
+}
