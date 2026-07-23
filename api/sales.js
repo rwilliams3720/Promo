@@ -139,7 +139,7 @@ export default async function handler(req, res) {
       toDate = req.query.toDate;
     }
 
-    const COLS = 'hash, agent_id, product, subcategory, sale_date, issued_date, written_premium, issued_premium, source, customer_name, lead_source, period, auto_issued, split_sale, split_ratio, teammate, checklist_id, hidden, location, is_cancelled, chargeback_date, chargeback_exempt';
+    const COLS = 'hash, agent_id, product, subcategory, sale_date, issued_date, written_premium, issued_premium, source, customer_name, lead_source, period, auto_issued, split_sale, split_ratio, sale_weight, teammate, checklist_id, hidden, location, is_cancelled, chargeback_date, chargeback_exempt';
 
     // Chargeback mode: return only cancelled sales where chargeback_date is in the requested range
     if (req.query.chargebackMode === '1') {

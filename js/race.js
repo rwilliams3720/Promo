@@ -381,8 +381,9 @@ function renderSalesTile() {
         for (const c of cats) agentMap[e.agent_id].products[c.key] = 0;
       }
       if (agentMap[e.agent_id].products[e.product] !== undefined) {
-        agentMap[e.agent_id].products[e.product]++;
-        agentMap[e.agent_id].total++;
+        const weight = e.sale_weight ?? 1; // split sales are two rows at 0.5 each — see CLAUDE.md "Split sales"
+        agentMap[e.agent_id].products[e.product] += weight;
+        agentMap[e.agent_id].total += weight;
       }
     }
     // Resolve names from race_data / roster
