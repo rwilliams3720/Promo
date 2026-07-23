@@ -215,6 +215,19 @@ export default async function handler(req, res) {
 
   // ── GET: return cached or generate fresh analysis ─────────────────────────
   if (req.method === 'GET') {
+    if (req.query?.resource === 'history') {
+      const agentId = req.query?.agentId;
+      if (!agentId) return res.status(400).json({ error: 'agentId required' });
+      const { data, error } = await supabase
+        .from('member_analysis_history')
+        .select('generated_at, analysis_text')
+        .eq('user_id', dataUserId)
+        .eq('agent_id', agentId)
+        .order('generated_at', { ascending: false });
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ history: data || [] });
+    }
+
     const force     = req.query?.force     === '1';
     const checkOnly = req.query?.checkOnly === '1'; // return cache if valid, else 204 — never generates fresh
 
@@ -249,6 +262,26 @@ export default async function handler(req, res) {
         member_analysis_at:    now,
       }).eq('user_id', dataUserId);
       if (saveErr) console.error('[member-analysis] cache save error:', saveErr.message);
+
+      // Append-only historical snapshot, one row per agent — accounts.member_analysis_cache
+      // above only ever holds the latest run, this is what lets past analyses stay visible.
+      // Best-effort: never let a history-write failure break the (already-cached, already
+      // billed) analysis response the caller is waiting on.
+      try {
+        const histRows = Object.entries(payload.agentSections || {}).map(([name, text]) => {
+          const agId = Object.keys(payload.agentData || {}).find(id => payload.agentData[id]?.name === name);
+          return agId ? { user_id: dataUserId, agent_id: agId, agent_name: name, analysis_text: text, generated_at: now } : null;
+        }).filter(Boolean);
+        if (histRows.length) {
+          await supabase.from('member_analysis_history').insert(histRows);
+          // 24-month retention, enforced on every write — see CLAUDE.md "Historical snapshots".
+          const cutoff = new Date(Date.now() - 24 * 30 * 24 * 60 * 60 * 1000).toISOString();
+          await supabase.from('member_analysis_history').delete().eq('user_id', dataUserId).lt('generated_at', cutoff);
+        }
+      } catch (histErr) {
+        console.error('[member-analysis] history write error:', histErr.message);
+      }
+
       return res.status(200).json({ ...payload, cachedAt: now });
     } catch (err) {
       console.error('member-analysis generate error:', err);

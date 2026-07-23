@@ -800,6 +800,7 @@ function renderMemberAnalysisCards(agentSections, agentData, generatedAt, hoursL
   Object.values(_agentChartInstances).forEach(charts => charts.forEach(c => { try { c.destroy(); } catch(_) {} }));
   _agentChartInstances = {};
   _agentChartsRendered.clear();
+  _maHistoryLoaded.clear(); // a fresh generation may have added a new snapshot — force re-fetch
   _maAnalysisData = { agentSections, agentData, generatedAt };
 
   const body = document.getElementById('ma-analysis-body');
@@ -872,6 +873,11 @@ function renderMemberAnalysisCards(agentSections, agentData, generatedAt, hoursL
       <div id="${cardId}" style="display:none;padding:1rem;background:var(--deep);">
         ${chartTiles}
         ${paragraphs || '<p style="color:var(--muted);font-size:13px;">No analysis available.</p>'}
+        ${agId ? `
+        <div style="margin-top:.5rem;padding-top:.75rem;border-top:1px solid var(--border2);">
+          <button onclick="toggleMaHistory('${safeId}','${escHtml(agId)}')" style="background:none;border:1px solid var(--border2);color:var(--muted);border-radius:5px;padding:3px 10px;font-size:11px;cursor:pointer;">History <span class="ma-hist-chevron-${safeId}">▼</span></button>
+          <div id="ma-hist-${safeId}" style="display:none;margin-top:.75rem;"></div>
+        </div>` : ''}
       </div>
     </div>`;
   }).join('');
@@ -909,6 +915,49 @@ function toggleMaCard(cardId, agId) {
   const chevron = header?.querySelector('.ma-chevron');
   if (chevron) chevron.textContent = isHidden ? '▲' : '▼';
   if (isHidden && agId) renderAgentChartsIfNeeded(agId);
+}
+
+// ── Agent History toggle with lazy fetch ───────────────────────────────────────
+async function toggleMaHistory(safeId, agId) {
+  const panel   = document.getElementById('ma-hist-' + safeId);
+  const chevron = document.querySelector('.ma-hist-chevron-' + safeId);
+  if (!panel) return;
+  const isHidden = panel.style.display === 'none';
+  panel.style.display = isHidden ? '' : 'none';
+  if (chevron) chevron.textContent = isHidden ? '▲' : '▼';
+  if (!isHidden || _maHistoryLoaded.has(agId)) return;
+
+  panel.innerHTML = '<div style="font-size:12px;color:var(--muted);">Loading…</div>';
+  try {
+    const r = await fetch(`/api/member-analysis?resource=history&agentId=${encodeURIComponent(agId)}`, { headers: authHeaders() });
+    if (!r.ok) throw new Error('failed to load');
+    const { history } = await r.json();
+    _maHistoryLoaded.add(agId);
+    if (!history?.length) {
+      panel.innerHTML = '<div style="font-size:12px;color:var(--muted);">No past analyses yet — check back after this one ages out of cache and a new one generates.</div>';
+      return;
+    }
+    // Most recent entry is the one already shown above as the current analysis — skip it
+    // to avoid showing the same text twice in a row.
+    const past = history.slice(1);
+    if (!past.length) {
+      panel.innerHTML = '<div style="font-size:12px;color:var(--muted);">No earlier analyses yet.</div>';
+      return;
+    }
+    panel.innerHTML = past.map((h, i) => {
+      const entryId = `ma-hist-entry-${safeId}-${i}`;
+      const paragraphs = (h.analysis_text || '').split(/\n\n+/).filter(Boolean)
+        .map(p => `<p style="margin:0 0 .6em;font-size:12px;line-height:1.6;color:var(--muted);">${escHtml(p.trim())}</p>`).join('');
+      return `<div style="margin-bottom:.5rem;">
+        <div style="font-size:11px;color:var(--text);cursor:pointer;padding:4px 0;" onclick="const b=document.getElementById('${entryId}');b.style.display=b.style.display==='none'?'':'none';">
+          ▸ ${new Date(h.generated_at).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'})}
+        </div>
+        <div id="${entryId}" style="display:none;padding:.5rem .75rem;background:var(--card2);border-radius:6px;margin-top:2px;">${paragraphs}</div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    panel.innerHTML = '<div style="font-size:12px;color:var(--danger);">Failed to load history.</div>';
+  }
 }
 
 function renderAgentChartsIfNeeded(agId) {

@@ -169,4 +169,5 @@ let _maLastHoursPeriod    = null; // last uploaded period label for label displa
 let _maAnalysisData       = null; // last loaded member analysis response
 let _agentChartInstances  = {};   // agId → [Chart, Chart, Chart]
 let _agentChartsRendered  = new Set();
+let _maHistoryLoaded      = new Set(); // agIds whose history panel has been fetched this session
 

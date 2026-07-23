@@ -216,6 +216,32 @@ Added by `member-analysis-migration.sql`:
 - `removeInactiveOnly: true`: saves `member_analysis_agents` only, no lock clock update, works for all users including admin. Validated server-side to block additions.
 - Frontend: `saveMemberAnalysisAgents` only sets `_memberAnalysisAgentsSetAt = new Date()` when `d.lockedUntil` is present in response.
 
+**Historical snapshots (`member_analysis_history` table), added 2026-07-24 — pending SQL migration:**
+```sql
+CREATE TABLE IF NOT EXISTS member_analysis_history (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users ON DELETE CASCADE,
+  agent_id text NOT NULL,
+  agent_name text NOT NULL,
+  analysis_text text NOT NULL,
+  generated_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS member_analysis_history_lookup ON member_analysis_history (user_id, agent_id, generated_at DESC);
+ALTER TABLE member_analysis_history ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "user_own"    ON member_analysis_history USING (user_id = auth.uid());
+CREATE POLICY "member_read" ON member_analysis_history FOR SELECT USING (
+  user_id IN (SELECT owner_user_id FROM account_members WHERE member_user_id = auth.uid() AND status = 'active')
+);
+```
+`accounts.member_analysis_cache` only ever holds the *latest* generated analysis — every regeneration overwrote it, so there was no way to see how coaching insights evolved over time. `member_analysis_history` is the append-only counterpart: whenever `generateAnalysis()` produces a fresh payload (GET handler's non-cached branch, after the `member_analysis_cache` save), one row per selected agent is inserted from `payload.agentSections` (keyed by display name — resolved to `agent_id` via `payload.agentData`) alongside `generated_at = payload.generatedAt`.
+
+**24-month retention, enforced at write time** (not a separate cron job): immediately after inserting the new rows, delete any `member_analysis_history` rows for this `user_id` with `generated_at` older than 24 months. This keeps retention correct on every single write with no dependency on the monthly `api/cleanup.js` cron remembering to also prune this table. Chosen over 6/12 months specifically to support year-over-year comparison ("this July vs. last July") — the single most valuable longitudinal coaching comparison, which a shorter window would lose entirely — while still bounding storage growth (analyses regenerate at most every 5 days under normal use via `CACHE_TTL_MS`, so 24 months caps out around ~150 snapshots per agent in the worst case).
+
+**Read path**: `GET /api/member-analysis?resource=history&agentId=X` returns that agent's snapshots newest-first, `{ generated_at, analysis_text }[]`. Access follows the same broad account-member model the rest of this file already uses (any active member/owner of the account, not scoped further by role) — there was no existing per-role restriction on the main cached analysis to match, so none was invented for history either.
+
+**Frontend**: a "History" toggle inside each agent's expandable card (`js/member-analysis.js`, `renderMemberAnalysisCards`) lazy-fetches and renders past snapshots the first time it's opened, same lazy-load-on-expand pattern already used for the chart tiles (`renderAgentChartsIfNeeded`).
+
 Added by `commission-bank-migration.sql`:
 `commission_bank_config (jsonb default '{}')` — shape: `{ enabled, cap_per_period, interest_rate, interest_period }`. Managed in Account → Sales → Commissions sub-tab.
 
