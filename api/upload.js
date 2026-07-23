@@ -26,8 +26,18 @@ async function fetchAllPages(client, table, columns, userId) {
   const rows = [];
   let from = 0;
   while (true) {
+    // .order() is required for .range() pagination to be reliable — Postgres gives no
+    // default stable row order across separate queries without ORDER BY, so an unordered
+    // multi-page fetch can non-deterministically return the same row on two pages
+    // (inflating counts) or skip a row (deflating them) on any account with >1000
+    // call_log rows. hash is part of call_log's (user_id, hash) primary key, so it's a
+    // safe, always-present, always-unique-per-user ordering column. Confirmed via a real
+    // production audit (2026-07-24): unordered pagination showed 1036 "duplicate" rows
+    // out of 7223 that vanished entirely once ordered — the underlying data was never
+    // actually duplicated, only the aggregate counts computed from it were wrong.
     const { data, error } = await client.from(table)
       .select(columns).eq('user_id', userId)
+      .order('hash', { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw new Error(`${table} read failed: ${error.message}`);
     if (data?.length) rows.push(...data);

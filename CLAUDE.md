@@ -107,6 +107,14 @@ Browser (index.html, served by Vercel)
     → used by frontend to build org chart tree for Goals tab + Chargeback Report grouping
 ```
 
+### Paginated queries must always `.order()` — silent count corruption otherwise (fixed 2026-07-24)
+
+`api/upload.js` (`fetchAllPages`), `api/perf.js`, `api/ai-analysis.js`, and `api/lead-analysis.js` all page through `call_log`/`sales_log` in 1000-row chunks via `.range(from, from+999)` in a loop. Postgres gives **no default stable row order** across separate unordered queries — without an explicit `.order()`, a multi-page unordered fetch can non-deterministically return the same row on two different pages (inflating whatever count depends on it) or skip a row entirely (deflating it), and which rows land where can differ between two runs of the identical query. This only manifests once an account crosses 1000 `call_log`/`sales_log` rows (single-page fetches are trivially stable regardless of ordering) — invisible in low-volume testing, real in production.
+
+Found via a real audit (user reported "voicemails appear high"): a raw duplicate-hash check on `call_log` showed 1036 "duplicates" — but re-running the identical fetch with `.order('hash')` added made that number **exactly 0**, and the row count matched Supabase's authoritative `count: 'exact'` head-query. The underlying data was never duplicated; only the *aggregate counts computed from unordered pagination* were wrong. Confirmed live corruption from this on the affected production account: stored `race_data.race_wide_voicemail` was 260 vs. a true 242, `race_wide_missed` 179 vs. true 176, and **every single agent's** `placed`/`answered` counts were off — in both directions (some inflated, some deflated), the exact fingerprint of this bug rather than a data-entry issue. 5 accounts crossed the 1000-row threshold and were affected account-wide.
+
+**Fix**: add `.order('hash', { ascending: true })` to every paginated `.range()` query (`hash` is part of both `call_log` and `sales_log`'s `(user_id, hash)` primary key — always present, always unique per user, doesn't need to be in the `.select()` list to be ordered by). This is a **self-healing** fix — no data rewrite needed for it to take effect; any account's *next* call/sales upload recomputes cleanly from the now-correctly-paginated fetch. If you add a new paginated query anywhere in this codebase, it needs `.order()` too — there's no shared helper enforcing this consistently, each call site added its own copy of the pagination loop.
+
 ## Key Files
 
 | File | Purpose |

@@ -57,12 +57,15 @@ export default async function handler(req, res) {
     const entries = [];
     let from = 0;
     while (true) {
+      // .order() required for reliable .range() pagination — see api/upload.js
+      // fetchAllPages() for the full explanation.
       const { data, error } = await supabase
         .from('sales_log')
         .select('agent_id,product,lead_source,written_premium,sale_date,subcategory,is_cancelled')
         .eq('user_id', dataUserId)
         .in('source', ['manual', 'checklist'])
         .gte('sale_date', cutoffStr)
+        .order('hash', { ascending: true })
         .range(from, from + PAGE - 1);
       if (error) return res.status(500).json({ error: error.message });
       if (data?.length) entries.push(...data);

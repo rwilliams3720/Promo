@@ -235,7 +235,8 @@ export default async function handler(req, res) {
     cutoff.setUTCDate(cutoff.getUTCDate() - 90);
     const cutoffStr = cutoff.toISOString().split('T')[0];
 
-    // Paginated call_log fetch
+    // Paginated call_log fetch — .order() required for reliable .range() pagination,
+    // see api/upload.js fetchAllPages() for the full explanation.
     const PAGE = 1000;
     const calls = [];
     let from = 0;
@@ -246,6 +247,7 @@ export default async function handler(req, res) {
         .eq('user_id', dataUserId)
         .gte('call_dt', cutoffStr)
         .not('disposition', 'in', '(internal,other,skip)')
+        .order('hash', { ascending: true })
         .range(from, from + PAGE - 1);
       if (error) return res.status(500).json({ error: error.message });
       if (data?.length) calls.push(...data);

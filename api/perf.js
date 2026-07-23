@@ -56,11 +56,15 @@ export default async function handler(req, res) {
     const logs = [];
     let from = 0;
     while (true) {
+      // .order() required for reliable .range() pagination — see api/upload.js
+      // fetchAllPages() for the full explanation and the production audit that found
+      // this. hash doesn't need to be in the select list to be ordered by.
       const { data, error } = await supabase
         .from('call_log')
         .select('agent_id,disposition,talk_secs,call_dt,call_slot')
         .eq('user_id', dataUserId)
         .not('disposition', 'in', '(internal,other,skip)')
+        .order('hash', { ascending: true })
         .range(from, from + PAGE - 1);
       if (error) return res.status(500).json({ error: error.message });
       if (data?.length) logs.push(...data);
