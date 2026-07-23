@@ -54,7 +54,14 @@
     { "src": "js/checklist.js",       "use": "@vercel/static" },
     { "src": "js/perf.js",            "use": "@vercel/static" },
     { "src": "js/member-analysis.js", "use": "@vercel/static" },
-    { "src": "js/roster-island.js",   "use": "@vercel/static" }
+    { "src": "js/roster-island.js",   "use": "@vercel/static" },
+    { "src": "js/help.js",            "use": "@vercel/static" },
+    { "src": "img/help/invite-bosun-1.jpg", "use": "@vercel/static" },
+    { "src": "img/help/invite-bosun-2.jpg", "use": "@vercel/static" },
+    { "src": "img/help/invite-bosun-3.jpg", "use": "@vercel/static" },
+    { "src": "img/help/invite-bosun-4.jpg", "use": "@vercel/static" },
+    { "src": "img/help/invite-bosun-5.jpg", "use": "@vercel/static" },
+    { "src": "img/help/invite-bosun-6.jpg", "use": "@vercel/static" }
   ],
   "routes": [
     { "src": "/api/upload",  "dest": "/api/upload.js"  },
@@ -109,6 +116,13 @@
     { "src": "/js/perf.js",            "dest": "/js/perf.js"            },
     { "src": "/js/member-analysis.js", "dest": "/js/member-analysis.js" },
     { "src": "/js/roster-island.js",   "dest": "/js/roster-island.js"   },
+    { "src": "/js/help.js",            "dest": "/js/help.js"            },
+    { "src": "/img/help/invite-bosun-1.jpg", "dest": "/img/help/invite-bosun-1.jpg" },
+    { "src": "/img/help/invite-bosun-2.jpg", "dest": "/img/help/invite-bosun-2.jpg" },
+    { "src": "/img/help/invite-bosun-3.jpg", "dest": "/img/help/invite-bosun-3.jpg" },
+    { "src": "/img/help/invite-bosun-4.jpg", "dest": "/img/help/invite-bosun-4.jpg" },
+    { "src": "/img/help/invite-bosun-5.jpg", "dest": "/img/help/invite-bosun-5.jpg" },
+    { "src": "/img/help/invite-bosun-6.jpg", "dest": "/img/help/invite-bosun-6.jpg" },
     { "src": "/",             "dest": "/landing.html"   },
     { "src": "/(.*)",         "dest": "/index.html"     }
   ],

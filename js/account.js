@@ -1032,6 +1032,7 @@ function loadMemberAccountTab() {
       <div class="acct-info-item"><div class="acct-info-label">Your Email</div><div class="acct-info-val" style="font-size:13px;">${_userEmail}</div></div>
     `;
   }
+  renderHelpTab('member-help-guides-list', 'member-help-section');
 }
 
 async function changeMemberPassword() {

@@ -328,7 +328,7 @@ Keys: `wl, ul, term, health, auto, fire, placed_sales, placed_service, answered_
 
 ## Account Tab Structure
 
-The Account tab uses 5 sub-tabs controlled by `showAccountSubTab(name, btn)`. Sub-tab nav (`#acct-subtab-nav`) is hidden for members (they get a simplified view via `loadMemberAccountTab`).
+The Account tab uses 6 sub-tabs controlled by `showAccountSubTab(name, btn)`. Sub-tab nav (`#acct-subtab-nav`) is hidden for members (they get a simplified view via `loadMemberAccountTab`).
 
 | Sub-tab | Pane ID | Contents |
 |---------|---------|----------|
@@ -337,6 +337,19 @@ The Account tab uses 5 sub-tabs controlled by `showAccountSubTab(name, btn)`. Su
 | Sales | `#acct-pane-sales` | Agent Roster, Checklist Link, Data Entry Mode, Email Template, Form Types, Product Subcategories, Lead Sources, Locations, Commissions structures, Bonus types, Access settings — locked (`#sales-pane-locked`) without add-on |
 | Team | `#acct-pane-team` | Agency Management (invite/manage members) |
 | Settings | `#acct-pane-settings` | Report Delivery (pro/premium only), Sales Column Mapping |
+| Help | `#acct-pane-help` | How-to guides — see "Help / How-To Guides" below |
+
+### Help / How-To Guides
+
+`js/help.js` — `HELP_GUIDES` is a static array of `{ id, category, title, description, visibility, steps }`. `visibility` is an array of audiences: `'all'`, `'owner'` (`!_isMember || _isAdmin`), or specific member roles (`'captain'|'chief_officer'|'bosun'|'custom'`) — checked per-guide by `_canSeeHelpGuide(g)`, same pattern as `goals_visibility`/`canPrivate` elsewhere. Static/code-authored, not a DB table or admin-editable CMS — add guides by editing `HELP_GUIDES` directly (with matching image assets, see below) since this is low-frequency documentation content, not something that needs a live editor.
+
+`renderHelpTab(listId, wrapperId)` renders guides grouped by category (only categories with ≥1 visible guide render, so the section never looks sparse) into two separate call sites since owners and members use structurally different Account layouts:
+- Owner: `#help-guides-list` inside `#acct-pane-help`, rendered on `showAccountSubTab('help', ...)`.
+- Member: `#member-help-guides-list` inside `#member-help-section` (within `#member-account-panel`), rendered from `loadMemberAccountTab()` — the whole section is hidden via the `wrapperId` param when no guides are visible to that member's role, so an empty state doesn't show up in the middle of their simplified Account view.
+
+**Screenshots are re-hosted in-repo**, not linked externally (Scribe-exported guides originally point at `colony-recorder.s3.amazonaws.com`, third-party storage that could disappear). Stored at `img/help/<guide-id>-<n>.jpg`. **This repo's static routing requires every asset explicitly listed in both `builds` and `routes` in `vercel.json`** — there's no wildcard/directory serving — so adding a guide's images means adding one `builds` + one `routes` entry per image file, same as the existing `js/*.js` pattern.
+
+**Before re-hosting any Scribe screenshot, check every edge for cropped-in PII** — Scribe's auto-blur only catches elements fully inside the crop frame; a sliver of an element (e.g. a table row's email column) cut off at the image boundary can leak unblurred. Caught one real instance 2026-07-23: an agent's email address was visible in a ~50px strip at the very top of a Team-page screenshot, cropped out before the file was committed. Check all four edges of every screenshot at full resolution before adding it to `img/help/`.
 
 **Lead Sources** are managed inside Account → Sales → Products. Stored as `accounts.lead_sources (jsonb)`. Frontend state: `_leadSources` (Account tab) and `_clLeadSources` (checklist form).
 

@@ -502,6 +502,7 @@ function showAccountSubTab(name, btn, targetId) {
   if (pane) pane.style.display = '';
   const activeBtn = btn || document.querySelector(`#acct-subtab-nav [data-pane="${name}"]`);
   if (activeBtn) activeBtn.classList.add('active');
+  if (name === 'help') renderHelpTab();
   if (targetId) setTimeout(() => scrollAndPulse(targetId), 200);
 }
 

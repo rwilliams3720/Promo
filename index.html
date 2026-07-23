@@ -1431,6 +1431,7 @@
         <button class="acct-stab" data-pane="sales" onclick="showAccountSubTab('sales',this)">Sales</button>
         <button class="acct-stab" data-pane="team" onclick="showAccountSubTab('team',this)">Team</button>
         <button class="acct-stab" data-pane="settings" onclick="showAccountSubTab('settings',this)">Settings</button>
+        <button class="acct-stab" data-pane="help" onclick="showAccountSubTab('help',this)">Help</button>
       </div>
 
       <!-- ── PANE: Profile ── -->
@@ -2385,6 +2386,14 @@
         </div>
       </div>
 
+      <!-- ── PANE: Help ── -->
+      <div id="acct-pane-help" class="acct-pane" style="display:none">
+        <div class="acct-section">
+          <h3>How-To Guides</h3>
+          <div id="help-guides-list"></div>
+        </div>
+      </div>
+
       <!-- Member account view (shown instead of owner panes for sub-users) -->
       <div id="member-account-panel" style="display:none">
         <div class="acct-section">
@@ -2397,6 +2406,10 @@
           <div class="acct-field"><label>CONFIRM PASSWORD</label><input id="mac-confpass" type="password" placeholder="Confirm password" autocomplete="new-password"></div>
           <button class="btn btn-primary" onclick="changeMemberPassword()">Update Password</button>
           <div id="mac-pw-msg" style="font-size:13px;margin-top:10px;display:none"></div>
+        </div>
+        <div class="acct-section" id="member-help-section" style="display:none">
+          <h3>How-To Guides</h3>
+          <div id="member-help-guides-list"></div>
         </div>
       </div>
 
@@ -2570,6 +2583,7 @@
 <script src="/js/sales-perf.js"></script>
 <script src="/js/checklist.js"></script>
 <script src="/js/member-analysis.js"></script>
+<script src="/js/help.js"></script>
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/htm/dist/htm.js"></script>
