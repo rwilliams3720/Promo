@@ -380,6 +380,7 @@ async function checkAccountAndShow(session) {
   await loadHistory().catch(e => console.error('loadHistory:', e));
   if (_isAdmin || (['pro','premium'].includes(_currentPlan) && !_trialExpired && ['paid','deferred'].includes(_acctStatus))) await loadPerf();
   renderManageTabMode();
+  if (_isMember && _memberAgentId) loadQuickCountWidget().catch(() => {});
 }
 
 // ── LOGIN / SIGNUP / AUTH ────────────────────────────────────────────────────

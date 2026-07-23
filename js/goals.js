@@ -129,14 +129,58 @@ function buildGoalMetricsHtml(agentId, existingGoals) {
       </div>`);
     }
   }
-  // Combined groups section
-  const combinedGroups = existingGoals.combined_groups || [];
+  // Combined groups section — products
+  const combinedGroups = (existingGoals.combined_groups || []).filter(g => g.type !== 'activity');
   const cgHtml = `<div id="gf-combined-groups-${escHtml(agentId)}" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border2);">
     <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;">Combined Goals <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;">(group products into one target)</span></div>
     <div id="gf-cg-rows-${escHtml(agentId)}">${combinedGroups.map((g,i) => _buildCgRow(agentId,i,g,cats)).join('')}</div>
     <button onclick="_addCgRow('${escHtml(agentId)}')" style="font-size:11px;background:none;border:1px solid var(--border2);color:var(--muted);border-radius:4px;padding:2px 8px;cursor:pointer;margin-top:2px;">+ Add Combined Goal</button>
   </div>`;
-  return rows.join('') + cgHtml;
+
+  // Combined groups section — activity types (same mechanism, separate array so the
+  // two checkbox sets — products vs. activity types — never get mixed up in one row)
+  let acgHtml = '';
+  if ((_hasCommissionsAddon || _isAdmin) && _activityTypes.length >= 2) {
+    const combinedActGroups = (existingGoals.combined_groups || []).filter(g => g.type === 'activity');
+    acgHtml = `<div id="gf-combined-act-groups-${escHtml(agentId)}" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border2);">
+      <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;">Combined Activity Goals <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;">(group activity types into one target)</span></div>
+      <div id="gf-acg-rows-${escHtml(agentId)}">${combinedActGroups.map((g,i) => _buildAcgRow(agentId,i,g)).join('')}</div>
+      <button onclick="_addAcgRow('${escHtml(agentId)}')" style="font-size:11px;background:none;border:1px solid var(--border2);color:var(--muted);border-radius:4px;padding:2px 8px;cursor:pointer;margin-top:2px;">+ Add Combined Activity Goal</button>
+    </div>`;
+  }
+  return rows.join('') + cgHtml + acgHtml;
+}
+
+function _buildAcgRow(agentId, idx, grp) {
+  const sid = escHtml(agentId);
+  const sel = grp?.activity_type_ids || [];
+  return `<div id="gf-acg-${sid}-${idx}" style="display:flex;gap:6px;align-items:flex-start;margin-bottom:5px;padding:5px 7px;background:var(--deep);border-radius:5px;border:1px solid var(--border2);">
+    <div style="flex:1;">
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:4px;">
+        <input id="gf-acg-lbl-${sid}-${idx}" type="text" placeholder="Label (e.g. Reviews)" value="${escHtml(grp?.label||'')}" style="flex:1;min-width:90px;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 5px;font-size:11px;outline:none;">
+        <input id="gf-acg-tgt-${sid}-${idx}" type="number" min="0" placeholder="target" value="${grp?.target||''}" style="width:55px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 4px;font-size:11px;outline:none;">
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">${
+        _activityTypes.map(t => `<label style="font-size:10px;display:flex;align-items:center;gap:3px;cursor:pointer;white-space:nowrap;" title="${escHtml(t.name)}"><input type="checkbox" id="gf-acg-a-${sid}-${idx}-${escHtml(t.id)}" ${sel.includes(t.id)?'checked':''}> ${escHtml(t.name.length > 16 ? t.name.slice(0,14) + '…' : t.name)}</label>`).join('')
+      }</div>
+    </div>
+    <button onclick="_removeAcgRow('${sid}',${idx})" style="background:none;border:none;color:var(--muted);font-size:15px;cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0;">×</button>
+  </div>`;
+}
+
+function _addAcgRow(agentId) {
+  const container = document.getElementById('gf-acg-rows-' + agentId);
+  if (!container) return;
+  const idx = container.children.length;
+  container.insertAdjacentHTML('beforeend', _buildAcgRow(agentId, idx, null));
+}
+
+function _removeAcgRow(agentId, idx) {
+  const el = document.getElementById(`gf-acg-${agentId}-${idx}`);
+  if (el) el.remove();
+  const container = document.getElementById('gf-acg-rows-' + agentId);
+  if (!container) return;
+  [...container.children].forEach((row, i) => { row.id = `gf-acg-${agentId}-${i}`; });
 }
 
 function _buildCgRow(agentId, idx, grp, cats) {
@@ -242,19 +286,32 @@ async function saveGoalForm(agentId, existingGoalId) {
     if (cb?.checked && inp?.value) goals['activity_' + t.id] = parseFloat(inp.value) || 0;
   }
 
-  // Collect combined groups
+  // Collect combined groups — products and activity types share one combined_groups
+  // array but distinct id prefixes ('cg'/'acg') so their actuals keys never collide.
+  const combinedGroups = [];
   const _cgCats = (_productTypes.length ? _productTypes : DEFAULT_SCORING_CATS).filter(c => ['wl','ul','term','health','auto','fire'].includes(c.key));
   const cgContainer = document.getElementById(`gf-cg-rows-${agentId}`);
   if (cgContainer) {
-    const groups = [];
     [...cgContainer.children].forEach((row, i) => {
       const label   = document.getElementById(`gf-cg-lbl-${agentId}-${i}`)?.value?.trim() || '';
       const target  = parseFloat(document.getElementById(`gf-cg-tgt-${agentId}-${i}`)?.value) || 0;
       const products = _cgCats.filter(c => document.getElementById(`gf-cg-p-${agentId}-${i}-${c.key}`)?.checked).map(c => c.key);
-      if (products.length >= 2 && target > 0) groups.push({ id: 'cg' + i, label: label || products.join('+'), products, target });
+      if (products.length >= 2 && target > 0) combinedGroups.push({ id: 'cg' + i, label: label || products.join('+'), products, target });
     });
-    if (groups.length) goals.combined_groups = groups;
   }
+  const acgContainer = document.getElementById(`gf-acg-rows-${agentId}`);
+  if (acgContainer) {
+    [...acgContainer.children].forEach((row, i) => {
+      const label = document.getElementById(`gf-acg-lbl-${agentId}-${i}`)?.value?.trim() || '';
+      const target = parseFloat(document.getElementById(`gf-acg-tgt-${agentId}-${i}`)?.value) || 0;
+      const activity_type_ids = _activityTypes.filter(t => document.getElementById(`gf-acg-a-${agentId}-${i}-${t.id}`)?.checked).map(t => t.id);
+      if (activity_type_ids.length >= 2 && target > 0) {
+        const names = _activityTypes.filter(t => activity_type_ids.includes(t.id)).map(t => t.name);
+        combinedGroups.push({ id: 'acg' + i, type: 'activity', label: label || names.join('+'), activity_type_ids, target });
+      }
+    });
+  }
+  if (combinedGroups.length) goals.combined_groups = combinedGroups;
 
   if (!Object.keys(goals).length) {
     if (msgEl) { msgEl.style.display=''; msgEl.textContent='Add at least one metric target.'; }

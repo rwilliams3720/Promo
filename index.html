@@ -630,15 +630,21 @@
     <span id="banner-text">Last upload: <span id="last-upload-time">—</span></span>
   </div>
 
-  <div class="tabs">
-    <button class="tab active" onclick="showTab('race',this)">Race</button>
-    <button class="tab" onclick="showTab('scoring',this)">Scoring</button>
-    <button class="tab" onclick="showTab('manage',this)">Manage</button>
-    <button class="tab" onclick="showTab('perf',this)">Performance</button>
-    <button class="tab" id="analysisTab" style="display:none" onclick="showTab('analysis',this)">Analysis</button>
-    <button class="tab" onclick="showTab('history',this)">History</button>
-    <button class="tab" onclick="showTab('account',this)">Account</button>
-    <button class="tab" id="adminTab" style="display:none" onclick="showTab('adminpanel',this)">Admin</button>
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:2rem;">
+    <div class="tabs" style="margin-bottom:0;">
+      <button class="tab active" onclick="showTab('race',this)">Race</button>
+      <button class="tab" onclick="showTab('scoring',this)">Scoring</button>
+      <button class="tab" onclick="showTab('manage',this)">Manage</button>
+      <button class="tab" onclick="showTab('perf',this)">Performance</button>
+      <button class="tab" id="analysisTab" style="display:none" onclick="showTab('analysis',this)">Analysis</button>
+      <button class="tab" onclick="showTab('history',this)">History</button>
+      <button class="tab" onclick="showTab('account',this)">Account</button>
+      <button class="tab" id="adminTab" style="display:none" onclick="showTab('adminpanel',this)">Admin</button>
+    </div>
+    <div id="quick-count-widget" style="position:relative;display:none;">
+      <button id="quick-count-btn" onclick="toggleQuickCountPanel()" title="Quick Count" style="width:38px;height:38px;border-radius:50%;padding:0;background:var(--accent);color:#04121c;border:none;font-size:20px;font-weight:700;cursor:pointer;line-height:1;box-shadow:0 2px 8px rgba(0,212,255,.35);">+</button>
+      <div id="quick-count-panel" style="display:none;position:absolute;top:46px;left:0;z-index:50;width:260px;background:var(--card);border:1px solid var(--border2);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.4);padding:.75rem;"></div>
+    </div>
   </div>
 
   <!-- ── TAB: RACE ── -->
@@ -2584,6 +2590,7 @@
 <script src="/js/checklist.js"></script>
 <script src="/js/member-analysis.js"></script>
 <script src="/js/help.js"></script>
+<script src="/js/quick-count.js"></script>
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/htm/dist/htm.js"></script>

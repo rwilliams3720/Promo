@@ -199,7 +199,11 @@ async function computeActuals(goals, dataUserId, refDateStr) {
     }
     if (Array.isArray(goal.goals.combined_groups)) {
       for (const grp of goal.goals.combined_groups) {
-        actuals['combined_' + grp.id] = agSales.filter(s => (grp.products || []).includes(s.product)).length;
+        // type is only set on newer activity-combined groups; existing saved groups
+        // predate this field and are always product groups — keep that the default.
+        actuals['combined_' + grp.id] = grp.type === 'activity'
+          ? agActs.filter(a => (grp.activity_type_ids || []).includes(a.activity_type_id)).reduce((s, a) => s + (a.count || 0), 0)
+          : agSales.filter(s => (grp.products || []).includes(s.product)).length;
       }
     }
     return { ...goal, actuals };

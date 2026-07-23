@@ -279,7 +279,7 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
   const today = now.toISOString().slice(0, 10);
 
   // Parallel data fetch
-  const [scoring, raceRes, histWinsRes, rosterRes, missedRes, vmRes, goalsRes] = await Promise.all([
+  const [scoring, raceRes, histWinsRes, rosterRes, missedRes, vmRes, goalsRes, customTypesRes] = await Promise.all([
     fetchScoringConfig(dataUserId),
     supabase.from('race_data')
       .select('agent_id,name,team,placed,answered,talk_min,avg_min,wl,ul,term,health,auto,fire')
@@ -304,7 +304,46 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
       .select('agent_id,period_type,period_label,period_start,period_end,goals,is_recurring')
       .eq('user_id', dataUserId)
       .in('agent_id', selectedIds),
+    supabase.from('bonus_activity_types')
+      .select('id,name,analysis_description,analysis_direction')
+      .eq('user_id', dataUserId)
+      .eq('active', true)
+      .eq('include_in_analysis', true),
   ]);
+
+  // Custom activity metrics flagged "include in analysis" — current-month counts only,
+  // same period boundary (mtdStart) the rest of this file uses for "Current". Fetched
+  // unconditionally rather than depending on customTypesRes so both queries stay
+  // parallel; filtered down to flagged type IDs below.
+  const customTypes = customTypesRes.data || [];
+  let customMetricsByAgent = {}; // agentId -> [{ name, description, direction, count }]
+  if (customTypes.length) {
+    const { data: customActs } = await supabase
+      .from('bonus_activities')
+      .select('agent_id,activity_type_id,count')
+      .eq('user_id', dataUserId)
+      .eq('status', 'approved')
+      .in('agent_id', selectedIds)
+      .in('activity_type_id', customTypes.map(t => t.id))
+      .gte('activity_date', mtdStart)
+      .lte('activity_date', today);
+    for (const t of customTypes) {
+      const total = {};
+      for (const row of (customActs || [])) {
+        if (row.activity_type_id !== t.id) continue;
+        total[row.agent_id] = (total[row.agent_id] || 0) + (row.count || 0);
+      }
+      for (const agentId of selectedIds) {
+        if (!customMetricsByAgent[agentId]) customMetricsByAgent[agentId] = [];
+        customMetricsByAgent[agentId].push({
+          name: t.name,
+          description: t.analysis_description,
+          direction: t.analysis_direction === 'lower_better' ? 'lower is better' : 'higher is better',
+          count: total[agentId] || 0,
+        });
+      }
+    }
+  }
 
   const raceMap   = {};
   for (const r of (raceRes.data || []))   raceMap[r.agent_id]   = r;
@@ -619,8 +658,15 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
       return `Goals (${g.periodType}, ${g.periodLabel}): ${parts.join(' | ')}`;
     }).join('\n');
 
+    // Custom activity metrics the owner explicitly opted into analysis, each with an
+    // admin-supplied description and direction — without these two, a bare "Pivots: 4"
+    // gives no basis for the coaching-relevant judgment this prompt asks for elsewhere.
+    const customLines = (customMetricsByAgent[agentId] || [])
+      .map(m => `${m.name}: ${m.count} this month — "${m.description}" (${m.direction})`)
+      .join('\n');
+
     return `AGENT: ${ag.name} (${ag.team})${standingLine ? ` | Team standing: ${standingLine}` : ''}
-${goalLines ? goalLines + '\n' : ''}Archived history (oldest→newest, p=placed a=answered min=talk prem=written premium hrs=hours pol/hr=efficiency comp=compensation /pol-cost=cost per policy /hr-cost=labor cost per hour):
+${goalLines ? goalLines + '\n' : ''}${customLines ? 'Custom tracked activities:\n' + customLines + '\n' : ''}Archived history (oldest→newest, p=placed a=answered min=talk prem=written premium hrs=hours pol/hr=efficiency comp=compensation /pol-cost=cost per policy /hr-cost=labor cost per hour):
 ${histLines || '  No archived months'}
 Current: ${curLine}`;
   }).join('\n\n');
@@ -655,6 +701,7 @@ Cover these points in 3–5 sentences per agent:
 4. Team standing — their rank within their own team (sales or service) in score and key team metrics. For service agents, lead with answered and handle rate. For sales agents, lead with placed and policies. Be direct. Never compare a service agent's metrics against a sales agent's metrics.
 5. Goal progress — if Goals lines are shown for this agent, assess their pace against each goal given the percent of period elapsed (${pctElapsed}% of the current month). State whether they are on track, ahead, or behind, and by how much. If no goals are shown, skip this point entirely.
 6. Cost efficiency — if compensation data is available for this agent, comment on cost per policy trend and rank within their team. If the agent is salaried (0 hours but has compensation), focus on cost per policy as the key efficiency metric. Skip this point if no compensation data for this agent.
+7. Custom tracked activities — if "Custom tracked activities" lines are shown for this agent, weave them into the strengths/gaps points above using the quoted description and stated direction (e.g. a low count on a "higher is better" metric is a gap, a high count on a "lower is better" metric is a gap) — do not just restate the raw number. Skip this point entirely if no custom tracked activities are shown for this agent.
 
 Rules: plain text only, no markdown, no bullets. Use agent names and real numbers. Separate agents with one blank line.`;
 

@@ -1169,7 +1169,7 @@ function renderBonusActivityTypes() {
       <div style="display:flex;align-items:center;gap:8px;">
         <input type="checkbox" ${t.active !== false ? 'checked' : ''} onchange="toggleBonusTypeActive('${sid}',this.checked)" title="Active">
         <span style="font-size:11px;background:${catBg};border-radius:4px;padding:1px 7px;white-space:nowrap;">${escHtml(catLb)}</span>
-        <span style="font-size:13px;font-weight:600;flex:1;">${escHtml(t.name)}${t.subcategory ? ` <span style="font-size:11px;color:var(--muted);font-weight:400;">· ${escHtml(t.subcategory)}</span>` : ''}${t.payment > 0 ? ` · <span style="color:var(--accent2);">$${t.payment.toFixed(2)}</span>` : ''}${(t.threshold_tiers||[]).length ? ` · <span style="color:var(--accent);" title="${(t.threshold_tiers||[]).map(tier=>`$${tier.bonus} ${tier.repeat?'every':'at'} ${tier.count}`).join(', ')}">${t.threshold_tiers.length} tier${t.threshold_tiers.length>1?'s':''}</span>` : ''}${srcBadge}</span>
+        <span style="font-size:13px;font-weight:600;flex:1;">${escHtml(t.name)}${t.subcategory ? ` <span style="font-size:11px;color:var(--muted);font-weight:400;">· ${escHtml(t.subcategory)}</span>` : ''}${t.payment > 0 ? ` · <span style="color:var(--accent2);">$${t.payment.toFixed(2)}</span>` : ''}${(t.threshold_tiers||[]).length ? ` · <span style="color:var(--accent);" title="${(t.threshold_tiers||[]).map(tier=>`$${tier.bonus} ${tier.repeat?'every':'at'} ${tier.count}`).join(', ')}">${t.threshold_tiers.length} tier${t.threshold_tiers.length>1?'s':''}</span>` : ''}${(t.assigned_agent_ids||[]).length ? ` · <span style="color:#ffb300;" title="Quick-count button visible to: ${(t.assigned_agent_ids||[]).map(id=>(_agentRoster||[]).find(a=>a.agent_id===id)?.name||id).join(', ')}">⏺ ${t.assigned_agent_ids.length}</span>` : ''}${t.include_in_analysis ? ` · <span style="color:#7b61ff;" title="Included in Team Member Analysis">AI</span>` : ''}${srcBadge}</span>
         <button class="btn btn-secondary" style="padding:2px 9px;font-size:11px;" onclick="toggleBonusTypeEdit('${sid}')">Edit</button>
         <button class="btn btn-secondary" style="padding:2px 8px;font-size:11px;" onclick="deleteBonusActivityType('${sid}',this)">✕</button>
       </div>
@@ -1206,6 +1206,8 @@ function renderBonusActivityTypes() {
             </select></div>
         </div>
         ${_renderBonusTierEditor(t)}
+        ${_renderBonusQuickCountEditor(t)}
+        ${_renderBonusAnalysisEditor(t)}
         <div style="display:flex;gap:8px;align-items:center;">
           <button class="btn btn-primary" style="padding:4px 12px;font-size:12px;" onclick="saveBonusActivityType('${sid}',this)">Save</button>
           <button class="btn btn-secondary" style="padding:4px 10px;font-size:12px;" onclick="toggleBonusTypeEdit('${sid}')">Cancel</button>
@@ -1214,6 +1216,56 @@ function renderBonusActivityTypes() {
       </div>
     </div>`;
   }).join('');
+}
+
+// Quick-count round button — which agents see a +1 counter for this activity type on
+// their Race tab. Draft state in _bonusAgentDraft[typeId], same draft-then-save pattern
+// as threshold tiers, so the button only actually appears for anyone once "Save" is hit.
+function _renderBonusQuickCountEditor(t) {
+  const sid = escHtml(t.id);
+  if (!_bonusAgentDraft[t.id]) _bonusAgentDraft[t.id] = [...(t.assigned_agent_ids || [])];
+  const assigned = _bonusAgentDraft[t.id];
+  const agents = (_agentRoster || []).filter(a => a.active !== false);
+  const rows = agents.map(a => `
+    <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer;background:rgba(255,255,255,.04);border:1px solid var(--border2);border-radius:5px;padding:2px 8px;white-space:nowrap;">
+      <input type="checkbox" ${assigned.includes(a.agent_id) ? 'checked' : ''} onchange="toggleBonusQuickCountAgent('${sid}','${escHtml(a.agent_id)}',this.checked)" style="accent-color:var(--accent);cursor:pointer;">
+      ${escHtml(a.name)}
+    </label>`).join('');
+  return `<div style="background:rgba(255,179,0,.04);border:1px solid rgba(255,179,0,.15);border-radius:6px;padding:.5rem .6rem;margin-bottom:.6rem;">
+    <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.4rem;">Quick-Count Button <span style="text-transform:none;opacity:.8;">— assigned agents get a round +1 counter on their Race tab; hidden for everyone else</span></div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;">${rows || '<span style="font-size:11px;color:var(--muted);font-style:italic;">No agents in roster yet</span>'}</div>
+  </div>`;
+}
+
+function toggleBonusQuickCountAgent(typeId, agentId, checked) {
+  if (!_bonusAgentDraft[typeId]) _bonusAgentDraft[typeId] = [];
+  const arr = _bonusAgentDraft[typeId];
+  const idx = arr.indexOf(agentId);
+  if (checked && idx === -1) arr.push(agentId);
+  else if (!checked && idx !== -1) arr.splice(idx, 1);
+}
+
+// Individual (Team Member) Analysis inclusion — Claude can't infer whether a custom
+// metric is good-when-high or what it even means from just a name + number, so a
+// description + direction are required here, not optional extras.
+function _renderBonusAnalysisEditor(t) {
+  const sid = escHtml(t.id);
+  const checked = !!t.include_in_analysis;
+  return `<div style="background:rgba(123,97,255,.04);border:1px solid rgba(123,97,255,.15);border-radius:6px;padding:.5rem .6rem;margin-bottom:.6rem;">
+    <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:${checked?'.5rem':'0'};">
+      <input type="checkbox" id="bonus-edit-inanalysis-${sid}" ${checked?'checked':''} onchange="document.getElementById('bonus-edit-analysis-fields-${sid}').style.display=this.checked?'grid':'none'" style="accent-color:#7b61ff;cursor:pointer;">
+      Include in Team Member Analysis
+    </label>
+    <div id="bonus-edit-analysis-fields-${sid}" style="display:${checked?'grid':'none'};grid-template-columns:1fr 160px;gap:.5rem;">
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px;">Description <span style="opacity:.7;">— what this metric means, for coaching context</span></label>
+        <input id="bonus-edit-analysis-desc-${sid}" type="text" value="${escHtml(t.analysis_description||'')}" placeholder="e.g. Attempts to redirect an objection" style="${_bonusInputSt()}"></div>
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px;">Direction</label>
+        <select id="bonus-edit-analysis-dir-${sid}" style="${_bonusInputSt()}">
+          <option value="higher_better"${t.analysis_direction!=='lower_better'?' selected':''}>Higher is better</option>
+          <option value="lower_better"${t.analysis_direction==='lower_better'?' selected':''}>Lower is better</option>
+        </select></div>
+    </div>
+  </div>`;
 }
 
 function toggleBonusTypeEdit(id) {
@@ -1270,17 +1322,26 @@ async function saveBonusActivityType(id, btn) {
     bonus:  parseFloat(t.bonus),
     repeat: !!t.repeat,
   })).filter(t => Number.isInteger(t.count) && t.count > 0 && !isNaN(t.bonus) && t.bonus >= 0);
+  const assigned_agent_ids = [...(_bonusAgentDraft[id] || [])];
+  const include_in_analysis = document.getElementById('bonus-edit-inanalysis-' + id)?.checked || false;
+  const analysis_description = (document.getElementById('bonus-edit-analysis-desc-' + id)?.value || '').trim();
+  const analysis_direction   = document.getElementById('bonus-edit-analysis-dir-' + id)?.value || 'higher_better';
+  const msgEl = document.getElementById('bonus-type-save-msg-' + id);
+  if (include_in_analysis && !analysis_description) {
+    if (msgEl) { msgEl.textContent = 'Add a description to include this in analysis'; msgEl.style.color='var(--danger)'; msgEl.style.display=''; setTimeout(()=>{ if(msgEl) msgEl.style.display='none'; },3000); }
+    return;
+  }
   btn.disabled = true;
   try {
     const r = await fetch('/api/bonus-activities', {
       method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'update_type', id, name, category, subcategory, source, call_disposition, payment, threshold_tiers }),
+      body: JSON.stringify({ action: 'update_type', id, name, category, subcategory, source, call_disposition, payment, threshold_tiers, assigned_agent_ids, include_in_analysis, analysis_description, analysis_direction }),
     });
-    const msgEl = document.getElementById('bonus-type-save-msg-' + id);
     if (r.ok) {
       const t = _activityTypes.find(x => x.id === id);
-      if (t) Object.assign(t, { name, category, subcategory, source, call_disposition, payment, threshold_tiers });
-      _bonusTierDraft[id] = JSON.parse(JSON.stringify(threshold_tiers));
+      if (t) Object.assign(t, { name, category, subcategory, source, call_disposition, payment, threshold_tiers, assigned_agent_ids, include_in_analysis, analysis_description, analysis_direction });
+      _bonusTierDraft[id]  = JSON.parse(JSON.stringify(threshold_tiers));
+      _bonusAgentDraft[id] = [...assigned_agent_ids];
       renderBonusActivityTypes();
     } else {
       if (msgEl) { msgEl.textContent = 'Error saving'; msgEl.style.color='var(--danger)'; msgEl.style.display=''; setTimeout(()=>{ if(msgEl) msgEl.style.display='none'; },2500); }
@@ -1302,7 +1363,7 @@ async function deleteBonusActivityType(id, btn) {
   btn.disabled = true;
   try {
     const r = await fetch(`/api/bonus-activities?resource=types&id=${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders() });
-    if (r.ok) { _activityTypes = _activityTypes.filter(t => t.id !== id); delete _bonusTierDraft[id]; renderBonusActivityTypes(); }
+    if (r.ok) { _activityTypes = _activityTypes.filter(t => t.id !== id); delete _bonusTierDraft[id]; delete _bonusAgentDraft[id]; renderBonusActivityTypes(); }
   } finally { btn.disabled = false; }
 }
 
