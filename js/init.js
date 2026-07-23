@@ -380,7 +380,12 @@ async function checkAccountAndShow(session) {
   await loadHistory().catch(e => console.error('loadHistory:', e));
   if (_isAdmin || (['pro','premium'].includes(_currentPlan) && !_trialExpired && ['paid','deferred'].includes(_acctStatus))) await loadPerf();
   renderManageTabMode();
-  if (_isMember && _memberAgentId) loadQuickCountWidget().catch(() => {});
+  // Owner, captain/CO members (see every assigned agent's counters), and self-scoped
+  // members with a linked roster agent all get a chance at the widget — loadQuickCountWidget()
+  // itself decides what (if anything) to actually show.
+  if (!_isMember || _memberAgentId || ['captain', 'chief_officer'].includes(_memberRole)) {
+    loadQuickCountWidget().catch(() => {});
+  }
 }
 
 // ── LOGIN / SIGNUP / AUTH ────────────────────────────────────────────────────
