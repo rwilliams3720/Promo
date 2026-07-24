@@ -234,14 +234,17 @@ export default async function handler(req, res) {
     }
 
     // Quick-count round button: +1/-1 (or a bulk delta) against a single running-total
-    // row per (agent, type, current calendar month) instead of one row per press — a
-    // month of clicking would otherwise create hundreds of bonus_activities rows. The
-    // stable key (first of the current month) falls inside whatever range any date-range
-    // consumer (Commissions, Goals — monthly/quarterly/annual) queries for "now", so no
-    // other code needs to know this exists. entry_source distinguishes these rows from
-    // the pre-existing one-row-per-submission manual Activity Log so the two never
-    // collide/overwrite each other, while still summing together naturally everywhere
-    // bonus_activities.count is totaled (they represent the same underlying activity).
+    // row per (agent, type, today's calendar date) instead of one row per press — a
+    // day of clicking would otherwise create dozens of bonus_activities rows. Keying by
+    // day (not month) means the widget's displayed count naturally resets to zero at
+    // midnight — a fresh date has no row yet — while the monthly total is unaffected:
+    // every date-range consumer (Commissions, Goals, member-analysis custom metrics)
+    // already sums bonus_activities.count across whatever range it queries, so 30 daily
+    // rows sum to the same monthly total one running row would have. entry_source
+    // distinguishes these rows from the pre-existing one-row-per-submission manual
+    // Activity Log so the two never collide/overwrite each other, while still summing
+    // together naturally everywhere bonus_activities.count is totaled (they represent
+    // the same underlying activity).
     if (action === 'quick_adjust') {
       const { activity_type_id } = req.body;
       const deltaNum = parseInt(req.body.delta, 10);
@@ -272,7 +275,7 @@ export default async function handler(req, res) {
       }
 
       const now = new Date();
-      const periodStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
       // Read-modify-write with an optimistic-concurrency retry loop — a bare
       // SELECT-then-UPDATE loses increments under rapid presses (two requests both
@@ -288,7 +291,7 @@ export default async function handler(req, res) {
           .from('bonus_activities')
           .select('id, count')
           .eq('user_id', dataUserId).eq('activity_type_id', activity_type_id).eq('agent_id', agentId)
-          .eq('activity_date', periodStart).eq('entry_source', 'quick_count');
+          .eq('activity_date', today).eq('entry_source', 'quick_count');
         if (selErr) return res.status(500).json({ error: selErr.message });
 
         if (existingRows && existingRows.length > 1) {
@@ -316,7 +319,7 @@ export default async function handler(req, res) {
         } else {
           newCount = Math.max(0, deltaNum);
           const { error } = await supabase.from('bonus_activities').insert({
-            user_id: dataUserId, activity_type_id, agent_id: agentId, activity_date: periodStart,
+            user_id: dataUserId, activity_type_id, agent_id: agentId, activity_date: today,
             count: newCount, status: 'approved', submitted_by: ctx.userId, entry_source: 'quick_count',
           });
           if (!error) break; // succeeded (or lost an insert-race, self-heals via the consolidation check above on the next press)

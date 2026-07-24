@@ -170,4 +170,7 @@ let _maAnalysisData       = null; // last loaded member analysis response
 let _agentChartInstances  = {};   // agId → [Chart, Chart, Chart]
 let _agentChartsRendered  = new Set();
 let _maHistoryLoaded      = new Set(); // agIds whose history panel has been fetched this session
+let _maChartActivitiesEnabled = false;    // show tracked-activity bars layered into an agent chart
+let _maChartActivitiesTarget  = 'calls';  // which of the 3 agent charts: 'calls' | 'talk' | 'premium'
+let _maChartActivitiesMode    = 'grouped';// 'grouped' (side by side) | 'stacked'
 

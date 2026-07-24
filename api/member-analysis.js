@@ -61,6 +61,17 @@ function monthCmp(a, b) {
   return ay !== by ? ay - by : am - bm;
 }
 
+// "Jul 2026" -> { start: '2026-07-01', end: '2026-07-31' }
+function monthLabelToRange(label) {
+  const [abbr, yrStr] = label.split(' ');
+  const mo = MONTH_ORDER[abbr];
+  const yr = parseInt(yrStr, 10);
+  if (!mo || !yr) return {};
+  const start = `${yr}-${String(mo).padStart(2, '0')}-01`;
+  const end   = new Date(Date.UTC(yr, mo, 0)).toISOString().slice(0, 10); // day 0 of next month = last day of this one
+  return { start, end };
+}
+
 async function fetchScoringConfig(userId) {
   const { data: rows } = await supabase
     .from('scoring_config')
@@ -338,7 +349,7 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
       .eq('user_id', dataUserId)
       .in('agent_id', selectedIds),
     supabase.from('bonus_activity_types')
-      .select('id,name,analysis_description,analysis_direction')
+      .select('id,name,analysis_description,analysis_direction,assigned_agent_ids')
       .eq('user_id', dataUserId)
       .eq('active', true)
       .eq('include_in_analysis', true),
@@ -349,7 +360,8 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
   // unconditionally rather than depending on customTypesRes so both queries stay
   // parallel; filtered down to flagged type IDs below.
   const customTypes = customTypesRes.data || [];
-  let customMetricsByAgent = {}; // agentId -> [{ name, description, direction, count }]
+  let customMetricsByAgent = {};        // agentId -> [{ name, description, direction, count }] — every selected agent (0 if none), for the AI prompt so Claude can compare across the team
+  let customMetricsVisibleByAgent = {}; // agentId -> [{ name, count }] — only agents this type is actually assigned to, for the stats-line display (an agent never given the counter shouldn't show a "0" for it)
   if (customTypes.length) {
     const { data: customActs } = await supabase
       .from('bonus_activities')
@@ -366,6 +378,7 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
         if (row.activity_type_id !== t.id) continue;
         total[row.agent_id] = (total[row.agent_id] || 0) + (row.count || 0);
       }
+      const assignedSet = new Set(t.assigned_agent_ids || []);
       for (const agentId of selectedIds) {
         if (!customMetricsByAgent[agentId]) customMetricsByAgent[agentId] = [];
         customMetricsByAgent[agentId].push({
@@ -374,6 +387,44 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
           direction: t.analysis_direction === 'lower_better' ? 'lower is better' : 'higher is better',
           count: total[agentId] || 0,
         });
+        if (assignedSet.has(agentId)) {
+          if (!customMetricsVisibleByAgent[agentId]) customMetricsVisibleByAgent[agentId] = [];
+          customMetricsVisibleByAgent[agentId].push({ name: t.name, count: total[agentId] || 0 });
+        }
+      }
+    }
+  }
+
+  // Historical per-month counts for the same flagged/assigned custom activity types, so the
+  // "Team Member Analysis Charts" setting (accounts.ma_chart_activities_enabled) can layer a
+  // real per-month trend into an agent's existing chart, not just the current month.
+  // bonus_activities is append-only with its own activity_date per row (unlike race_data,
+  // which needs historical_wins as a monthly snapshot archive) — so past months are queried
+  // directly, no separate archive table needed.
+  let customMetricsHistoryByAgent = {}; // agentId -> { monthLabel -> { typeName -> count } }
+  if (customTypes.length) {
+    const allMonths = [...new Set((histWinsRes.data || []).map(r => normMonth(r.month)))];
+    const ranges = allMonths.map(m => ({ month: m, ...monthLabelToRange(m) })).filter(r => r.start && r.end);
+    if (ranges.length) {
+      const minStart = ranges.reduce((mn, r) => (r.start < mn ? r.start : mn), ranges[0].start);
+      const maxEnd   = ranges.reduce((mx, r) => (r.end   > mx ? r.end   : mx), ranges[0].end);
+      const { data: histActs } = await supabase
+        .from('bonus_activities')
+        .select('agent_id,activity_type_id,count,activity_date')
+        .eq('user_id', dataUserId).eq('status', 'approved')
+        .in('agent_id', selectedIds).in('activity_type_id', customTypes.map(t => t.id))
+        .gte('activity_date', minStart).lte('activity_date', maxEnd);
+      const typeById = {};
+      for (const t of customTypes) typeById[t.id] = t;
+      for (const row of (histActs || [])) {
+        const t = typeById[row.activity_type_id];
+        if (!t || !(t.assigned_agent_ids || []).includes(row.agent_id)) continue; // same visibility rule as the current-month figure
+        const range = ranges.find(r => row.activity_date >= r.start && row.activity_date <= r.end);
+        if (!range) continue;
+        if (!customMetricsHistoryByAgent[row.agent_id]) customMetricsHistoryByAgent[row.agent_id] = {};
+        if (!customMetricsHistoryByAgent[row.agent_id][range.month]) customMetricsHistoryByAgent[row.agent_id][range.month] = {};
+        const bucket = customMetricsHistoryByAgent[row.agent_id][range.month];
+        bucket[t.name] = (bucket[t.name] || 0) + (row.count || 0);
       }
     }
   }
@@ -520,6 +571,13 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
       const premium      = premByAgentMonth[agentId]?.[r.normMonth] ?? null;
       const hours        = agHours[r.normMonth] ?? null;
       const compensation = agComp[r.normMonth]  ?? null;
+      // Same tracked types as current.customMetrics below, just this historical month's count
+      // instead of MTD — 0 (not omitted) when the type existed but had no activity that month,
+      // so the frontend's month-aligned array building doesn't need a separate presence check.
+      const customMetrics = (customMetricsVisibleByAgent[agentId] || []).map(m => ({
+        name: m.name,
+        count: customMetricsHistoryByAgent[agentId]?.[r.normMonth]?.[m.name] || 0,
+      }));
       return {
         month:   r.normMonth,
         placed:  r.placed  || 0,
@@ -532,6 +590,7 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
         compensation,
         rank:    r.rank || null,
         byProduct: { wl:r.wl||0, ul:r.ul||0, term:r.term||0, health:r.health||0, auto:r.auto||0, fire:r.fire||0 },
+        customMetrics,
       };
     });
 
@@ -556,6 +615,7 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
         daysElapsed,
         daysInMonth,
         byProduct: { wl:rd.wl||0, ul:rd.ul||0, term:rd.term||0, health:rd.health||0, auto:rd.auto||0, fire:rd.fire||0 },
+        customMetrics: customMetricsVisibleByAgent[agentId] || [],
       };
     }
 

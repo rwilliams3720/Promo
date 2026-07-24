@@ -288,6 +288,37 @@ function showAnalysisSubTab(name, btn) {
   }
 }
 
+// ── Team Activity Tracking tiles (Team Trends) ───────────────────────────────
+// Collective, team-wide monthly totals for every actively-tracked custom activity
+// type (Pivot, Quote Provided, etc. — anything logged via Activity Log or the
+// Quick-Count button). Excludes call-log-sourced types since those already have
+// dedicated trend charts (Calls Placed/Answered, Voicemail & Missed) above.
+async function loadTeamActivityTiles() {
+  const panel = document.getElementById('analysis-activity-tiles-panel');
+  const wrap  = document.getElementById('analysis-activity-tiles');
+  if (!panel || !wrap) return;
+  const types = (_activityTypes || []).filter(t => t.active !== false && t.source !== 'call_log');
+  if (!types.length) { panel.style.display = 'none'; return; }
+  try {
+    const now = new Date();
+    const r = await fetch(`/api/bonus-activities?month=${now.getMonth()+1}&year=${now.getFullYear()}`, { headers: authHeaders() });
+    if (!r.ok) { panel.style.display = 'none'; return; }
+    const { entries } = await r.json();
+    const totals = {};
+    for (const e of (entries || [])) {
+      totals[e.activity_type_id] = (totals[e.activity_type_id] || 0) + (e.count || 0);
+    }
+    wrap.innerHTML = types.map(t => `
+      <div class="stat-card">
+        <div class="stat-label">${escHtml(t.name)}</div>
+        <div class="stat-val">${totals[t.id] || 0}</div>
+      </div>`).join('');
+    panel.style.display = '';
+  } catch (_) {
+    panel.style.display = 'none';
+  }
+}
+
 // ── Premium Accuracy ──────────────────────────────────────────────────────────
 
 let _paEntries = [];
@@ -831,6 +862,7 @@ function renderMemberAnalysisCards(agentSections, agentData, generatedAt, hoursL
       `${cur.talkMin}min talk`,
       `${cur.policies} ${cur.policies === 1 ? 'policy' : 'policies'}`,
       cur.premium ? fmtCur(cur.premium) + ' premium' : null,
+      ...(cur.customMetrics || []).map(m => `${m.count} ${m.name}`),
     ].filter(Boolean).join(' · ') : '';
 
     const standings = cur ? [
@@ -998,42 +1030,77 @@ function renderAgentChartTiles(agId, ag) {
   const premCanvas  = document.getElementById(`ma-c-prem-${safeId}`);
   if (!callsCanvas || !talkCanvas || !premCanvas) return;
 
+  // Tracked activities (Pivot, Quote Provided, etc. — anything flagged "Include in Team
+  // Member Analysis" AND assigned to this agent) layered as bar datasets into whichever
+  // of the 3 charts the account owner picked in Settings, instead of a separate 4th chart —
+  // per explicit request to reuse an "intuitive and appropriate" existing location. Mixed
+  // line+bar on one Chart.js canvas is a supported combo-chart pattern (per-dataset `type`).
+  const ACTIVITY_BAR_COLORS = ['#f472b6', '#34d399', '#fb923c', '#60a5fa', '#a78bfa'];
+  let activityDatasets = [];
+  let activityStacked  = false;
+  if (_maChartActivitiesEnabled) {
+    const names = new Set();
+    months.forEach(m => (m.customMetrics || []).forEach(c => names.add(c.name)));
+    (cur?.customMetrics || []).forEach(c => names.add(c.name));
+    activityStacked = _maChartActivitiesMode === 'stacked';
+    activityDatasets = [...names].map((name, i) => ({
+      type: 'bar',
+      label: name,
+      data: [
+        ...months.map(m => (m.customMetrics || []).find(c => c.name === name)?.count ?? 0),
+        ...(cur ? [(cur.customMetrics || []).find(c => c.name === name)?.count ?? 0] : []),
+      ],
+      backgroundColor: ACTIVITY_BAR_COLORS[i % ACTIVITY_BAR_COLORS.length],
+      yAxisID: 'yActivities',
+      stack: activityStacked ? 'activities' : `activities-${i}`,
+      order: 2, // draw behind the existing line series
+    }));
+  }
+  const activityScale = { position: 'right', stacked: activityStacked, ticks: { color: tc, font: { size: 10 } }, grid: { drawOnChartArea: false } };
+  const withActivities = (target, baseDatasets, baseScales, baseOptions = {}) =>
+    _maChartActivitiesEnabled && _maChartActivitiesTarget === target && activityDatasets.length
+      ? {
+          datasets: [...baseDatasets, ...activityDatasets],
+          scales: { ...baseScales, yActivities: activityScale, x: { ...baseScales.x, stacked: activityStacked } },
+          options: { ...baseOptions, plugins: { legend: { display: true } } },
+        }
+      : { datasets: baseDatasets, scales: baseScales, options: baseOptions };
+
+  const callsMix = withActivities('calls',
+    [
+      { label:'Placed',   data: placed,   borderColor:'#00d4ff', backgroundColor:'rgba(0,212,255,.07)', tension:.3, pointRadius:3, fill:true, yAxisID:'y' },
+      { label:'Answered', data: answered, borderColor:'#00ff94', backgroundColor:'rgba(0,255,148,.07)', tension:.3, pointRadius:3, fill:true, yAxisID:'y' },
+      { label:'Policies', data: policies, borderColor:'#ff8c42', backgroundColor:'transparent',         tension:.3, pointRadius:3, fill:false, borderDash:[4,3], yAxisID:'y2' },
+    ],
+    { ...base.scales, y2: { position:'right', ticks: { color: tc, font: { size: 10 } }, grid: { drawOnChartArea: false } } },
+  );
   const c1 = new Chart(callsCanvas, {
     type: 'line',
-    data: {
-      labels,
-      datasets: [
-        { label:'Placed',   data: placed,   borderColor:'#00d4ff', backgroundColor:'rgba(0,212,255,.07)', tension:.3, pointRadius:3, fill:true, yAxisID:'y' },
-        { label:'Answered', data: answered, borderColor:'#00ff94', backgroundColor:'rgba(0,255,148,.07)', tension:.3, pointRadius:3, fill:true, yAxisID:'y' },
-        { label:'Policies', data: policies, borderColor:'#ff8c42', backgroundColor:'transparent',         tension:.3, pointRadius:3, fill:false, borderDash:[4,3], yAxisID:'y2' },
-      ],
-    },
-    options: { ...base, scales: { ...base.scales, y2: { position:'right', ticks: { color: tc, font: { size: 10 } }, grid: { drawOnChartArea: false } } } },
+    data: { labels, datasets: callsMix.datasets },
+    options: { ...base, ...callsMix.options, scales: callsMix.scales },
   });
 
+  const talkMix = withActivities('talk',
+    [{ label:'Talk Min', data: talkArr, borderColor:'#ffd166', backgroundColor:'rgba(255,209,102,.1)', tension:.3, pointRadius:3, fill:true }],
+    base.scales,
+    { plugins: { legend: { display: false } } },
+  );
   const c2 = new Chart(talkCanvas, {
     type: 'line',
-    data: {
-      labels,
-      datasets: [{ label:'Talk Min', data: talkArr, borderColor:'#ffd166', backgroundColor:'rgba(255,209,102,.1)', tension:.3, pointRadius:3, fill:true }],
-    },
-    options: { ...base, plugins: { legend: { display: false } } },
+    data: { labels, datasets: talkMix.datasets },
+    options: { ...base, ...talkMix.options, scales: talkMix.scales },
   });
 
+  const premScales = { ...base.scales, y: { ...base.scales.y, ticks: { ...base.scales.y.ticks, callback: v => v != null ? '$'+Math.round(v).toLocaleString() : '' } } };
+  const premMix = withActivities('premium',
+    [{ label:'Premium', data: premArr, borderColor:'#a78bfa', backgroundColor:'rgba(167,139,250,.1)', tension:.3, pointRadius:3, fill:true, spanGaps: false }],
+    premScales,
+    { plugins: { legend: { display: false } } },
+  );
   const c3 = new Chart(premCanvas, {
     type: 'line',
-    data: {
-      labels,
-      datasets: [{ label:'Premium', data: premArr, borderColor:'#a78bfa', backgroundColor:'rgba(167,139,250,.1)', tension:.3, pointRadius:3, fill:true, spanGaps: false }],
-    },
-    options: {
-      ...base,
-      plugins: { legend: { display: false } },
-      scales: {
-        ...base.scales,
-        y: { ...base.scales.y, ticks: { ...base.scales.y.ticks, callback: v => v != null ? '$'+Math.round(v).toLocaleString() : '' } },
-      },
-    },
+    data: { labels, datasets: premMix.datasets },
+    options: { ...base, ...premMix.options, scales: premMix.scales },
   });
 
   _agentChartInstances[agId] = [c1, c2, c3];

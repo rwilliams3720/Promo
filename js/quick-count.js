@@ -10,10 +10,14 @@
 //    login is not a "member" session and has no single roster_agent_id of its own
 //    (2026-07-23 fix — see CLAUDE.md).
 // Presses hit POST /api/bonus-activities action=quick_adjust, which upserts a single
-// running-total bonus_activities row per (agent, type, current month) — see CLAUDE.md
-// "Quick-Count Button" for why that's a running total, not one row per press.
+// running-total bonus_activities row per (agent, type, today's date) — see CLAUDE.md
+// "Quick-Count Button" for why that's a running total, not one row per press. Keying
+// by day means the button's displayed count resets to zero each morning; the monthly
+// total (still summed correctly by Commissions/Goals/Analysis from the daily rows) is
+// shown alongside it as a smaller secondary line for record-keeping context.
 let _qcEntries   = [];   // [{ typeId, typeName, agentId, agentName }] — one row per counter shown
-let _qcCounts    = {};   // `${typeId}:${agentId}` -> current month's total (all sources)
+let _qcCounts    = {};   // `${typeId}:${agentId}` -> today's count
+let _qcMonthCounts = {}; // `${typeId}:${agentId}` -> current month's total (record-keeping only)
 let _qcAdminView = false; // true for owner/captain/chief_officer (see all assigned agents, not just self)
 
 async function loadQuickCountWidget() {
@@ -46,13 +50,16 @@ async function loadQuickCountWidget() {
 async function _qcRefreshCounts() {
   try {
     const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
     const r = await fetch(`/api/bonus-activities?month=${now.getMonth()+1}&year=${now.getFullYear()}`, { headers: authHeaders() });
     if (!r.ok) return;
     const { entries } = await r.json();
     _qcCounts = {};
+    _qcMonthCounts = {};
     for (const e of (entries || [])) {
       const key = e.activity_type_id + ':' + e.agent_id;
-      _qcCounts[key] = (_qcCounts[key] || 0) + (e.count || 0);
+      _qcMonthCounts[key] = (_qcMonthCounts[key] || 0) + (e.count || 0);
+      if (e.activity_date === today) _qcCounts[key] = (_qcCounts[key] || 0) + (e.count || 0);
     }
   } catch (_) {}
 }
@@ -69,7 +76,7 @@ function renderQuickCountPanel() {
   const panel = document.getElementById('quick-count-panel');
   if (!panel) return;
   panel.innerHTML = `
-    <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.6rem;">Quick Count — this month</div>
+    <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.6rem;">Quick Count — today</div>
     ${_qcEntries.map(e => {
       const key = e.typeId + ':' + e.agentId;
       const label = e.agentName ? `${e.typeName} <span style="color:var(--muted);font-weight:400;">· ${escHtml(e.agentName)}</span>` : escHtml(e.typeName);
@@ -78,6 +85,7 @@ function renderQuickCountPanel() {
         <div style="flex:1;min-width:0;">
           <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escHtml(e.typeName)}${e.agentName ? ' · ' + escHtml(e.agentName) : ''}">${label}</div>
           <div style="font-size:18px;font-weight:700;color:var(--accent2);" id="qc-count-${escHtml(key)}">${_qcCounts[key] || 0}</div>
+          <div style="font-size:10px;color:var(--muted);" id="qc-month-${escHtml(key)}">${_qcMonthCounts[key] || 0} this month</div>
         </div>
         <button onclick="qcBulkAdjust('${escHtml(e.typeId)}','${escHtml(e.agentId)}')" title="Add/subtract a specific amount" style="width:24px;height:24px;border-radius:50%;background:none;border:1px solid var(--border2);color:var(--muted);font-size:13px;cursor:pointer;padding:0;line-height:1;flex-shrink:0;">±</button>
         <button onclick="qcAdjust('${escHtml(e.typeId)}','${escHtml(e.agentId)}',-1)" title="Undo one" style="width:28px;height:28px;border-radius:50%;background:none;border:1px solid var(--border2);color:var(--muted);font-size:16px;cursor:pointer;padding:0;line-height:1;flex-shrink:0;">−</button>
@@ -90,10 +98,17 @@ function renderQuickCountPanel() {
 async function qcAdjust(typeId, agentId, delta) {
   const key = typeId + ':' + agentId;
   const el = document.getElementById('qc-count-' + key);
+  const monthEl = document.getElementById('qc-month-' + key);
   const prev = _qcCounts[key] || 0;
+  const prevMonth = _qcMonthCounts[key] || 0;
   // Optimistic update — feels instant on every tap; reconciled below if the request fails.
+  // A press always lands on today, which is always within the current month, so the
+  // same delta applies to both the daily (server-authoritative) and monthly (locally
+  // tallied) figures.
   _qcCounts[key] = Math.max(0, prev + delta);
+  _qcMonthCounts[key] = Math.max(0, prevMonth + (_qcCounts[key] - prev));
   if (el) el.textContent = _qcCounts[key];
+  if (monthEl) monthEl.textContent = _qcMonthCounts[key] + ' this month';
   try {
     const body = { action: 'quick_adjust', activity_type_id: typeId, delta };
     if (_qcAdminView) body.agent_id = agentId; // self-scoped members imply their own agent server-side
@@ -103,11 +118,15 @@ async function qcAdjust(typeId, agentId, delta) {
     });
     if (!r.ok) throw new Error('failed');
     const d = await r.json();
+    _qcMonthCounts[key] = Math.max(0, prevMonth + (d.count - prev));
     _qcCounts[key] = d.count;
     if (el) el.textContent = d.count;
+    if (monthEl) monthEl.textContent = _qcMonthCounts[key] + ' this month';
   } catch (_) {
     _qcCounts[key] = prev;
+    _qcMonthCounts[key] = prevMonth;
     if (el) el.textContent = prev;
+    if (monthEl) monthEl.textContent = prevMonth + ' this month';
   }
 }
 

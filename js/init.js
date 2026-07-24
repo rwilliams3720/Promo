@@ -168,6 +168,9 @@ async function checkAccountAndShow(session) {
       _memberAnalysisCount       = acct.member_analysis_count        || 0;
       _creditWaived              = acct.credit_waived                || false;
       _memberHoursData           = acct.member_hours_data?.periods   || [];
+      _maChartActivitiesEnabled  = acct.ma_chart_activities_enabled  || false;
+      _maChartActivitiesTarget   = acct.ma_chart_activities_target   || 'calls';
+      _maChartActivitiesMode     = acct.ma_chart_activities_mode     || 'grouped';
       _salesEntryMode = acct.sales_entry_mode || 'upload';
       _checklistToken = acct.checklist_token  || null;
       if (_acctStatus === 'trial' && acct.trial_ends_at) {
@@ -193,7 +196,7 @@ async function checkAccountAndShow(session) {
         _dataUserId       = _ownerUserId;
         const { data: ownerAcct } = await _supabase
           .from('accounts')
-          .select('company_name, plan, status, trial_ends_at, has_sales_addon, has_commissions_addon, has_lead_analysis_addon, sales_entry_mode, is_admin, self_report_config, ai_analysis_at, lead_analysis_at, has_member_analysis, member_analysis_agents, member_analysis_at, member_analysis_agents_set_at, member_analysis_count, member_hours_data')
+          .select('company_name, plan, status, trial_ends_at, has_sales_addon, has_commissions_addon, has_lead_analysis_addon, sales_entry_mode, is_admin, self_report_config, ai_analysis_at, lead_analysis_at, has_member_analysis, member_analysis_agents, member_analysis_at, member_analysis_agents_set_at, member_analysis_count, member_hours_data, ma_chart_activities_enabled, ma_chart_activities_target, ma_chart_activities_mode')
           .eq('user_id', _ownerUserId)
           .single();
         if (ownerAcct) {
@@ -213,6 +216,9 @@ async function checkAccountAndShow(session) {
           _memberAnalysisAgentsSetAt   = ownerAcct.member_analysis_agents_set_at || null;
           _memberAnalysisCount         = ownerAcct.member_analysis_count         || 0;
           _memberHoursData             = ownerAcct.member_hours_data?.periods    || [];
+          _maChartActivitiesEnabled    = ownerAcct.ma_chart_activities_enabled   || false;
+          _maChartActivitiesTarget     = ownerAcct.ma_chart_activities_target    || 'calls';
+          _maChartActivitiesMode       = ownerAcct.ma_chart_activities_mode      || 'grouped';
           if (_acctStatus === 'trial' && ownerAcct.trial_ends_at && new Date(ownerAcct.trial_ends_at) < new Date()) {
             _acctStatus = 'past_due'; _trialExpired = true;
           }
@@ -645,6 +651,7 @@ function showTab(name, btn) {
     document.getElementById('analysis-refresh-btn').style.display = '';
     updateAnalysisBtn();
     displayCachedAnalysis();
+    loadTeamActivityTiles();
     updateMemberAnalysisBtn();
     displayCachedMemberAnalysis();
   }

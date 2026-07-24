@@ -106,6 +106,25 @@ async function loadAccountTab() {
     document.getElementById('ac-report-email').value = acct.report_email || '';
   }
 
+  // Agent Performance Charts section (pro/premium only, same gate as report delivery)
+  document.getElementById('report-charts-section').style.display = isPaid ? '' : 'none';
+  if (isPaid) {
+    document.getElementById('ac-charts-enabled').checked = !!acct.report_charts_enabled;
+    renderChartConfigList(acct);
+    toggleChartConfigVisibility();
+  }
+
+  // Team Member Analysis Charts section — gated on the Member Analysis add-on itself,
+  // not the pro/premium report-delivery flag, since it configures those charts, not the email.
+  const hasMaSection = acct.has_member_analysis || _hasMemberAnalysis || _isAdmin;
+  document.getElementById('ma-chart-activities-section').style.display = hasMaSection ? '' : 'none';
+  if (hasMaSection) {
+    document.getElementById('ac-ma-chart-enabled').checked = !!acct.ma_chart_activities_enabled;
+    document.getElementById('ac-ma-chart-target').value = acct.ma_chart_activities_target || 'calls';
+    document.getElementById('ac-ma-chart-mode').value   = acct.ma_chart_activities_mode   || 'grouped';
+    toggleMaChartOptionsVisibility();
+  }
+
   // Plan upgrade section
   _currentPlan  = acct.plan || 'basic';
   _acctStatus   = acct.status || _acctStatus;
@@ -322,6 +341,89 @@ async function saveReportPrefs() {
   const { error } = await _supabase.from('accounts').update({ timezone, report_hour, report_email }).eq('user_id', _userId);
   if (error) { msg.style.color='var(--danger)'; msg.textContent='Error: '+error.message; }
   else { msg.style.color='var(--accent2)'; msg.textContent='Report preferences saved.'; }
+  setTimeout(() => { msg.style.display='none'; }, 3000);
+}
+
+// ── Agent Performance Charts (daily report) ──────────────────────────────────
+// Client-side mirror of api/_lib/chart-render.js's CHART_DATASETS — just labels for the
+// picker UI, no rendering logic here. Keep the dataset keys in sync with that file.
+const CHART_DATASETS_CLIENT = [
+  { key: 'trend_placed',   label: 'Placed Calls — 14-Day Trend' },
+  { key: 'trend_answered', label: 'Answered Calls — 14-Day Trend' },
+  { key: 'trend_talk',     label: 'Talk Time — 14-Day Trend' },
+  { key: 'mtd_policies',   label: 'MTD Policies by Product' },
+  { key: 'ytd_policies',   label: 'YTD Policies by Product' },
+  { key: 'mtd_premium',    label: 'MTD Written Premium by Product', premiumOnly: true },
+  { key: 'ytd_premium',    label: 'YTD Written Premium by Product', premiumOnly: true },
+];
+
+function renderChartConfigList(acct) {
+  const wrap = document.getElementById('ac-chart-config-list');
+  if (!wrap) return;
+  const isPremium = acct.plan === 'premium';
+  const cfg = Array.isArray(acct.report_chart_config) ? acct.report_chart_config : [];
+  const cfgByKey = {};
+  cfg.forEach(c => { cfgByKey[c.dataset] = c.type; });
+  wrap.innerHTML = CHART_DATASETS_CLIENT.map(ds => {
+    const locked  = ds.premiumOnly && !isPremium;
+    const checked = !!cfgByKey[ds.key];
+    const type    = cfgByKey[ds.key] || 'bar';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border2);${locked ? 'opacity:.5;' : ''}">
+      <input type="checkbox" class="ac-chart-ds-cb" data-dataset="${ds.key}" ${checked ? 'checked' : ''} ${locked ? 'disabled' : ''}>
+      <div style="flex:1;font-size:13px;">${ds.label}${locked ? ' <span style="color:var(--muted);font-size:11px;">(Premium plan)</span>' : ''}</div>
+      <select class="ac-chart-ds-type" data-dataset="${ds.key}" ${locked ? 'disabled' : ''} style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;outline:none;">
+        <option value="bar" ${type === 'bar' ? 'selected' : ''}>Bar</option>
+        <option value="line" ${type === 'line' ? 'selected' : ''}>Line</option>
+        <option value="scatter" ${type === 'scatter' ? 'selected' : ''}>Scatter</option>
+      </select>
+    </div>`;
+  }).join('');
+}
+
+function toggleChartConfigVisibility() {
+  const enabled = document.getElementById('ac-charts-enabled').checked;
+  document.getElementById('ac-chart-config-list').style.display = enabled ? '' : 'none';
+}
+
+function toggleMaChartOptionsVisibility() {
+  const enabled = document.getElementById('ac-ma-chart-enabled').checked;
+  document.getElementById('ac-ma-chart-options').style.display = enabled ? '' : 'none';
+}
+
+async function saveMaChartPrefs() {
+  const enabled = document.getElementById('ac-ma-chart-enabled').checked;
+  const target  = document.getElementById('ac-ma-chart-target').value;
+  const mode    = document.getElementById('ac-ma-chart-mode').value;
+  const msg     = document.getElementById('ac-ma-chart-msg');
+  msg.style.display = 'block';
+  const { error } = await _supabase.from('accounts').update({
+    ma_chart_activities_enabled: enabled,
+    ma_chart_activities_target:  target,
+    ma_chart_activities_mode:    mode,
+  }).eq('user_id', _userId);
+  if (error) { msg.style.color='var(--danger)'; msg.textContent='Error: '+error.message; }
+  else { msg.style.color='var(--accent2)'; msg.textContent='Chart settings saved.'; }
+  setTimeout(() => { msg.style.display='none'; }, 3000);
+}
+
+async function saveChartPrefs() {
+  const enabled = document.getElementById('ac-charts-enabled').checked;
+  const config = [];
+  document.querySelectorAll('.ac-chart-ds-cb').forEach(cb => {
+    if (cb.checked && !cb.disabled) {
+      const ds = cb.dataset.dataset;
+      const typeSel = document.querySelector(`.ac-chart-ds-type[data-dataset="${ds}"]`);
+      config.push({ dataset: ds, type: typeSel ? typeSel.value : 'bar' });
+    }
+  });
+  const msg = document.getElementById('ac-charts-msg');
+  msg.style.display = 'block';
+  const { error } = await _supabase.from('accounts').update({
+    report_charts_enabled: enabled,
+    report_chart_config:   config,
+  }).eq('user_id', _userId);
+  if (error) { msg.style.color='var(--danger)'; msg.textContent='Error: '+error.message; }
+  else { msg.style.color='var(--accent2)'; msg.textContent='Chart settings saved.'; }
   setTimeout(() => { msg.style.display='none'; }, 3000);
 }
 

@@ -1275,6 +1275,10 @@
     <!-- Sub-pane: Team Trends -->
     <div id="analysis-pane-trends">
       <div id="ma-hours-label-trends" style="font-size:12px;color:var(--muted);margin-bottom:.5rem;display:none;"></div>
+      <div class="panel" id="analysis-activity-tiles-panel" style="display:none">
+        <div class="panel-title" style="margin-bottom:.9rem;">Team Activity Tracking — this month</div>
+        <div class="stats-row" id="analysis-activity-tiles" style="margin-bottom:0;"></div>
+      </div>
       <div class="panel" id="analysis-charts-panel">
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.2rem;">
           <div class="panel-title" style="margin:0">Performance Trends</div>
@@ -2382,6 +2386,42 @@
           </div>
           <button class="btn btn-primary" onclick="saveReportPrefs()">Save Report Preferences</button>
           <div id="ac-report-msg" style="font-size:13px;margin-top:10px;display:none"></div>
+        </div>
+        <div class="acct-section" id="report-charts-section" style="display:none">
+          <h3>Agent Performance Charts</h3>
+          <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Add visual charts of each agent's performance to the daily report email. Every chart is built from the same data already shown in the report tables — nothing extra is tracked.</p>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:1rem;cursor:pointer;">
+            <input type="checkbox" id="ac-charts-enabled" onchange="toggleChartConfigVisibility()"> Include agent charts in daily report
+          </label>
+          <div id="ac-chart-config-list" style="display:none;margin-bottom:1rem;"></div>
+          <button class="btn btn-primary" onclick="saveChartPrefs()">Save Chart Settings</button>
+          <div id="ac-charts-msg" style="font-size:13px;margin-top:10px;display:none"></div>
+        </div>
+        <div class="acct-section" id="ma-chart-activities-section" style="display:none">
+          <h3>Team Member Analysis Charts</h3>
+          <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">Show each agent's tracked activities (Pivot, Quote Provided, or any activity type flagged "Include in Team Member Analysis") as a bar chart layered into one of their three existing performance charts on the Analysis tab.</p>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:1rem;cursor:pointer;">
+            <input type="checkbox" id="ac-ma-chart-enabled" onchange="toggleMaChartOptionsVisibility()"> Show tracked activities in an agent's chart
+          </label>
+          <div id="ac-ma-chart-options" style="display:none;">
+            <div class="acct-field">
+              <label>ADD TO WHICH CHART</label>
+              <select id="ac-ma-chart-target" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;width:100%;max-width:360px;outline:none;">
+                <option value="calls">Calls Placed, Answered &amp; Policies</option>
+                <option value="talk">Talk Time (min)</option>
+                <option value="premium">Premium</option>
+              </select>
+            </div>
+            <div class="acct-field">
+              <label>MULTIPLE TRACKED ACTIVITIES</label>
+              <select id="ac-ma-chart-mode" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;width:100%;max-width:360px;outline:none;">
+                <option value="grouped">Side by side</option>
+                <option value="stacked">Stacked</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn btn-primary" onclick="saveMaChartPrefs()">Save</button>
+          <div id="ac-ma-chart-msg" style="font-size:13px;margin-top:10px;display:none"></div>
         </div>
         <div class="acct-section">
           <h3>Sales Column Mapping</h3>

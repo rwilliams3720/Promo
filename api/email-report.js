@@ -1,6 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
 import crypto from 'crypto';
+import { signChartParams } from './_lib/chart-sign.js';
+import { CHART_DATASETS } from './_lib/chart-render.js';
+
+const BASE_URL = 'https://the-boat-race.com';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -92,7 +96,7 @@ export default async function handler(req, res) {
   // Fetch eligible accounts (pro or premium, active)
   let accountQuery = supabase
     .from('accounts')
-    .select('user_id,email,report_email,company_name,plan,status,trial_ends_at,timezone,report_hour,last_report_date')
+    .select('user_id,email,report_email,company_name,plan,status,trial_ends_at,timezone,report_hour,last_report_date,report_charts_enabled,report_chart_config')
     .in('plan', ['pro','premium'])
     .in('status', ['paid','deferred']);
   if (targetUserId) accountQuery = accountQuery.eq('user_id', targetUserId);
@@ -431,6 +435,42 @@ function agentRows(agentInfo, callStats, salesStats) {
     }).join('');
 }
 
+// Charts are rendered on demand by api/chart.js the moment the recipient's email client
+// loads the <img> tag — this function only mints signed URLs, it does no data fetching
+// or image rendering itself. See CLAUDE.md "Agent Performance Charts" for the full design.
+function agentChartsSection(acct, agentInfo, dateStr) {
+  const config = Array.isArray(acct.report_chart_config) ? acct.report_chart_config : [];
+  if (!acct.report_charts_enabled || !config.length) return '';
+
+  const isPremium = acct.plan === 'premium' && ['paid', 'deferred'].includes(acct.status);
+  const usable = config.filter(c => CHART_DATASETS[c.dataset] && (!CHART_DATASETS[c.dataset].premiumOnly || isPremium));
+  if (!usable.length) return '';
+
+  const agentBlocks = Object.entries(agentInfo)
+    .sort((a, b) => a[1].team.localeCompare(b[1].team) || a[1].name.localeCompare(b[1].name))
+    .map(([agentId, info]) => {
+      const imgs = usable.map(c => {
+        const type = ['bar', 'line', 'scatter'].includes(c.type) ? c.type : 'bar';
+        const sig = signChartParams({ u: acct.user_id, a: agentId, d: c.dataset, t: type, date: dateStr });
+        if (!sig) return ''; // CUSTOMER_ENCRYPTION_KEY not configured — skip charts rather than send an unsigned/broken URL
+        const src = `${BASE_URL}/api/chart?u=${encodeURIComponent(acct.user_id)}&a=${encodeURIComponent(agentId)}&d=${encodeURIComponent(c.dataset)}&t=${type}&date=${dateStr}&sig=${sig}`;
+        return `<div style="margin-bottom:12px;"><img src="${src}" width="360" height="170" style="display:block;border-radius:10px;max-width:100%;height:auto;border:1px solid #1e3a5f;" alt="${esc(CHART_DATASETS[c.dataset].label)}"></div>`;
+      }).filter(Boolean).join('');
+      if (!imgs) return '';
+      return `<div style="margin-bottom:20px;">
+        <div style="font-size:12px;font-weight:700;color:#e8f4fd;margin-bottom:8px;">${esc(info.name)}</div>
+        ${imgs}
+      </div>`;
+    }).filter(Boolean).join('');
+
+  if (!agentBlocks) return '';
+  return `
+  <tr><td style="background:#132744;padding:0 32px 24px;">
+    <div style="font-size:13px;font-weight:700;color:#00d4ff;text-transform:uppercase;letter-spacing:.06em;padding:20px 0 12px;">Individual Agent Charts</div>
+    ${agentBlocks}
+  </td></tr>`;
+}
+
 function buildHtml(acct, dateLabel, dateStr, agentInfo, callStats, salesStats, totalCalls, totalAnswered, totalTalkSecs, totalPolicies, totalVoicemails, mtdStats, ytdStats, mtdStart, ytdStart, mtdPremium, ytdPremium) {
   const company = acct.company_name || 'Your Team';
   return `<!DOCTYPE html>
@@ -515,6 +555,8 @@ function buildHtml(acct, dateLabel, dateStr, agentInfo, callStats, salesStats, t
   ${ytdStats ? agentSalesTable('Year-to-Date Policies by Agent &amp; Product', agentInfo, ytdStats, ytdStart, dateStr) : ''}
   ${mtdPremium ? agentPremiumTable('Month-to-Date Written Premium by Agent &amp; Product', agentInfo, mtdPremium, mtdStart, dateStr) : ''}
   ${ytdPremium ? agentPremiumTable('Year-to-Date Written Premium by Agent &amp; Product', agentInfo, ytdPremium, ytdStart, dateStr) : ''}
+
+  ${agentChartsSection(acct, agentInfo, dateStr)}
 
   <!-- Footer -->
   <tr><td style="background:#060e1c;border-radius:0 0 16px 16px;padding:20px 32px;border-top:1px solid #1e3a5f;">
