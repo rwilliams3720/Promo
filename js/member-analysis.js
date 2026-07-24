@@ -306,6 +306,9 @@ async function loadTeamActivityTiles() {
     const { entries } = await r.json();
     const totals = {};
     for (const e of (entries || [])) {
+      // Same rule as the Quick-Count widget — this endpoint also serves the manual
+      // Activity Log (which can have pending/rejected rows); only approved counts.
+      if (e.status !== 'approved') continue;
       totals[e.activity_type_id] = (totals[e.activity_type_id] || 0) + (e.count || 0);
     }
     wrap.innerHTML = types.map(t => `

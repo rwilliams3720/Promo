@@ -57,6 +57,10 @@ async function _qcRefreshCounts() {
     _qcCounts = {};
     _qcMonthCounts = {};
     for (const e of (entries || [])) {
+      // quick_adjust rows are always inserted 'approved' (no review step), but this
+      // endpoint also serves the manual Activity Log, which can be pending/rejected —
+      // those shouldn't count toward a displayed total until actually approved.
+      if (e.status !== 'approved') continue;
       const key = e.activity_type_id + ':' + e.agent_id;
       _qcMonthCounts[key] = (_qcMonthCounts[key] || 0) + (e.count || 0);
       if (e.activity_date === today) _qcCounts[key] = (_qcCounts[key] || 0) + (e.count || 0);
