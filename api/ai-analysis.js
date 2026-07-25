@@ -81,12 +81,31 @@ async function buildFreshChartData(supabase, dataUserId) {
     curKey   = `${MONTH_ABBR[now.getUTCMonth()]} ${now.getUTCFullYear()}`;
   }
 
-  let callQuery = supabase.from('call_log')
-    .select('disposition,talk_secs')
-    .eq('user_id', dataUserId)
-    .gte('call_dt', fromDate)
-    .lt('call_dt', toDate)
-    .not('disposition', 'in', '(internal,other,skip)');
+  // Real pagination, not a single unbounded query — a busy account's current month can
+  // easily clear 1000+ call_log rows (confirmed against this app's own production data:
+  // this exact query was silently truncating to 1000 total rows, e.g. 623 placed + 307
+  // answered + 41 voicemail + 29 missed = 1000 exactly). Same bug class already fixed in
+  // api/upload.js/perf.js/lead-analysis.js and this file's own full-generation path
+  // earlier — this checkOnly-only "live current month" query was a separate code path
+  // that got missed. .order('hash') for a stable sort — hash is part of call_log's
+  // (user_id, hash) primary key, so it's always present and unique per user.
+  async function fetchAllCallRows() {
+    const PAGE = 1000;
+    const rows = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data: page, error } = await supabase.from('call_log')
+        .select('disposition,talk_secs')
+        .eq('user_id', dataUserId)
+        .gte('call_dt', fromDate).lt('call_dt', toDate)
+        .not('disposition', 'in', '(internal,other,skip)')
+        .order('hash', { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) throw new Error(`call_log read failed: ${error.message}`);
+      if (page?.length) rows.push(...page);
+      if (!page || page.length < PAGE) break;
+    }
+    return rows;
+  }
 
   let salesQuery = supabase.from('sales_log')
     .select('product')
@@ -95,11 +114,11 @@ async function buildFreshChartData(supabase, dataUserId) {
     .lt('sale_date', toDate)
     .eq('is_cancelled', false);
 
-  const [{ data: histMonths }, { data: curCalls }, { data: curSales }] = await Promise.all([
+  const [{ data: histMonths }, curCalls, { data: curSales }] = await Promise.all([
     supabase.from('historical_months')
       .select('month,placed,answered,talk_min,voicemail,missed,policies')
       .eq('user_id', dataUserId),
-    callQuery,
+    fetchAllCallRows(),
     salesQuery,
   ]);
 
