@@ -95,7 +95,7 @@ export default async function handler(req, res) {
     // Sales: broad OR filter — sale_date OR issued_date within the month (for pay_on_issue support)
     const [salesRes, rosterRes, structuresRes, subcatsRes, agentStructsRes, bankLedgerRes, allPaymentsRes] = await Promise.all([
       supabase.from('sales_log')
-        .select('hash, agent_id, product, subcategory, written_premium, split_sale, split_ratio, teammate, sale_date, issued_date, is_cancelled, chargeback_date, chargeback_exempt, customer_name')
+        .select('hash, agent_id, product, subcategory, written_premium, split_sale, split_ratio, sale_weight, teammate, sale_date, issued_date, is_cancelled, chargeback_date, chargeback_exempt, customer_name')
         .eq('user_id', dataUserId)
         .or(`and(sale_date.gte.${fromDate},sale_date.lte.${toDate}),and(issued_date.gte.${fromDate},issued_date.lte.${toDate}),and(is_cancelled.eq.true,chargeback_date.gte.${fromDate},chargeback_date.lte.${toDate})`),
       supabase.from('agent_roster')
@@ -277,12 +277,12 @@ export default async function handler(req, res) {
       const primaryId = sale.agent_id;
       const premium   = parseFloat(sale.written_premium) || 0;
       const product   = sale.product || 'other';
-      const isSplit   = !!sale.split_sale;
       if (primaryId) {
         const structList   = getStructureList(primaryId);
-        const defaultRatio = structList[0]?.default_split_ratio ?? 0.5;
-        const ratio         = isSplit ? (sale.split_ratio ?? defaultRatio) : 1;
-        const share         = premium * ratio;
+        // written_premium is already this agent's own half of a split sale (see
+        // calcStructurePayout) — no ratio re-applied here either, same fix as the earned
+        // calculation, so the itemized chargeback list shows the correct premium share.
+        const share         = premium;
         const overrides     = agentById[primaryId]?.commission_product_overrides || {};
         const commission    = await computeChargebackAmount(chargebackCtx, sale, structList, overrides);
         if (!chargebacks[primaryId]) chargebacks[primaryId] = [];

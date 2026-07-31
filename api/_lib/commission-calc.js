@@ -104,6 +104,10 @@ export function calcStructurePayout(agentId, struct, sales, roster, isFinancialS
     const product = sale.product || 'other';
     const isSplit = !!sale.split_sale;
     const isFS = isFinancialService[sale.subcategory] || false;
+    // sale_weight is 0.5 for either side of a split sale (see split-sale-migration.sql),
+    // the same "counts as half a policy" convention race_data already uses — used below
+    // for count-based threshold/escalator gating, kept separate from the dollar amount.
+    const weight = sale.sale_weight != null ? parseFloat(sale.sale_weight) : 1;
 
     // Product is overridden to a different structure — this structure sits it out
     // so overlapping rates don't double-count the sale (unless override is 'both').
@@ -113,28 +117,23 @@ export function calcStructurePayout(agentId, struct, sales, roster, isFinancialS
     if (sale.agent_id === agentId) {
       const dateOk = payOnIssue ? inMonth(sale.issued_date) : inMonth(sale.sale_date);
       if (dateOk) {
-        const defaultRatio = struct.default_split_ratio ?? 0.5;
-        const ratio = isSplit ? (sale.split_ratio ?? defaultRatio) : 1;
-        const share = premium * ratio;
+        // written_premium is already THIS agent's own half of a split sale (halved at
+        // insert time in api/sales.js / api/checklist-form.js — sales_log stores two
+        // independent rows, each pre-split). Re-applying split_ratio here on top of that
+        // already-halved amount was double-splitting every split sale's commission down
+        // to a quarter of the real premium instead of half (fixed 2026-07-31 — see
+        // CLAUDE.md). share is simply this agent's own premium; no ratio math needed.
+        const share = premium;
         const commission = applyRate(struct, product, sale.subcategory || null, share, premium, isFS);
-        breakdown.push({ hash: sale.hash, product, premium, share, commission, split: isSplit, role: 'primary', customer_name: decrypt(sale.customer_name), sale_date: sale.sale_date || null, subcategory: sale.subcategory || null });
+        breakdown.push({ hash: sale.hash, product, premium, share, commission, weight, split: isSplit, role: 'primary', customer_name: decrypt(sale.customer_name), sale_date: sale.sale_date || null, subcategory: sale.subcategory || null });
       }
     }
-
-    if (isSplit && sale.teammate) {
-      const tmName = (sale.teammate || '').toLowerCase().trim();
-      const tmAgent = roster.find(a => a.name.toLowerCase().trim() === tmName);
-      if (tmAgent && tmAgent.agent_id === agentId) {
-        const dateOk = payOnIssue ? inMonth(sale.issued_date) : inMonth(sale.sale_date);
-        if (dateOk) {
-          const defaultRatio = struct.default_split_ratio ?? 0.5;
-          const primaryRatio = sale.split_ratio ?? defaultRatio;
-          const tmShare = premium * (1 - primaryRatio);
-          const commission = applyRate(struct, product, sale.subcategory || null, tmShare, premium, isFS);
-          breakdown.push({ hash: sale.hash, product, premium, share: tmShare, commission, split: true, role: 'teammate', customer_name: decrypt(sale.customer_name), sale_date: sale.sale_date || null, subcategory: sale.subcategory || null });
-        }
-      }
-    }
+    // (A "teammate" branch matching sale.teammate against roster display names used to
+    // live here, for an earlier single-row split-sale design where one row covered both
+    // agents. Since the 2026-07-21 two-independent-rows redesign, teammate stores an
+    // agent_id, not a name, so that branch could never match and was confirmed dead code
+    // — see CLAUDE.md. Removed rather than left with the same now-fixed math duplicated
+    // in a way that would mislead a future reader into copying the old pattern.)
   }
 
   const thresholds = struct.thresholds || [];
@@ -155,7 +154,11 @@ export function calcStructurePayout(agentId, struct, sales, roster, isFinancialS
   for (const b of breakdown) {
     const gId = productToGroup[b.product];
     if (gId) {
-      if (b.role === 'primary') groupCounts[gId] = (groupCounts[gId] || 0) + 1;
+      // Weighted by sale_weight (0.5 for a split sale) rather than a flat +1 per row —
+      // otherwise a split sale inflates count-based min_count thresholds and escalator
+      // tiers, since each side's own row would otherwise count as a full policy toward
+      // both agents' individual counts for the very same underlying sale (fixed 2026-07-31).
+      if (b.role === 'primary') groupCounts[gId] = (groupCounts[gId] || 0) + (b.weight ?? 1);
       groupEarned[gId] = (groupEarned[gId] || 0) + b.commission;
       groupShares[gId] = (groupShares[gId] || 0) + b.share;
     } else {
@@ -297,7 +300,7 @@ async function fetchAgentMonthSales(ctx, agentId, ey, em) {
   const eLast = new Date(ey, em, 0).getDate();
   const eTo   = `${ey}-${String(em).padStart(2, '0')}-${String(eLast).padStart(2, '0')}`;
   const { data } = await ctx.supabase.from('sales_log')
-    .select('hash, agent_id, product, subcategory, written_premium, split_sale, split_ratio, teammate, sale_date, issued_date, is_cancelled, customer_name')
+    .select('hash, agent_id, product, subcategory, written_premium, split_sale, split_ratio, sale_weight, teammate, sale_date, issued_date, is_cancelled, customer_name')
     .eq('user_id', ctx.dataUserId)
     .eq('agent_id', agentId)
     .or(`and(sale_date.gte.${eFrom},sale_date.lte.${eTo}),and(issued_date.gte.${eFrom},issued_date.lte.${eTo})`);
