@@ -209,6 +209,16 @@ export default async function handler(req, res) {
       }
     }
 
+    // Validate sale content BEFORE writing anything — a bad sales row (missing lead
+    // source or split-sale teammate) must not leave a checklist_submissions row behind
+    // with no way to attach the sale to it after the fact.
+    if (sales.length > 0) {
+      const missingSrc = sales.find(s => !s.leadSource);
+      if (missingSrc) return res.status(400).json({ error: 'Lead source required for all sales rows' });
+      const missingTeammate = sales.find(s => s.splitSale && !s.teammate);
+      if (missingTeammate) return res.status(400).json({ error: 'Teammate required for a split sale' });
+    }
+
     const encryptedName = encryptField(customerName);
 
     const extendedCompletions = {
@@ -246,11 +256,6 @@ export default async function handler(req, res) {
     // agent, which left the teammate with no sales_log row of their own at all: no race
     // credit, no commission, invisible in their own Sales Log.
     if (sales.length > 0) {
-      const missingSrc = sales.find(s => !s.leadSource);
-      if (missingSrc) return res.status(400).json({ error: 'Lead source required for all sales rows' });
-      const missingTeammate = sales.find(s => s.splitSale && !s.teammate);
-      if (missingTeammate) return res.status(400).json({ error: 'Teammate required for a split sale' });
-
       const mkHash = (agentId, s) => sha256Short([agentId || '', s.product, s.subcategory || '', subDate, s.writtenPremium || ''].join('|') + Date.now() + Math.random());
 
       const logInserts = sales.flatMap(s => {
@@ -305,7 +310,16 @@ export default async function handler(req, res) {
         ];
       });
       const { error: salesErr } = await supabase.from('sales_log').insert(logInserts);
-      if (salesErr) console.error('sales_log insert error:', salesErr);
+      if (salesErr) {
+        // Do NOT return 200 here — the checklist_submissions row above already saved,
+        // but the caller must be told the sale itself did not, or the agent believes
+        // (and the confirmation email would claim) a sale was logged that never was.
+        console.error('sales_log insert error:', salesErr);
+        return res.status(500).json({
+          error: 'Appointment saved, but the sale details failed to save. Please re-enter the sale from Sales Log or contact support.',
+          submissionId,
+        });
+      }
 
       // Rebuild race_data so checklist sales appear on the Race tab immediately
       const agentIds = [...new Set([salespersonId, ...sales.map(s => s.teammate)].filter(Boolean))];

@@ -46,14 +46,60 @@ export default async function handler(req, res) {
     if (!spec) return res.status(400).end();
     const type = ['bar', 'line', 'scatter'].includes(t) ? t : 'bar';
 
+    // Cosmetic overrides — not part of the HMAC-signed tuple (u,a,d,t,date). Tampering
+    // with display color/opacity/outline has no data-access implications, so these are
+    // read directly off the query string rather than round-tripped through chart-sign.js.
+    const color = /^#[0-9a-fA-F]{3,8}$/.test(req.query?.color || '') ? req.query.color : spec.color;
+    const opacity = (() => {
+      const n = parseFloat(req.query?.opacity);
+      return Number.isFinite(n) ? Math.min(1, Math.max(0.1, n)) : 1;
+    })();
+    const outline = /^#[0-9a-fA-F]{3,8}$/.test(req.query?.outline || '') ? req.query.outline : null;
+
+    let labels = [], values = [], title;
+
+    if (spec.teamWide) {
+      // One bar/line/point per agent for the report's own date — the same per-agent
+      // numbers already shown in the "Agent Breakdown" table, not a 14-day trend.
+      const { data: rows, error: rowErr } = await supabase
+        .from('call_log')
+        .select('agent_id, disposition, talk_secs')
+        .eq('user_id', u).eq('call_dt', date)
+        .not('disposition', 'in', '(internal,other,skip)');
+      if (rowErr) throw new Error(`call_log read failed: ${rowErr.message}`);
+
+      const { data: rosterRows } = await supabase
+        .from('agent_roster')
+        .select('agent_id, name')
+        .eq('user_id', u).eq('active', true);
+      const nameById = {};
+      for (const r of (rosterRows || [])) nameById[r.agent_id] = r.name;
+
+      const perAgent = {};
+      for (const row of (rows || [])) {
+        if (row.disposition === 'voicemail') continue;
+        const agentId = decryptField(row.agent_id);
+        if (!agentId) continue;
+        if (!perAgent[agentId]) perAgent[agentId] = { answered: 0, talkSecs: 0 };
+        if (row.disposition === 'answered') perAgent[agentId].answered++;
+        perAgent[agentId].talkSecs += row.talk_secs || 0;
+      }
+
+      const agentIds = Object.keys(perAgent).sort((idA, idB) =>
+        (nameById[idA] || idA).localeCompare(nameById[idB] || idB));
+      labels = agentIds.map(id => nameById[id] || id);
+      values = agentIds.map(id =>
+        d === 'team_talk' ? Math.round(perAgent[id].talkSecs / 60) : perAgent[id].answered);
+      title = spec.label;
+    } else {
+
     const { data: rosterRow } = await supabase
       .from('agent_roster')
       .select('name')
       .eq('user_id', u).eq('agent_id', a)
       .maybeSingle();
     const agentName = rosterRow?.name || a;
-
-    let labels = [], values = [];
+    title = `${agentName} — ${spec.label}`;
 
     if (d.startsWith('trend_')) {
       const end = new Date(date + 'T12:00:00Z');
@@ -137,9 +183,10 @@ export default async function handler(req, res) {
       values = SALES_PRODUCTS.map(p => totals[p]);
     }
 
+    } // end else (per-agent datasets)
+
     const png = await renderChartPng({
-      title: `${agentName} — ${spec.label}`,
-      labels, values, color: spec.color, type, dollar: !!spec.dollar,
+      title, labels, values, color, opacity, outline, type, dollar: !!spec.dollar,
     });
 
     res.setHeader('Content-Type', 'image/png');

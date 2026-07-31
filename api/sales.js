@@ -289,7 +289,7 @@ export default async function handler(req, res) {
     const { hash, ...fields } = req.body || {};
     if (!hash) return res.status(400).json({ error: 'hash required' });
 
-    const { data: existing } = await supabase.from('sales_log').select('agent_id, teammate').eq('user_id', dataUserId).eq('hash', hash).single();
+    const { data: existing } = await supabase.from('sales_log').select('agent_id, teammate, sale_date, product, subcategory').eq('user_id', dataUserId).eq('hash', hash).single();
     // Non-captain/CO members can only edit their own entries
     if (ctx.isMember && !ctx.isCapOrCO && ctx.memberAgentId && existing?.agent_id !== ctx.memberAgentId) {
       return res.status(403).json({ error: 'You can only edit your own entries' });
@@ -322,6 +322,38 @@ export default async function handler(req, res) {
       .eq('hash', hash);
 
     if (error) return res.status(500).json({ error: error.message });
+
+    // A split sale's two rows always represent the same real-world sale — there is no
+    // valid state where one side is issued and the other isn't. Whenever this edit
+    // touches issued_date (either a direct edit, or the auto_issued derivation above),
+    // propagate the same issued_date to the sibling row instead of requiring the agent
+    // to issue both halves by hand. Matched on (agent_id, teammate, sale_date, product,
+    // subcategory) rather than hash, since a split sale's two rows differ on agent_id and
+    // therefore hash (hash is derived per-agent — see sha256Short callers above).
+    let siblingHash = null;
+    const teammateId = update.teammate !== undefined ? update.teammate : existing?.teammate;
+    if (teammateId && update.issued_date !== undefined) {
+      const { data: sibling } = await supabase
+        .from('sales_log')
+        .select('hash, issued_date')
+        .eq('user_id', dataUserId)
+        .eq('agent_id', teammateId)
+        .eq('teammate', existing?.agent_id ?? update.agent_id)
+        .eq('sale_date', update.sale_date ?? existing?.sale_date)
+        .eq('product', update.product ?? existing?.product)
+        .eq('subcategory', update.subcategory ?? existing?.subcategory)
+        .maybeSingle();
+      if (sibling && sibling.hash !== hash && sibling.issued_date !== update.issued_date) {
+        const { error: sibErr } = await supabase
+          .from('sales_log')
+          .update({ issued_date: update.issued_date })
+          .eq('user_id', dataUserId)
+          .eq('hash', sibling.hash);
+        if (!sibErr) siblingHash = sibling.hash;
+        else console.error('split-sale sibling issued_date propagation failed:', sibErr);
+      }
+    }
+
     // Include both old and new agent_id/teammate — a split sale's teammate must get
     // their race_data refreshed too, whether they were the teammate before the edit,
     // after it, or both (e.g. issuing a split sale, or swapping who the teammate is).
@@ -329,8 +361,8 @@ export default async function handler(req, res) {
       existing?.agent_id, existing?.teammate, fields.agent_id, fields.teammate,
     ].filter(Boolean))];
     await rebuildRaceData(dataUserId, rebuildIds);
-    await logAccess({ actorUserId: ctx.userId, actorEmail: ctx.actorEmail, dataUserId, action: 'edit', recordHash: hash, metadata: { fields: Object.keys(update) } });
-    return res.status(200).json({ ok: true });
+    await logAccess({ actorUserId: ctx.userId, actorEmail: ctx.actorEmail, dataUserId, action: 'edit', recordHash: hash, metadata: { fields: Object.keys(update), siblingHash } });
+    return res.status(200).json({ ok: true, siblingHash });
   }
 
   // ── DELETE: remove a manual entry ─────────────────────────────────────────

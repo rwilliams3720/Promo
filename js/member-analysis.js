@@ -1000,7 +1000,11 @@ function renderAgentChartsIfNeeded(agId) {
   _agentChartsRendered.add(agId);
   const ag = _maAnalysisData?.agentData?.[agId];
   if (!ag) return;
-  renderAgentChartTiles(agId, ag);
+  // The card's text/stats already rendered unconditionally in renderMemberAnalysisCards()
+  // before this ever runs, so a Chart.js failure here only leaves this agent's chart
+  // tiles blank — but must not throw uncaught out of this onclick handler.
+  try { renderAgentChartTiles(agId, ag); }
+  catch (e) { console.error('renderAgentChartTiles failed for', agId, e); }
 }
 
 function renderAgentChartTiles(agId, ag) {

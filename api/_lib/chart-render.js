@@ -14,14 +14,22 @@ const FONT = 'Helvetica,Arial,sans-serif';
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+// Per-agent chart colors deliberately avoid the report's existing chrome colors
+// (summary stat cards / team badges: #00d4ff, #00ff94, #ff4d6d, #ffd166, #ff8c42) so
+// these charts read as their own visual layer instead of blending into the rest of
+// the email. Team-wide comparison charts (below) get their own distinct pair too.
 export const CHART_DATASETS = {
-  trend_placed:   { label: 'Placed Calls — 14-Day Trend',    color: '#00d4ff' },
-  trend_answered: { label: 'Answered Calls — 14-Day Trend',  color: '#00ff94' },
-  trend_talk:     { label: 'Talk Time (min) — 14-Day Trend', color: '#ffd166' },
-  mtd_policies:   { label: 'MTD Policies by Product',        color: '#ff8c42' },
-  ytd_policies:   { label: 'YTD Policies by Product',        color: '#ff8c42' },
-  mtd_premium:    { label: 'MTD Written Premium by Product', color: '#a78bfa', dollar: true, premiumOnly: true },
-  ytd_premium:    { label: 'YTD Written Premium by Product', color: '#a78bfa', dollar: true, premiumOnly: true },
+  trend_placed:   { label: 'Placed Calls — 14-Day Trend',    color: '#2dd4bf' },
+  trend_answered: { label: 'Answered Calls — 14-Day Trend',  color: '#c084fc' },
+  trend_talk:     { label: 'Talk Time (min) — 14-Day Trend', color: '#f472b6' },
+  mtd_policies:   { label: 'MTD Policies by Product',        color: '#84cc16' },
+  ytd_policies:   { label: 'YTD Policies by Product',        color: '#84cc16' },
+  mtd_premium:    { label: 'MTD Written Premium by Product', color: '#6366f1', dollar: true, premiumOnly: true },
+  ytd_premium:    { label: 'YTD Written Premium by Product', color: '#6366f1', dollar: true, premiumOnly: true },
+  // Team-wide: one chart total (not per agent), every agent's name along the x-axis,
+  // scoped to the report's own date — same numbers as the "Agent Breakdown" table.
+  team_talk:      { label: 'Talk Time by Agent (min)',       color: '#fbbf24', teamWide: true },
+  team_answered:  { label: 'Answered Calls by Agent',        color: '#38bdf8', teamWide: true },
 };
 
 function scaleY(v, max) {
@@ -58,7 +66,7 @@ function xPos(i, n) {
   return n === 1 ? PAD_L + PLOT_W / 2 : PAD_L + (PLOT_W / (n - 1)) * i;
 }
 
-export function renderChartSvg({ title, labels, values, color, type, dollar }) {
+export function renderChartSvg({ title, labels, values, color, opacity, outline, type, dollar }) {
   const n = labels.length;
   const max = niceMax(Math.max(1, ...values.map(v => v || 0)));
   const axes = buildAxes(max, dollar);
@@ -66,6 +74,9 @@ export function renderChartSvg({ title, labels, values, color, type, dollar }) {
   // points (e.g. 14 daily trend labels) — always keep the first and last.
   const labelEvery = Math.max(1, Math.ceil(n / 8));
   const showLabel = i => i === 0 || i === n - 1 || i % labelEvery === 0;
+
+  const fillOpacity = Number.isFinite(opacity) ? opacity : 1;
+  const outlineAttr = outline ? ` stroke="${outline}" stroke-width="1.5"` : '';
 
   let body = '';
   if (type === 'bar') {
@@ -75,22 +86,22 @@ export function renderChartSvg({ title, labels, values, color, type, dollar }) {
       const cx = PAD_L + slot * (i + 0.5);
       const y  = scaleY(values[i] || 0, max);
       const h  = (PAD_T + PLOT_H) - y;
-      return `<rect x="${cx - bw / 2}" y="${y}" width="${bw}" height="${Math.max(0, h)}" rx="3" fill="${color}"/>
+      return `<rect x="${cx - bw / 2}" y="${y}" width="${bw}" height="${Math.max(0, h)}" rx="3" fill="${color}" fill-opacity="${fillOpacity}"${outlineAttr}/>
         <text x="${cx}" y="${PAD_T + PLOT_H + 22}" text-anchor="middle" font-size="12" fill="#8fa8c4" font-family="${FONT}">${esc(lab)}</text>
         <text x="${cx}" y="${y - 8}" text-anchor="middle" font-size="12" fill="#e8f4fd" font-family="${FONT}">${fmtVal(values[i] || 0, dollar)}</text>`;
     }).join('');
   } else if (type === 'line') {
     const pts = labels.map((lab, i) => ({ cx: xPos(i, n), y: scaleY(values[i] || 0, max), lab }));
     const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.cx},${p.y}`).join(' ');
-    body = `<path d="${path}" fill="none" stroke="${color}" stroke-width="3"/>` +
-      pts.map((p, i) => `<circle cx="${p.cx}" cy="${p.y}" r="4" fill="${color}"/>` +
+    body = `<path d="${path}" fill="none" stroke="${color}" stroke-opacity="${fillOpacity}" stroke-width="3"/>` +
+      pts.map((p, i) => `<circle cx="${p.cx}" cy="${p.y}" r="4" fill="${color}" fill-opacity="${fillOpacity}"${outlineAttr}/>` +
         (showLabel(i) ? `<text x="${p.cx}" y="${PAD_T + PLOT_H + 22}" text-anchor="middle" font-size="11" fill="#8fa8c4" font-family="${FONT}">${esc(p.lab)}</text>` : '')
       ).join('');
   } else { // scatter
     body = labels.map((lab, i) => {
       const cx = xPos(i, n);
       const y  = scaleY(values[i] || 0, max);
-      return `<circle cx="${cx}" cy="${y}" r="6" fill="${color}" fill-opacity="0.85"/>` +
+      return `<circle cx="${cx}" cy="${y}" r="6" fill="${color}" fill-opacity="${fillOpacity}"${outlineAttr}/>` +
         (showLabel(i) ? `<text x="${cx}" y="${PAD_T + PLOT_H + 22}" text-anchor="middle" font-size="11" fill="#8fa8c4" font-family="${FONT}">${esc(lab)}</text>` : '');
     }).join('');
   }

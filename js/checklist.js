@@ -425,6 +425,11 @@ async function clSubmit() {
     if (splitEl?.checked && tmEl && !tmEl.value) clErr(tmEl, 'Teammate is required.');
   });
 
+  if (firstErrEl) {
+    firstErrEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+
   const agentDisplayName = _clAgents.find(a => a.agent_id === salespersonId)?.name || salespersonId || '';
 
   btn.disabled = true; btn.textContent = 'Submitting…';

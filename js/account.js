@@ -344,17 +344,55 @@ async function saveReportPrefs() {
   setTimeout(() => { msg.style.display='none'; }, 3000);
 }
 
+async function sendReportNow() {
+  const btn = document.getElementById('ac-send-now-btn');
+  if (btn.dataset.confirming !== 'yes') {
+    btn.dataset.confirming = 'yes';
+    btn.textContent = 'Confirm Send';
+    setTimeout(() => { btn.dataset.confirming = ''; btn.textContent = 'Send Report Now'; }, 6000);
+    return;
+  }
+  btn.dataset.confirming = '';
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  const msg = document.getElementById('ac-send-now-msg');
+  msg.style.display = 'block';
+  try {
+    const res  = await fetch('/api/email-report?self=1', { headers: authHeaders() });
+    const data = await res.json();
+    const result = data.results?.[0];
+    if (!res.ok) {
+      msg.style.color = 'var(--danger)'; msg.textContent = data.error || 'Failed to send.';
+    } else if (!result) {
+      msg.style.color = 'var(--danger)'; msg.textContent = 'Not eligible for report delivery.';
+    } else if (result.status === 'sent') {
+      msg.style.color = 'var(--accent2)'; msg.textContent = 'Report sent!';
+    } else if (result.status === 'skipped') {
+      msg.style.color = 'var(--muted)'; msg.textContent = `Not sent — ${result.reason}.`;
+    } else {
+      msg.style.color = 'var(--danger)'; msg.textContent = result.error || 'Failed to send.';
+    }
+  } catch (e) {
+    msg.style.color = 'var(--danger)'; msg.textContent = e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Send Report Now';
+    setTimeout(() => { msg.style.display = 'none'; }, 5000);
+  }
+}
+
 // ── Agent Performance Charts (daily report) ──────────────────────────────────
 // Client-side mirror of api/_lib/chart-render.js's CHART_DATASETS — just labels for the
 // picker UI, no rendering logic here. Keep the dataset keys in sync with that file.
 const CHART_DATASETS_CLIENT = [
-  { key: 'trend_placed',   label: 'Placed Calls — 14-Day Trend' },
-  { key: 'trend_answered', label: 'Answered Calls — 14-Day Trend' },
-  { key: 'trend_talk',     label: 'Talk Time — 14-Day Trend' },
-  { key: 'mtd_policies',   label: 'MTD Policies by Product' },
-  { key: 'ytd_policies',   label: 'YTD Policies by Product' },
-  { key: 'mtd_premium',    label: 'MTD Written Premium by Product', premiumOnly: true },
-  { key: 'ytd_premium',    label: 'YTD Written Premium by Product', premiumOnly: true },
+  { key: 'team_talk',      label: 'Talk Time by Agent (Team Comparison)',     defaultColor: '#fbbf24' },
+  { key: 'team_answered',  label: 'Answered Calls by Agent (Team Comparison)', defaultColor: '#38bdf8' },
+  { key: 'trend_placed',   label: 'Placed Calls — 14-Day Trend',    defaultColor: '#2dd4bf' },
+  { key: 'trend_answered', label: 'Answered Calls — 14-Day Trend',  defaultColor: '#c084fc' },
+  { key: 'trend_talk',     label: 'Talk Time — 14-Day Trend',       defaultColor: '#f472b6' },
+  { key: 'mtd_policies',   label: 'MTD Policies by Product',        defaultColor: '#84cc16' },
+  { key: 'ytd_policies',   label: 'YTD Policies by Product',        defaultColor: '#84cc16' },
+  { key: 'mtd_premium',    label: 'MTD Written Premium by Product', defaultColor: '#6366f1', premiumOnly: true },
+  { key: 'ytd_premium',    label: 'YTD Written Premium by Product', defaultColor: '#6366f1', premiumOnly: true },
 ];
 
 function renderChartConfigList(acct) {
@@ -363,19 +401,37 @@ function renderChartConfigList(acct) {
   const isPremium = acct.plan === 'premium';
   const cfg = Array.isArray(acct.report_chart_config) ? acct.report_chart_config : [];
   const cfgByKey = {};
-  cfg.forEach(c => { cfgByKey[c.dataset] = c.type; });
+  cfg.forEach(c => { cfgByKey[c.dataset] = c; });
   wrap.innerHTML = CHART_DATASETS_CLIENT.map(ds => {
     const locked  = ds.premiumOnly && !isPremium;
+    const saved   = cfgByKey[ds.key] || {};
     const checked = !!cfgByKey[ds.key];
-    const type    = cfgByKey[ds.key] || 'bar';
-    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border2);${locked ? 'opacity:.5;' : ''}">
-      <input type="checkbox" class="ac-chart-ds-cb" data-dataset="${ds.key}" ${checked ? 'checked' : ''} ${locked ? 'disabled' : ''}>
-      <div style="flex:1;font-size:13px;">${ds.label}${locked ? ' <span style="color:var(--muted);font-size:11px;">(Premium plan)</span>' : ''}</div>
-      <select class="ac-chart-ds-type" data-dataset="${ds.key}" ${locked ? 'disabled' : ''} style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;outline:none;">
-        <option value="bar" ${type === 'bar' ? 'selected' : ''}>Bar</option>
-        <option value="line" ${type === 'line' ? 'selected' : ''}>Line</option>
-        <option value="scatter" ${type === 'scatter' ? 'selected' : ''}>Scatter</option>
-      </select>
+    const type    = saved.type    || 'bar';
+    const color   = saved.color   || ds.defaultColor;
+    const opacity = saved.opacity != null ? saved.opacity : 1;
+    const outline = saved.outline || '';
+    return `<div style="padding:10px 0;border-bottom:1px solid var(--border2);${locked ? 'opacity:.5;' : ''}">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <input type="checkbox" class="ac-chart-ds-cb" data-dataset="${ds.key}" ${checked ? 'checked' : ''} ${locked ? 'disabled' : ''}>
+        <div style="flex:1;font-size:13px;">${ds.label}${locked ? ' <span style="color:var(--muted);font-size:11px;">(Premium plan)</span>' : ''}</div>
+        <select class="ac-chart-ds-type" data-dataset="${ds.key}" ${locked ? 'disabled' : ''} style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;outline:none;">
+          <option value="bar" ${type === 'bar' ? 'selected' : ''}>Bar</option>
+          <option value="line" ${type === 'line' ? 'selected' : ''}>Line</option>
+          <option value="scatter" ${type === 'scatter' ? 'selected' : ''}>Scatter</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px;margin:8px 0 0 30px;font-size:11px;color:var(--muted);">
+        <label style="display:flex;align-items:center;gap:5px;">Color
+          <input type="color" class="ac-chart-ds-color" data-dataset="${ds.key}" value="${color}" ${locked ? 'disabled' : ''} style="width:28px;height:22px;padding:0;border:1px solid var(--border);border-radius:4px;background:none;cursor:pointer;">
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;">Opacity
+          <input type="range" class="ac-chart-ds-opacity" data-dataset="${ds.key}" min="0.2" max="1" step="0.05" value="${opacity}" ${locked ? 'disabled' : ''} style="width:80px;">
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;">Outline
+          <input type="color" class="ac-chart-ds-outline" data-dataset="${ds.key}" value="${outline || '#000000'}" ${locked ? 'disabled' : ''} style="width:28px;height:22px;padding:0;border:1px solid var(--border);border-radius:4px;background:none;cursor:pointer;">
+          <input type="checkbox" class="ac-chart-ds-outline-enabled" data-dataset="${ds.key}" ${outline ? 'checked' : ''} ${locked ? 'disabled' : ''} title="Enable outline">
+        </label>
+      </div>
     </div>`;
   }).join('');
 }
@@ -412,8 +468,18 @@ async function saveChartPrefs() {
   document.querySelectorAll('.ac-chart-ds-cb').forEach(cb => {
     if (cb.checked && !cb.disabled) {
       const ds = cb.dataset.dataset;
-      const typeSel = document.querySelector(`.ac-chart-ds-type[data-dataset="${ds}"]`);
-      config.push({ dataset: ds, type: typeSel ? typeSel.value : 'bar' });
+      const typeSel     = document.querySelector(`.ac-chart-ds-type[data-dataset="${ds}"]`);
+      const colorInp    = document.querySelector(`.ac-chart-ds-color[data-dataset="${ds}"]`);
+      const opacityInp  = document.querySelector(`.ac-chart-ds-opacity[data-dataset="${ds}"]`);
+      const outlineInp  = document.querySelector(`.ac-chart-ds-outline[data-dataset="${ds}"]`);
+      const outlineOn   = document.querySelector(`.ac-chart-ds-outline-enabled[data-dataset="${ds}"]`);
+      config.push({
+        dataset: ds,
+        type:    typeSel ? typeSel.value : 'bar',
+        color:   colorInp ? colorInp.value : undefined,
+        opacity: opacityInp ? parseFloat(opacityInp.value) : undefined,
+        outline: (outlineOn?.checked && outlineInp) ? outlineInp.value : undefined,
+      });
     }
   });
   const msg = document.getElementById('ac-charts-msg');

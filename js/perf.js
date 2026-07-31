@@ -286,11 +286,22 @@ function updateAnalysisBtn() {
 }
 
 function _renderAnalysisData(data) {
-  if (data.chartData) renderAnalysisCharts(data.chartData);
+  // Insights text FIRST, chart rendering wrapped separately — a chart failure (e.g. the
+  // Chart.js CDN script blocked/slow/failed on this particular network or browser) must
+  // never prevent the narrative analysis from showing. This was previously the other way
+  // around with no isolation: an uncaught throw from renderAnalysisCharts() aborted this
+  // whole function before the insights text was ever written, leaving the tab blank with
+  // no visible error — reproducible on any device/network where the CDN script doesn't
+  // load (flaky mobile connections, ad blockers, corporate firewalls), which is exactly
+  // why it showed up as "works on some computers, not others, blank on phone."
   if (data.insights) {
     const paragraphs = data.insights.split(/\n\n+/).filter(Boolean);
     document.getElementById('analysis-body').innerHTML = paragraphs.map(p => `<p>${p.trim()}</p>`).join('');
     document.getElementById('analysis-email-btn').style.display = '';
+  }
+  if (data.chartData) {
+    try { renderAnalysisCharts(data.chartData); }
+    catch (e) { console.error('renderAnalysisCharts failed (insights text above is unaffected):', e); }
   }
   const ts = data.cachedAt || data.generatedAt || _analysisAt;
   if (ts) {
@@ -377,9 +388,13 @@ async function runAnalysis(force) {
       return;
     }
 
-    renderAnalysisCharts(data.chartData || []);
+    // Insights text FIRST — see _renderAnalysisData for why chart rendering must never
+    // block it. A fresh (possibly just-paid-for) analysis must not look like it failed
+    // just because Chart.js didn't load on this device/network.
     const paragraphs = (data.insights || '').split(/\n\n+/).filter(Boolean);
     body.innerHTML = paragraphs.map(p => `<p>${p.trim()}</p>`).join('');
+    try { renderAnalysisCharts(data.chartData || []); }
+    catch (e) { console.error('renderAnalysisCharts failed (insights text above is unaffected):', e); }
 
     const ts = data.cachedAt || data.generatedAt || new Date().toISOString();
     _analysisAt = ts;

@@ -77,21 +77,32 @@ export default async function handler(req, res) {
     ? (bearerIsSecret || headerIsSecret)
     : (req.headers['x-vercel-cron'] === '1');
 
+  // ?self=1 — a regular (non-admin) account owner triggering an immediate send of
+  // their OWN report from the Account Settings "Send Report Now" button. Uses today's
+  // date (same as the upload-triggered path below) and skips the delivery-hour check,
+  // but is otherwise subject to the same dedup/no-activity skips as any other send.
+  const isSelfSend = req.query?.self === '1';
+  let selfUserId = null;
+
   // The admin-JWT path must not be entered with the cron secret as the bearer.
   if (!isCron && !bearerIsSecret) {
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
     const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
     if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
-    const { data: adminRow } = await supabase.from('accounts').select('is_admin').eq('user_id', user.id).single();
-    if (!adminRow?.is_admin) return res.status(403).json({ error: 'Forbidden' });
+    if (isSelfSend) {
+      selfUserId = user.id;
+    } else {
+      const { data: adminRow } = await supabase.from('accounts').select('is_admin').eq('user_id', user.id).single();
+      if (!adminRow?.is_admin) return res.status(403).json({ error: 'Forbidden' });
+    }
   }
 
   // ?date=YYYY-MM-DD override for admin testing (skips delivery-hour check and dedup)
   const override = (req.query?.date || '').match(/^\d{4}-\d{2}-\d{2}$/) ? req.query.date : null;
 
   // ?user_id=UUID — upload-triggered single-account send (cron secret required, uses today's date)
-  const targetUserId = (req.query?.user_id || '').trim() || null;
-  if (targetUserId && !isCron) return res.status(403).json({ error: 'Forbidden' });
+  const targetUserId = selfUserId || (req.query?.user_id || '').trim() || null;
+  if (targetUserId && !isCron && !selfUserId) return res.status(403).json({ error: 'Forbidden' });
 
   // Fetch eligible accounts (pro or premium, active)
   let accountQuery = supabase
@@ -438,6 +449,24 @@ function agentRows(agentInfo, callStats, salesStats) {
 // Charts are rendered on demand by api/chart.js the moment the recipient's email client
 // loads the <img> tag — this function only mints signed URLs, it does no data fetching
 // or image rendering itself. See CLAUDE.md "Agent Performance Charts" for the full design.
+// One <img> tag per chart config entry, sharing the cosmetic (color/opacity/outline)
+// query params every chart honors regardless of whether it's team-wide or per-agent.
+function chartImgTag(acct, c, agentId, dateStr) {
+  const type = ['bar', 'line', 'scatter'].includes(c.type) ? c.type : 'bar';
+  const sig = signChartParams({ u: acct.user_id, a: agentId, d: c.dataset, t: type, date: dateStr });
+  if (!sig) return ''; // CUSTOMER_ENCRYPTION_KEY not configured — skip charts rather than send an unsigned/broken URL
+  let src = `${BASE_URL}/api/chart?u=${encodeURIComponent(acct.user_id)}&a=${encodeURIComponent(agentId)}&d=${encodeURIComponent(c.dataset)}&t=${type}&date=${dateStr}&sig=${sig}`;
+  if (c.color)   src += `&color=${encodeURIComponent(c.color)}`;
+  if (c.opacity != null) src += `&opacity=${encodeURIComponent(c.opacity)}`;
+  if (c.outline) src += `&outline=${encodeURIComponent(c.outline)}`;
+  return `<div style="margin-bottom:12px;"><img src="${src}" width="360" height="170" style="display:block;border-radius:10px;max-width:100%;height:auto;border:1px solid #1e3a5f;" alt="${esc(CHART_DATASETS[c.dataset].label)}"></div>`;
+}
+
+// Sentinel agent id for team-wide charts — signed/verified the same as a real agent id
+// (see chart-sign.js), it just never needs to resolve to a roster row since api/chart.js
+// aggregates across every agent for these datasets instead of scoping to one.
+const TEAM_CHART_AGENT = '__team__';
+
 function agentChartsSection(acct, agentInfo, dateStr) {
   const config = Array.isArray(acct.report_chart_config) ? acct.report_chart_config : [];
   if (!acct.report_charts_enabled || !config.length) return '';
@@ -446,16 +475,20 @@ function agentChartsSection(acct, agentInfo, dateStr) {
   const usable = config.filter(c => CHART_DATASETS[c.dataset] && (!CHART_DATASETS[c.dataset].premiumOnly || isPremium));
   if (!usable.length) return '';
 
+  const teamUsable   = usable.filter(c => CHART_DATASETS[c.dataset].teamWide);
+  const agentUsable  = usable.filter(c => !CHART_DATASETS[c.dataset].teamWide);
+
+  const teamImgs = teamUsable.map(c => chartImgTag(acct, c, TEAM_CHART_AGENT, dateStr)).filter(Boolean).join('');
+  const teamSection = teamImgs ? `
+  <tr><td style="background:#132744;padding:0 32px 24px;">
+    <div style="font-size:13px;font-weight:700;color:#00d4ff;text-transform:uppercase;letter-spacing:.06em;padding:20px 0 12px;">Team Comparison Charts</div>
+    ${teamImgs}
+  </td></tr>` : '';
+
   const agentBlocks = Object.entries(agentInfo)
     .sort((a, b) => a[1].team.localeCompare(b[1].team) || a[1].name.localeCompare(b[1].name))
     .map(([agentId, info]) => {
-      const imgs = usable.map(c => {
-        const type = ['bar', 'line', 'scatter'].includes(c.type) ? c.type : 'bar';
-        const sig = signChartParams({ u: acct.user_id, a: agentId, d: c.dataset, t: type, date: dateStr });
-        if (!sig) return ''; // CUSTOMER_ENCRYPTION_KEY not configured — skip charts rather than send an unsigned/broken URL
-        const src = `${BASE_URL}/api/chart?u=${encodeURIComponent(acct.user_id)}&a=${encodeURIComponent(agentId)}&d=${encodeURIComponent(c.dataset)}&t=${type}&date=${dateStr}&sig=${sig}`;
-        return `<div style="margin-bottom:12px;"><img src="${src}" width="360" height="170" style="display:block;border-radius:10px;max-width:100%;height:auto;border:1px solid #1e3a5f;" alt="${esc(CHART_DATASETS[c.dataset].label)}"></div>`;
-      }).filter(Boolean).join('');
+      const imgs = agentUsable.map(c => chartImgTag(acct, c, agentId, dateStr)).filter(Boolean).join('');
       if (!imgs) return '';
       return `<div style="margin-bottom:20px;">
         <div style="font-size:12px;font-weight:700;color:#e8f4fd;margin-bottom:8px;">${esc(info.name)}</div>
@@ -463,12 +496,13 @@ function agentChartsSection(acct, agentInfo, dateStr) {
       </div>`;
     }).filter(Boolean).join('');
 
-  if (!agentBlocks) return '';
-  return `
+  const agentSection = agentBlocks ? `
   <tr><td style="background:#132744;padding:0 32px 24px;">
     <div style="font-size:13px;font-weight:700;color:#00d4ff;text-transform:uppercase;letter-spacing:.06em;padding:20px 0 12px;">Individual Agent Charts</div>
     ${agentBlocks}
-  </td></tr>`;
+  </td></tr>` : '';
+
+  return teamSection + agentSection;
 }
 
 function buildHtml(acct, dateLabel, dateStr, agentInfo, callStats, salesStats, totalCalls, totalAnswered, totalTalkSecs, totalPolicies, totalVoicemails, mtdStats, ytdStats, mtdStart, ytdStart, mtdPremium, ytdPremium) {

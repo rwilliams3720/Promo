@@ -2386,6 +2386,11 @@
           </div>
           <button class="btn btn-primary" onclick="saveReportPrefs()">Save Report Preferences</button>
           <div id="ac-report-msg" style="font-size:13px;margin-top:10px;display:none"></div>
+          <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border2);">
+            <p style="font-size:13px;color:var(--muted);margin-bottom:.75rem;">Don't want to wait for your scheduled delivery hour? Send today's report right now instead.</p>
+            <button class="btn" id="ac-send-now-btn" onclick="sendReportNow()">Send Report Now</button>
+            <div id="ac-send-now-msg" style="font-size:13px;margin-top:10px;display:none"></div>
+          </div>
         </div>
         <div class="acct-section" id="report-charts-section" style="display:none">
           <h3>Agent Performance Charts</h3>

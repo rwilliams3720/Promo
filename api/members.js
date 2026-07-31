@@ -41,7 +41,22 @@ export default async function handler(req, res) {
       update.role = role;
       update.custom_tabs = custom_tabs || null;
     }
-    if (roster_agent_id !== undefined) update.roster_agent_id = roster_agent_id || null;
+    if (roster_agent_id !== undefined) {
+      if (roster_agent_id) {
+        // A member's roster_agent_id must match a real agent_roster row for this owner —
+        // it's the sole link between a member's login and the assigned_agent_ids used by
+        // Quick-Count / bonus activities / goals. A typo here fails silently: the member
+        // just never matches any assignment, with no error anywhere to point at why.
+        const { data: rosterRow } = await supabase
+          .from('agent_roster')
+          .select('agent_id')
+          .eq('user_id', user.id)
+          .eq('agent_id', roster_agent_id)
+          .maybeSingle();
+        if (!rosterRow) return res.status(400).json({ error: 'Unknown agent — select an agent from the roster.' });
+      }
+      update.roster_agent_id = roster_agent_id || null;
+    }
     if (managed_by !== undefined) update.managed_by = managed_by || null;
 
     if (!Object.keys(update).length) return res.status(400).json({ error: 'No updates provided.' });
