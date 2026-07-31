@@ -1253,7 +1253,10 @@ function _renderBonusAnalysisEditor(t) {
   const checked = !!t.include_in_analysis;
   return `<div style="background:rgba(123,97,255,.04);border:1px solid rgba(123,97,255,.15);border-radius:6px;padding:.5rem .6rem;margin-bottom:.6rem;">
     <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:${checked?'.5rem':'0'};">
-      <input type="checkbox" id="bonus-edit-inanalysis-${sid}" ${checked?'checked':''} onchange="document.getElementById('bonus-edit-analysis-fields-${sid}').style.display=this.checked?'grid':'none'" style="accent-color:#7b61ff;cursor:pointer;">
+      <input type="checkbox" id="bonus-edit-inanalysis-${sid}" ${checked?'checked':''} onchange="
+        document.getElementById('bonus-edit-analysis-fields-${sid}').style.display=this.checked?'grid':'none';
+        document.getElementById('bonus-edit-chartstyle-${sid}').style.display=this.checked?'':'none';
+      " style="accent-color:#7b61ff;cursor:pointer;">
       Include in Team Member Analysis
     </label>
     <div id="bonus-edit-analysis-fields-${sid}" style="display:${checked?'grid':'none'};grid-template-columns:1fr 160px;gap:.5rem;">
@@ -1264,6 +1267,34 @@ function _renderBonusAnalysisEditor(t) {
           <option value="higher_better"${t.analysis_direction!=='lower_better'?' selected':''}>Higher is better</option>
           <option value="lower_better"${t.analysis_direction==='lower_better'?' selected':''}>Lower is better</option>
         </select></div>
+    </div>
+    ${_renderBonusChartStyleEditor(t, checked)}
+  </div>`;
+}
+
+// Bar-dataset appearance for this type when layered into a Team Member Analysis chart
+// (js/member-analysis.js renderAgentChartTiles) — same color/opacity/outline picker
+// pattern already used for the daily report's Agent Performance Charts (js/account.js
+// renderChartConfigList). Only meaningful once "Include in Team Member Analysis" is
+// checked, so it toggles alongside that section rather than always showing.
+function _renderBonusChartStyleEditor(t, checked) {
+  const sid = escHtml(t.id);
+  const color   = t.chart_color   || '#f472b6';
+  const opacity = t.chart_opacity != null ? t.chart_opacity : 1;
+  const outline = t.chart_outline || '';
+  return `<div id="bonus-edit-chartstyle-${sid}" style="display:${checked?'':'none'};margin-top:.5rem;padding-top:.5rem;border-top:1px solid rgba(123,97,255,.15);">
+    <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Chart Appearance <span style="opacity:.7;">— this metric's bar color in the analysis chart</span></div>
+    <div style="display:flex;align-items:center;gap:14px;font-size:11px;color:var(--muted);">
+      <label style="display:flex;align-items:center;gap:5px;">Color
+        <input type="color" id="bonus-edit-chart-color-${sid}" value="${color}" style="width:28px;height:22px;padding:0;border:1px solid var(--border);border-radius:4px;background:none;cursor:pointer;">
+      </label>
+      <label style="display:flex;align-items:center;gap:5px;">Opacity
+        <input type="range" id="bonus-edit-chart-opacity-${sid}" min="0.2" max="1" step="0.05" value="${opacity}" style="width:80px;">
+      </label>
+      <label style="display:flex;align-items:center;gap:5px;">Outline
+        <input type="color" id="bonus-edit-chart-outline-${sid}" value="${outline || '#000000'}" style="width:28px;height:22px;padding:0;border:1px solid var(--border);border-radius:4px;background:none;cursor:pointer;">
+        <input type="checkbox" id="bonus-edit-chart-outline-enabled-${sid}" ${outline ? 'checked' : ''} title="Enable outline">
+      </label>
     </div>
   </div>`;
 }
@@ -1326,6 +1357,11 @@ async function saveBonusActivityType(id, btn) {
   const include_in_analysis = document.getElementById('bonus-edit-inanalysis-' + id)?.checked || false;
   const analysis_description = (document.getElementById('bonus-edit-analysis-desc-' + id)?.value || '').trim();
   const analysis_direction   = document.getElementById('bonus-edit-analysis-dir-' + id)?.value || 'higher_better';
+  const chart_color   = document.getElementById('bonus-edit-chart-color-' + id)?.value || null;
+  const chart_opacity = document.getElementById('bonus-edit-chart-opacity-' + id)?.value != null
+    ? parseFloat(document.getElementById('bonus-edit-chart-opacity-' + id).value) : null;
+  const chartOutlineEnabled = document.getElementById('bonus-edit-chart-outline-enabled-' + id)?.checked;
+  const chart_outline = chartOutlineEnabled ? (document.getElementById('bonus-edit-chart-outline-' + id)?.value || null) : null;
   const msgEl = document.getElementById('bonus-type-save-msg-' + id);
   if (include_in_analysis && !analysis_description) {
     if (msgEl) { msgEl.textContent = 'Add a description to include this in analysis'; msgEl.style.color='var(--danger)'; msgEl.style.display=''; setTimeout(()=>{ if(msgEl) msgEl.style.display='none'; },3000); }
@@ -1335,11 +1371,11 @@ async function saveBonusActivityType(id, btn) {
   try {
     const r = await fetch('/api/bonus-activities', {
       method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'update_type', id, name, category, subcategory, source, call_disposition, payment, threshold_tiers, assigned_agent_ids, include_in_analysis, analysis_description, analysis_direction }),
+      body: JSON.stringify({ action: 'update_type', id, name, category, subcategory, source, call_disposition, payment, threshold_tiers, assigned_agent_ids, include_in_analysis, analysis_description, analysis_direction, chart_color, chart_opacity, chart_outline }),
     });
     if (r.ok) {
       const t = _activityTypes.find(x => x.id === id);
-      if (t) Object.assign(t, { name, category, subcategory, source, call_disposition, payment, threshold_tiers, assigned_agent_ids, include_in_analysis, analysis_description, analysis_direction });
+      if (t) Object.assign(t, { name, category, subcategory, source, call_disposition, payment, threshold_tiers, assigned_agent_ids, include_in_analysis, analysis_description, analysis_direction, chart_color, chart_opacity, chart_outline });
       _bonusTierDraft[id]  = JSON.parse(JSON.stringify(threshold_tiers));
       _bonusAgentDraft[id] = [...assigned_agent_ids];
       renderBonusActivityTypes();

@@ -1496,3 +1496,18 @@ ALTER TABLE accounts ADD COLUMN IF NOT EXISTS ma_chart_activities_enabled boolea
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS ma_chart_activities_target text NOT NULL DEFAULT 'calls';
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS ma_chart_activities_mode text NOT NULL DEFAULT 'grouped';
 ```
+
+### Per-type chart appearance (color/opacity/outline, added 2026-07-31)
+
+Each tracked activity type's bar dataset (above) now has the same color/opacity/outline customization as the daily report's Agent Performance Charts (`api/chart.js`/`js/account.js`), just stored per-`bonus_activity_type` instead of per-report-dataset — `chart_color`/`chart_opacity`/`chart_outline` columns on `bonus_activity_types`, all nullable/optional so existing types keep using the fallback cycling palette (`ACTIVITY_BAR_COLORS` in `renderAgentChartTiles`) until customized.
+
+**Editor**: `_renderBonusChartStyleEditor(t, checked)` in `js/sales.js`, nested inside `_renderBonusAnalysisEditor` and toggled by the same "Include in Team Member Analysis" checkbox — chart appearance is only meaningful once a type is actually flagged `include_in_analysis`, so there's no separate visibility flag to keep in sync. Same three-control pattern as the report chart picker: a color swatch, an opacity slider (0.2–1), and an optional outline color + enable checkbox. Saved via the existing `update_type` action (`saveBonusActivityType` in `js/sales.js`), validated server-side in `api/bonus-activities.js` (`sanitizeHexColor`/`sanitizeOpacity` — same hex regex and opacity clamp as `api/chart.js`).
+
+**Rendering**: `renderAgentChartTiles` (`js/member-analysis.js`) looks up each tracked metric's full type row from `_activityTypes` by name (the same name-keyed matching every other consumer of `customMetrics` already uses — there's no `activity_type_id` round-tripped through the analysis payload) and builds `backgroundColor` via a new `hexToRgba()` helper, since Chart.js bar datasets take one combined color string rather than a separate fill-opacity property the way the report's hand-rolled SVG renderer does. `chart_outline`, when set, adds `borderColor`/`borderWidth:1.5` to the dataset.
+
+**Migration required:**
+```sql
+ALTER TABLE bonus_activity_types ADD COLUMN IF NOT EXISTS chart_color text;
+ALTER TABLE bonus_activity_types ADD COLUMN IF NOT EXISTS chart_opacity numeric;
+ALTER TABLE bonus_activity_types ADD COLUMN IF NOT EXISTS chart_outline text;
+```

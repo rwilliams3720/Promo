@@ -27,6 +27,20 @@ function sanitizeAgentIds(raw) {
   return [...new Set(raw.map(a => String(a || '').trim()).filter(Boolean))].slice(0, 200);
 }
 
+// Chart appearance for this type's bar dataset when layered into a Team Member Analysis
+// chart (js/member-analysis.js renderAgentChartTiles) — same color/opacity/outline model
+// already used for the daily report's Agent Performance Charts (api/chart.js). All three
+// are optional/nullable; renderAgentChartTiles falls back to its own default cycling
+// palette when chart_color is unset, so existing types are unaffected until customized.
+const HEX_RE = /^#[0-9a-fA-F]{3,8}$/;
+function sanitizeHexColor(v) {
+  return typeof v === 'string' && HEX_RE.test(v) ? v : null;
+}
+function sanitizeOpacity(v) {
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? Math.min(1, Math.max(0.1, n)) : null;
+}
+
 async function resolveUser(token) {
   const { data: { user }, error } = await supabase.auth.getUser(token);
   if (error || !user) return null;
@@ -97,7 +111,7 @@ export default async function handler(req, res) {
     if (req.query.resource === 'types') {
       const { data, error } = await supabase
         .from('bonus_activity_types')
-        .select('id, name, category, subcategory, source, call_disposition, active, sort_order, payment, threshold_tiers, assigned_agent_ids, include_in_analysis, analysis_description, analysis_direction')
+        .select('id, name, category, subcategory, source, call_disposition, active, sort_order, payment, threshold_tiers, assigned_agent_ids, include_in_analysis, analysis_description, analysis_direction, chart_color, chart_opacity, chart_outline')
         .eq('user_id', dataUserId)
         .order('sort_order')
         .order('created_at');
@@ -173,7 +187,7 @@ export default async function handler(req, res) {
     const { action } = req.body || {};
 
     if (action === 'add_type') {
-      const { name, category, subcategory, source, call_disposition, payment, threshold_tiers, assigned_agent_ids, include_in_analysis, analysis_description, analysis_direction } = req.body;
+      const { name, category, subcategory, source, call_disposition, payment, threshold_tiers, assigned_agent_ids, include_in_analysis, analysis_description, analysis_direction, chart_color, chart_opacity, chart_outline } = req.body;
       if (!name) return res.status(400).json({ error: 'name required' });
       if (include_in_analysis && !String(analysis_description || '').trim()) {
         return res.status(400).json({ error: 'A short description is required to include this in analysis' });
@@ -193,8 +207,11 @@ export default async function handler(req, res) {
           include_in_analysis:   !!include_in_analysis,
           analysis_description:  (analysis_description || '').trim() || null,
           analysis_direction:    analysis_direction === 'lower_better' ? 'lower_better' : 'higher_better',
+          chart_color:           sanitizeHexColor(chart_color),
+          chart_opacity:         sanitizeOpacity(chart_opacity),
+          chart_outline:         sanitizeHexColor(chart_outline),
         })
-        .select('id, name, category, subcategory, source, call_disposition, active, sort_order, payment, threshold_tiers, assigned_agent_ids, include_in_analysis, analysis_description, analysis_direction')
+        .select('id, name, category, subcategory, source, call_disposition, active, sort_order, payment, threshold_tiers, assigned_agent_ids, include_in_analysis, analysis_description, analysis_direction, chart_color, chart_opacity, chart_outline')
         .single();
       if (error) {
         if (error.code === '23505') return res.status(409).json({ error: 'An activity type with that name already exists' });
@@ -340,7 +357,7 @@ export default async function handler(req, res) {
     if (action === 'update_type') {
       // Activity-type config is account-wide (incl. payout rate) — owner/captain/CO only.
       if (!ctx.canApprove) return res.status(403).json({ error: 'Approver access required' });
-      const { name, category, subcategory, source, call_disposition, active, payment, threshold_tiers, assigned_agent_ids, include_in_analysis, analysis_description, analysis_direction } = req.body;
+      const { name, category, subcategory, source, call_disposition, active, payment, threshold_tiers, assigned_agent_ids, include_in_analysis, analysis_description, analysis_direction, chart_color, chart_opacity, chart_outline } = req.body;
       const update = {};
       if (name                  !== undefined) update.name                  = name;
       if (category              !== undefined) update.category              = category;
@@ -354,6 +371,9 @@ export default async function handler(req, res) {
       if (include_in_analysis   !== undefined) update.include_in_analysis   = !!include_in_analysis;
       if (analysis_description  !== undefined) update.analysis_description  = (analysis_description || '').trim() || null;
       if (analysis_direction    !== undefined) update.analysis_direction    = analysis_direction === 'lower_better' ? 'lower_better' : 'higher_better';
+      if (chart_color           !== undefined) update.chart_color           = sanitizeHexColor(chart_color);
+      if (chart_opacity         !== undefined) update.chart_opacity         = sanitizeOpacity(chart_opacity);
+      if (chart_outline         !== undefined) update.chart_outline         = sanitizeHexColor(chart_outline);
       if (update.include_in_analysis && !(update.analysis_description ?? '').toString().trim()) {
         return res.status(400).json({ error: 'A short description is required to include this in analysis' });
       }

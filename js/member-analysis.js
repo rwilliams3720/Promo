@@ -12,6 +12,19 @@ function showInlineMsg(id, text, type='ok') {
   setTimeout(() => { if (el) el.style.display = 'none'; }, 4000);
 }
 
+// Chart.js bar datasets take one combined color string (no separate fill-opacity
+// property like the hand-rolled SVG renderer used for report charts), so opacity has
+// to be baked into an rgba() string here.
+function hexToRgba(hex, opacity) {
+  const h = String(hex || '').replace('#', '');
+  const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+  const n = parseInt(full.slice(0, 6), 16);
+  if (isNaN(n)) return hex;
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  const a = opacity != null ? Math.min(1, Math.max(0, opacity)) : 1;
+  return `rgba(${r},${g},${b},${a})`;
+}
+
 // ── Member Analysis — billing ─────────────────────────────────────────────────
 async function purchaseMemberAnalysis(btn) {
   const countEl = document.getElementById('ma-seat-count-new');
@@ -1042,6 +1055,9 @@ function renderAgentChartTiles(agId, ag) {
   // of the 3 charts the account owner picked in Settings, instead of a separate 4th chart —
   // per explicit request to reuse an "intuitive and appropriate" existing location. Mixed
   // line+bar on one Chart.js canvas is a supported combo-chart pattern (per-dataset `type`).
+  // Fallback palette for any type that hasn't set its own chart_color yet (js/sales.js
+  // "Chart Appearance" editor, same color/opacity/outline model as the daily report's
+  // Agent Performance Charts) — existing types are unaffected until customized.
   const ACTIVITY_BAR_COLORS = ['#f472b6', '#34d399', '#fb923c', '#60a5fa', '#a78bfa'];
   let activityDatasets = [];
   let activityStacked  = false;
@@ -1050,18 +1066,27 @@ function renderAgentChartTiles(agId, ag) {
     months.forEach(m => (m.customMetrics || []).forEach(c => names.add(c.name)));
     (cur?.customMetrics || []).forEach(c => names.add(c.name));
     activityStacked = _maChartActivitiesMode === 'stacked';
-    activityDatasets = [...names].map((name, i) => ({
-      type: 'bar',
-      label: name,
-      data: [
-        ...months.map(m => (m.customMetrics || []).find(c => c.name === name)?.count ?? 0),
-        ...(cur ? [(cur.customMetrics || []).find(c => c.name === name)?.count ?? 0] : []),
-      ],
-      backgroundColor: ACTIVITY_BAR_COLORS[i % ACTIVITY_BAR_COLORS.length],
-      yAxisID: 'yActivities',
-      stack: activityStacked ? 'activities' : `activities-${i}`,
-      order: 2, // draw behind the existing line series
-    }));
+    activityDatasets = [...names].map((name, i) => {
+      // customMetrics are name-keyed (no activity_type_id round-tripped through the
+      // analysis payload), so match back to the full type row the same way the rest of
+      // this pipeline already does — via _activityTypes, loaded by loadAddonConfig().
+      const type    = (_activityTypes || []).find(t => t.name === name);
+      const color   = type?.chart_color || ACTIVITY_BAR_COLORS[i % ACTIVITY_BAR_COLORS.length];
+      const opacity = type?.chart_opacity != null ? type.chart_opacity : 1;
+      return {
+        type: 'bar',
+        label: name,
+        data: [
+          ...months.map(m => (m.customMetrics || []).find(c => c.name === name)?.count ?? 0),
+          ...(cur ? [(cur.customMetrics || []).find(c => c.name === name)?.count ?? 0] : []),
+        ],
+        backgroundColor: hexToRgba(color, opacity),
+        ...(type?.chart_outline ? { borderColor: type.chart_outline, borderWidth: 1.5 } : {}),
+        yAxisID: 'yActivities',
+        stack: activityStacked ? 'activities' : `activities-${i}`,
+        order: 2, // draw behind the existing line series
+      };
+    });
   }
   const activityScale = { position: 'right', stacked: activityStacked, ticks: { color: tc, font: { size: 10 } }, grid: { drawOnChartArea: false } };
   const withActivities = (target, baseDatasets, baseScales, baseOptions = {}) =>
