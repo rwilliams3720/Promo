@@ -2576,10 +2576,14 @@ async function _autoSaveCarryForwards(results, month) {
       bankEntry.balance_after = r.bank_summary.settled_balance_after;
     }
 
+    // bankOnly tells the server this is the passive ledger snapshot, not a real payment —
+    // it must never touch commission_payments (that's saveCommissionPayment's job alone).
+    // amountPaid: null used to be trusted as that same signal; it wasn't enough — see
+    // api/commissions.js PATCH handler for the incident this caused.
     fetch('/api/commissions', {
       method: 'PATCH',
       headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ agentId: r.agent_id, month, amountPaid: null, bankEntry }),
+      body: JSON.stringify({ agentId: r.agent_id, month, amountPaid: null, bankEntry, bankOnly: true }),
     }).catch(() => {});
   }
 }

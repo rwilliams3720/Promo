@@ -485,24 +485,35 @@ export default async function handler(req, res) {
   if (req.method === 'PATCH') {
     if (!isOwner) return res.status(403).json({ error: 'Only the account owner can record payments' });
 
-    const { month, agentId, amountPaid, amountDisbursed, paidDate, notes, bankEntry } = req.body || {};
+    const { month, agentId, amountPaid, amountDisbursed, paidDate, notes, bankEntry, bankOnly } = req.body || {};
     if (!month || !agentId) return res.status(400).json({ error: 'month and agentId required' });
 
-    const { error } = await supabase
-      .from('commission_payments')
-      .upsert({
-        user_id:          dataUserId,
-        month,
-        agent_id:         agentId,
-        amount_paid:      amountPaid      != null ? parseFloat(amountPaid)      : null,
-        // NULL = fully disbursed (matches amount_paid). A caller only sends a lower
-        // amountDisbursed for a split/partial payment — see "Mark Paid" split checkbox.
-        amount_disbursed: amountDisbursed != null ? parseFloat(amountDisbursed) : null,
-        paid_date:        paidDate || null,
-        notes:            notes    || null,
-      }, { onConflict: 'user_id,month,agent_id' });
+    // bankOnly: this call is _autoSaveCarryForwards's passive ledger snapshot (fired on
+    // every commissions page render, for every agent, always with amountPaid: null — see
+    // js/sales.js), NOT an actual "record a payment" action. It must never touch
+    // commission_payments — only saveCommissionPayment (the real Mark Paid flow) may do
+    // that. Skipping this upsert for bankOnly calls is what actually enforces that;
+    // amountPaid being null was previously (wrongly) trusted as an implicit signal for
+    // the same thing, which silently wiped a real recorded payment back to null the first
+    // time this auto-save was ever allowed to run again for an already-paid month (fixed
+    // 2026-08-04 — see CLAUDE.md "commission_payments wiped by ledger auto-save").
+    if (!bankOnly) {
+      const { error } = await supabase
+        .from('commission_payments')
+        .upsert({
+          user_id:          dataUserId,
+          month,
+          agent_id:         agentId,
+          amount_paid:      amountPaid      != null ? parseFloat(amountPaid)      : null,
+          // NULL = fully disbursed (matches amount_paid). A caller only sends a lower
+          // amountDisbursed for a split/partial payment — see "Mark Paid" split checkbox.
+          amount_disbursed: amountDisbursed != null ? parseFloat(amountDisbursed) : null,
+          paid_date:        paidDate || null,
+          notes:            notes    || null,
+        }, { onConflict: 'user_id,month,agent_id' });
 
-    if (error) return res.status(500).json({ error: error.message });
+      if (error) return res.status(500).json({ error: error.message });
+    }
 
     // Save commission bank ledger entry if bank data was provided
     if (bankEntry) {
