@@ -2491,8 +2491,17 @@ function renderCommissions() {
         const cfOut   = r.carry_forward_out || 0;
         // net_earned from API = earned + bonus - CB + carry_forward_in (true net; can be negative)
         const netDisplay = r.net_earned;
-        // Default amount for Mark Paid: bank paid_out if available, otherwise max(0, net)
-        const defaultPay = r.bank_summary ? r.bank_summary.paid_out : Math.max(0, netDisplay);
+        // Default amount for Mark Paid: the larger of this month's automatic bank
+        // projection (paid_out) and the total currently owed (outstanding_receivable) —
+        // e.g. an agent with $0 new earnings this month but a real bank balance from
+        // before still has that balance owed. Without the max(), this defaulted to bare
+        // paid_out ($0 whenever net_earned<=0 with no cap), so typing any "amount actually
+        // paid now" for a split payment drawn from the bank failed client-side validation
+        // ("amount paid now can't exceed full obligation") unless the owner first
+        // overwrote the $0 default by hand.
+        const defaultPay = r.bank_summary
+          ? Math.max(r.bank_summary.paid_out, r.outstanding_receivable || 0)
+          : Math.max(0, netDisplay);
         const rowBg = r.recalculated ? 'background:rgba(255,179,0,.06);' : (cfOut < 0 ? 'background:rgba(255,77,109,.04);' : '');
         return `<tr style="border-bottom:1px solid var(--border2);${rowBg}" id="comm-row-${escHtml(r.agent_id)}">
           <td style="padding:8px 10px;">${escHtml(r.name)}</td>
