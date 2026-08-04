@@ -2541,7 +2541,6 @@ function renderCommissions() {
 
 async function _autoSaveCarryForwards(results, month) {
   for (const r of results) {
-    if (r.paid?.amount_paid != null) continue; // Mark Paid already saved the bank entry
     const cfOut = r.carry_forward_out || 0;
     const cfIn  = r.carry_forward_in  || 0;
     // Always persist the ledger snapshot, including $0 — skipping the zero case (old
@@ -2560,6 +2559,23 @@ async function _autoSaveCarryForwards(results, month) {
     };
     // For bank accounts ensure balance_after reflects the carry-forward debt
     if (r.bank_summary && cfOut < 0) bankEntry.balance_after = cfOut;
+
+    // Once a month has a recorded payment, Mark Paid (saveCommissionPayment) is the ONLY
+    // other place that ever writes its bank_balance_after, and it only reconciles ONCE, at
+    // the instant the payment is saved — never again after. If that reconciled value was
+    // ever wrong (stale data at the time, a since-fixed calculation bug, a later-edited
+    // sale) it stays wrong forever, and every later month keeps reading the frozen bad
+    // balance forward via priorBankBalance. This used to just skip already-paid months
+    // entirely to avoid re-applying the PATCH handler's amountPaid-triggered reconciliation
+    // a second time (which WOULD double-subtract) — instead, persist the server's already-
+    // reconciled settled_balance_after directly as balance_after, with amountPaid left null
+    // so the PATCH handler's reconciliation branch never fires on this call (fixed 2026-08-04
+    // — see CLAUDE.md "frozen paid-month bank balance").
+    if (r.paid?.amount_paid != null) {
+      if (!r.bank_summary || r.bank_summary.settled_balance_after == null) continue;
+      bankEntry.balance_after = r.bank_summary.settled_balance_after;
+    }
+
     fetch('/api/commissions', {
       method: 'PATCH',
       headers: { ...authHeaders(), 'Content-Type': 'application/json' },
