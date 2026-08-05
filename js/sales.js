@@ -2580,8 +2580,12 @@ async function _autoSaveCarryForwards(results, month) {
     // reconciled settled_balance_after directly as balance_after, with amountPaid left null
     // so the PATCH handler's reconciliation branch never fires on this call (fixed 2026-08-04
     // — see CLAUDE.md "frozen paid-month bank balance").
-    if (r.paid?.amount_paid != null) {
-      if (!r.bank_summary || r.bank_summary.settled_balance_after == null) continue;
+    //
+    // Apply settled_balance_after regardless of whether a payment was ever recorded — the
+    // server now also reconciles a never-paid month (treats it as $0 disbursed against a
+    // positive expected payout), so this keeps a simply-forgotten unpaid month's still-owed
+    // balance flowing into next month instead of only self-healing once Mark Paid is used.
+    if (r.bank_summary?.settled_balance_after != null) {
       bankEntry.balance_after = r.bank_summary.settled_balance_after;
     }
 

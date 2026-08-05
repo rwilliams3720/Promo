@@ -113,7 +113,7 @@ export default async function handler(req, res) {
         .order('sort_order'),
       // Prior bank ledger entries to compute running balance
       supabase.from('commission_bank')
-        .select('agent_id, month, bank_balance_after')
+        .select('agent_id, month, bank_balance_after, paid_out, manual_override')
         .eq('user_id', dataUserId)
         .order('created_at', { ascending: false }),
       // All recorded payments — used to find outstanding split/partial-payment balances
@@ -313,9 +313,18 @@ export default async function handler(req, res) {
     const currentKey = yr * 12 + (mo - 1);
     const priorBankBalance = {};
     const priorBankKey     = {};
+    // THIS month's own stored balance, when a human has locked it (manual_override) — used
+    // below to make the displayed "still owed" figure match what's actually carried forward,
+    // instead of a fresh sales_log-only recompute the lock exists specifically to override.
+    // See CLAUDE.md "commission_bank manual override".
+    const lockedCurrentBalance = {};
     for (const row of (bankLedgerRes.data || [])) {
       const rowKey = monthKey(row.month);
-      if (rowKey == null || rowKey >= currentKey) continue; // skip current + any non-prior month
+      if (rowKey == null) continue;
+      if (rowKey === currentKey && row.manual_override) {
+        lockedCurrentBalance[row.agent_id] = parseFloat(row.bank_balance_after) || 0;
+      }
+      if (rowKey >= currentKey) continue; // remainder is for priorBankBalance — current + future excluded
       if (priorBankKey[row.agent_id] == null || rowKey > priorBankKey[row.agent_id]) {
         priorBankKey[row.agent_id]     = rowKey;
         priorBankBalance[row.agent_id] = parseFloat(row.bank_balance_after) || 0;
@@ -337,13 +346,38 @@ export default async function handler(req, res) {
     // 2026-07-21 compounding-balance incident). Kept here purely so the UI can still show
     // an informational "$X owed from a prior split payment" badge.
     const outstandingReceivable = {};
+    const paidMonthsByAgent = new Set(); // `${agent_id}|${monthKey}` — has a recorded payment (even $0)
     for (const row of (allPaymentsRes?.data || [])) {
       const rowKey = monthKey(row.month);
-      if (rowKey == null || rowKey >= currentKey) continue; // only strictly-prior months
+      if (rowKey == null) continue;
+      if (row.amount_paid != null) paidMonthsByAgent.add(`${row.agent_id}|${rowKey}`);
+      if (rowKey >= currentKey) continue; // only strictly-prior months count toward receivable
       const paid      = parseFloat(row.amount_paid) || 0;
       const disbursed = row.amount_disbursed != null ? parseFloat(row.amount_disbursed) : paid;
       const owed = Math.max(0, Math.round((paid - disbursed) * 100) / 100);
       if (owed > 0) outstandingReceivable[row.agent_id] = (outstandingReceivable[row.agent_id] || 0) + owed;
+    }
+
+    // Positive payout expected in a strictly-prior month that was never marked paid at
+    // all (no commission_payments row, or amount_paid never set) — distinct from the
+    // split-shortfall case above, which requires a payment to have been recorded first.
+    // The bank chain (priorBankBalance) doesn't carry this forward on its own, since
+    // nothing ever triggers the PATCH-time reconciliation for a month that was simply
+    // never paid — so without this, a forgotten unpaid month is silently invisible past
+    // its own tab (2026-08-04 follow-up: "shouldn't Peyton's unpaid June have carried
+    // forward as owed?"). Uses commission_bank.paid_out, which every month gets written
+    // with (even bank-disabled accounts, via the client-side fallback in
+    // _autoSaveCarryForwards) — the amount the system expected to hand the agent that month.
+    const seenBankMonth = new Set();
+    for (const row of (bankLedgerRes.data || [])) {
+      const rowKey = monthKey(row.month);
+      if (rowKey == null || rowKey >= currentKey) continue; // only strictly-prior months
+      const dedupeKey = `${row.agent_id}|${rowKey}`;
+      if (seenBankMonth.has(dedupeKey)) continue;
+      seenBankMonth.add(dedupeKey);
+      if (paidMonthsByAgent.has(dedupeKey)) continue; // already recorded as paid — normal path handles it
+      const paidOut = Math.round((parseFloat(row.paid_out) || 0) * 100) / 100;
+      if (paidOut > 0) outstandingReceivable[row.agent_id] = (outstandingReceivable[row.agent_id] || 0) + paidOut;
     }
 
     // Build final results — include all agents from roster (even those with no sales)
@@ -423,19 +457,35 @@ export default async function handler(req, res) {
       const expectedPaid = bank_summary ? bank_summary.paid_out : Math.max(0, net_earned);
       const recalculated = paid != null && Math.abs(parseFloat(paid.amount_paid) - expectedPaid) > 0.01;
 
-      // "Still owed" for display: reconcile THIS month's bank_summary against a payment
-      // already recorded for it, the same way the PATCH handler does at save time — without
-      // mutating bank_summary itself (that object must stay the raw, unreconciled snapshot,
-      // since openPayForm/saveCommissionPayment capture it verbatim and re-apply this same
-      // reconciliation on every payment save; reconciling it here too would double-apply on
-      // an edit and drive the balance negative). Otherwise a month that's already been fully
-      // paid keeps showing its pre-payment hypothetical balance — and the "$X owed" badge —
-      // forever, even once the agent has actually been paid (2026-07-22 follow-up incident).
+      // "Still owed" for display: reconcile THIS month's bank_summary against whatever has
+      // actually been recorded as disbursed, the same way the PATCH handler does at save
+      // time — without mutating bank_summary itself (that object must stay the raw,
+      // unreconciled snapshot, since openPayForm/saveCommissionPayment capture it verbatim
+      // and re-apply this same reconciliation on every payment save; reconciling it here too
+      // would double-apply on an edit and drive the balance negative). Otherwise a month
+      // that's already been fully paid keeps showing its pre-payment hypothetical balance —
+      // and the "$X owed" badge — forever, even once the agent has actually been paid
+      // (2026-07-22 follow-up incident).
+      //
+      // No recorded payment at all (paid == null) is treated as $0 disbursed, not skipped —
+      // bank_summary.paid_out otherwise silently assumes the full amount was handed to the
+      // agent every month regardless of whether anyone ever actually clicked Mark Paid, so a
+      // simply-forgotten month vanished the moment its own tab was no longer being viewed
+      // (2026-08-04 follow-up: "shouldn't Peyton's unpaid June have carried forward as owed?").
       let settledBankBalance = bank_summary ? bank_summary.balance_after : null;
-      if (bank_summary && paid?.amount_paid != null) {
-        const disbursedNow = paid.amount_disbursed != null ? parseFloat(paid.amount_disbursed) : parseFloat(paid.amount_paid);
+      if (bank_summary) {
+        const disbursedNow = paid?.amount_paid != null
+          ? (paid.amount_disbursed != null ? parseFloat(paid.amount_disbursed) : parseFloat(paid.amount_paid))
+          : 0;
         const extra = Math.round((disbursedNow - (bank_summary.paid_out || 0)) * 100) / 100;
         settledBankBalance = Math.round((bank_summary.balance_after - extra) * 100) / 100;
+      }
+      // Locked month: show the human-corrected stored balance instead of the fresh
+      // sales_log-only recompute above — that recompute is exactly what the lock exists to
+      // override, so displaying it here would show a "still owed" figure inconsistent with
+      // what's actually carrying forward into next month.
+      if (bank_summary && lockedCurrentBalance[agent.agent_id] !== undefined) {
+        settledBankBalance = lockedCurrentBalance[agent.agent_id];
       }
       const outstanding_receivable = bankEnabled
         ? Math.max(0, settledBankBalance ?? 0)
@@ -517,37 +567,64 @@ export default async function handler(req, res) {
 
     // Save commission bank ledger entry if bank data was provided
     if (bankEntry) {
+      // manual_override: a human has directly corrected this month's stored balance to
+      // account for something the automated calc structurally cannot know about (e.g. a
+      // pre-migration legacy tracking system whose totals don't derive from sales_log at
+      // all) and locked it. Both the passive per-view auto-save AND a real payment
+      // reconciliation would otherwise silently recompute and overwrite that correction the
+      // next time anyone views this month — same failure shape as the frozen-balance bug,
+      // just inverted (there the stored value was wrong and needed to self-heal; here the
+      // stored value IS the correct one and the automated recompute is what's wrong). See
+      // CLAUDE.md "commission_bank manual override" (2026-08-05).
+      //
+      // Checked in its own try/catch, separate from the upsert below — on an account whose
+      // commission_bank table predates the `manual_override` column, this query alone would
+      // throw, and letting that bubble into the same catch as "table may not be migrated
+      // yet" would silently disable ALL bank writes for every agent on that account, not
+      // just fail open for the one row that doesn't need locking.
+      let locked = false;
       try {
-        // bankEntry is a snapshot the client captured when the "Mark Paid" form was opened
-        // — i.e. BEFORE the amounts the owner just typed. When this PATCH is an actual
-        // payment (amountPaid/amountDisbursed present, as opposed to _autoSaveCarryForwards's
-        // ledger-only save which sends amountPaid: null), reconcile balance_after against
-        // what was really disbursed instead of writing the stale pre-payment snapshot
-        // verbatim — otherwise a payment that fully settles the bank balance never zeroes
-        // it out, and it sits there as a phantom balance forever (2026-07-21 incident).
-        if (amountPaid != null) {
-          const disbursedNow  = amountDisbursed != null ? parseFloat(amountDisbursed) : parseFloat(amountPaid);
-          const assumedPaidOut = parseFloat(bankEntry.paid_out) || 0;
-          if (!isNaN(disbursedNow)) {
-            const extra = Math.round((disbursedNow - assumedPaidOut) * 100) / 100;
-            bankEntry = { ...bankEntry, balance_after: Math.round(((parseFloat(bankEntry.balance_after) || 0) - extra) * 100) / 100 };
+        const { data: existingBankRow } = await supabase
+          .from('commission_bank')
+          .select('manual_override')
+          .eq('user_id', dataUserId).eq('agent_id', agentId).eq('month', month)
+          .maybeSingle();
+        locked = !!existingBankRow?.manual_override;
+      } catch (_) { /* manual_override column not migrated yet on this account — treat as unlocked */ }
+
+      if (!locked) {
+        try {
+          // bankEntry is a snapshot the client captured when the "Mark Paid" form was opened
+          // — i.e. BEFORE the amounts the owner just typed. When this PATCH is an actual
+          // payment (amountPaid/amountDisbursed present, as opposed to _autoSaveCarryForwards's
+          // ledger-only save which sends amountPaid: null), reconcile balance_after against
+          // what was really disbursed instead of writing the stale pre-payment snapshot
+          // verbatim — otherwise a payment that fully settles the bank balance never zeroes
+          // it out, and it sits there as a phantom balance forever (2026-07-21 incident).
+          if (amountPaid != null) {
+            const disbursedNow  = amountDisbursed != null ? parseFloat(amountDisbursed) : parseFloat(amountPaid);
+            const assumedPaidOut = parseFloat(bankEntry.paid_out) || 0;
+            if (!isNaN(disbursedNow)) {
+              const extra = Math.round((disbursedNow - assumedPaidOut) * 100) / 100;
+              bankEntry = { ...bankEntry, balance_after: Math.round(((parseFloat(bankEntry.balance_after) || 0) - extra) * 100) / 100 };
+            }
           }
-        }
-        await supabase.from('commission_bank').upsert({
-          user_id:             dataUserId,
-          agent_id:            agentId,
-          month,
-          earned:              parseFloat(bankEntry.earned)         || 0,
-          cap_amount:          bankEntry.cap       != null ? parseFloat(bankEntry.cap)          : null,
-          paid_out:            parseFloat(bankEntry.paid_out)       || 0,
-          banked_amount:       parseFloat(bankEntry.banked)         || 0,
-          interest_amount:     parseFloat(bankEntry.interest)       || 0,
-          bank_balance_before: parseFloat(bankEntry.balance_before) || 0,
-          bank_balance_after:  parseFloat(bankEntry.balance_after)  || 0,
-          drawdown_amount:     parseFloat(bankEntry.drawdown)       || 0,
-          updated_at:          new Date().toISOString(),
-        }, { onConflict: 'user_id,agent_id,month' });
-      } catch (_) { /* commission_bank table may not be migrated yet */ }
+          await supabase.from('commission_bank').upsert({
+            user_id:             dataUserId,
+            agent_id:            agentId,
+            month,
+            earned:              parseFloat(bankEntry.earned)         || 0,
+            cap_amount:          bankEntry.cap       != null ? parseFloat(bankEntry.cap)          : null,
+            paid_out:            parseFloat(bankEntry.paid_out)       || 0,
+            banked_amount:       parseFloat(bankEntry.banked)         || 0,
+            interest_amount:     parseFloat(bankEntry.interest)       || 0,
+            bank_balance_before: parseFloat(bankEntry.balance_before) || 0,
+            bank_balance_after:  parseFloat(bankEntry.balance_after)  || 0,
+            drawdown_amount:     parseFloat(bankEntry.drawdown)       || 0,
+            updated_at:          new Date().toISOString(),
+          }, { onConflict: 'user_id,agent_id,month' });
+        } catch (_) { /* commission_bank table may not be migrated yet */ }
+      }
     }
 
     return res.status(200).json({ ok: true });
