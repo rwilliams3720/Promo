@@ -143,8 +143,12 @@ export default async function handler(req, res) {
       .gte('activity_date', from)
       .lte('activity_date', to)
       .order('activity_date', { ascending: false });
-    if (ctx.isMember && !ctx.canApprove && ctx.memberAgentId) {
-      q = q.eq('agent_id', ctx.memberAgentId);
+    // Gated on role (canApprove), not on whether roster_agent_id happens to be set — used
+    // to fail OPEN: a bosun/custom member not yet linked to a roster agent skipped this
+    // filter entirely and got every agent's bonus activities. Fail closed instead (fixed
+    // 2026-08-05, same root cause as api/commissions.js and api/agent-goals.js).
+    if (ctx.isMember && !ctx.canApprove) {
+      q = q.eq('agent_id', ctx.memberAgentId || '__unlinked_member__');
     }
     const { data: entries, error: eErr } = await q;
     if (eErr) return res.status(500).json({ error: eErr.message });

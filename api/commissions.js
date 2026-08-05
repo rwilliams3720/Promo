@@ -76,7 +76,10 @@ export default async function handler(req, res) {
   if (!ctx) return res.status(401).json({ error: 'Invalid token or insufficient access' });
   if (!ctx.hasAddon) return res.status(403).json({ error: 'Commissions add-on required' });
 
-  const { dataUserId, isOwner, memberAgentId, bankConfig } = ctx;
+  const { dataUserId, isOwner, memberAgentId, memberRole, bankConfig } = ctx;
+  // Captain/chief_officer see every agent's row, same as the owner; every other member
+  // role (bosun, custom) must be scoped to their own agent only.
+  const isCapOrCO = isOwner || ['captain', 'chief_officer'].includes(memberRole);
 
   // ── GET: calculate commissions for a month ───────────────────────────────────
   if (req.method === 'GET') {
@@ -523,9 +526,16 @@ export default async function handler(req, res) {
     // Sort by earned desc
     results.sort((a, b) => b.earned - a.earned);
 
-    // Members linked to a specific agent only see their own row
-    if (memberAgentId) {
-      results = results.filter(r => r.agent_id === memberAgentId);
+    // Non-captain/CO members (bosun, custom) only ever see their own row — gated on ROLE,
+    // not on whether roster_agent_id happens to be set. Gating on memberAgentId alone used
+    // to fail OPEN: a bosun/custom member not yet linked to a roster agent fell through this
+    // filter entirely and got every agent's commissions with no further check anywhere (the
+    // client just renders whatever `results` the server returns for a member — see
+    // renderCommissions() in js/sales.js). Fail closed instead — an unlinked non-cap/CO
+    // member matches a sentinel agent_id that can never exist, so they see nothing until
+    // an owner links them, rather than seeing everyone (fixed 2026-08-05).
+    if (!isCapOrCO) {
+      results = results.filter(r => r.agent_id === (memberAgentId || '__unlinked_member__'));
     }
 
     return res.status(200).json({ results, month: label, bank_config: bankConfig });

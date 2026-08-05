@@ -45,9 +45,14 @@ export default async function handler(req, res) {
       .select('*').eq('user_id', dataUserId)
       .order('period_start', { ascending: false });
 
-    // Members who can't write only see their own agent's goals
-    if (isMember && !canWrite && memberAgentId) {
-      q = q.eq('agent_id', memberAgentId);
+    // Members who can't write (bosun, custom) only ever see their own agent's goals —
+    // gated on role via canWrite, not on whether roster_agent_id happens to be set. Used to
+    // fail OPEN: a bosun/custom member not yet linked to a roster agent skipped this filter
+    // entirely and got every agent's goals. Fail closed instead — an unlinked non-writer
+    // matches a sentinel agent_id that can never exist, so they see nothing until an owner
+    // links them (fixed 2026-08-05).
+    if (isMember && !canWrite) {
+      q = q.eq('agent_id', memberAgentId || '__unlinked_member__');
     }
 
     const { data, error } = await q;
