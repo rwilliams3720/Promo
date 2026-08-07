@@ -6,6 +6,11 @@ import { CHART_DATASETS } from './_lib/chart-render.js';
 
 const BASE_URL = 'https://the-boat-race.com';
 
+// Cache-busting token for chart image URLs — see chartImgTag() below for why this exists.
+// Vercel auto-injects the deploying commit's SHA into every serverless function; falls
+// back to a fixed string under `vercel dev` (no commit context) or a from-source deploy.
+const CHART_RENDER_VERSION = (process.env.VERCEL_GIT_COMMIT_SHA || 'dev').slice(0, 8);
+
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
@@ -455,7 +460,21 @@ function chartImgTag(acct, c, agentId, dateStr) {
   const type = ['bar', 'line', 'scatter'].includes(c.type) ? c.type : 'bar';
   const sig = signChartParams({ u: acct.user_id, a: agentId, d: c.dataset, t: type, date: dateStr });
   if (!sig) return ''; // CUSTOMER_ENCRYPTION_KEY not configured — skip charts rather than send an unsigned/broken URL
-  let src = `${BASE_URL}/api/chart?u=${encodeURIComponent(acct.user_id)}&a=${encodeURIComponent(agentId)}&d=${encodeURIComponent(c.dataset)}&t=${type}&date=${dateStr}&sig=${sig}`;
+  // `v=` is an unsigned, cosmetic cache-buster (api/chart.js never reads it — its mere
+  // presence changes the URL) tied to the deploying commit, not the send. Without it, the
+  // URL for a given (account, agent, dataset, type, date) tuple is 100% deterministic, and
+  // api/chart.js sets `Cache-Control: public, max-age=86400` on it — so any client along the
+  // delivery chain that already fetched that exact URL once (Vercel's own edge cache, and
+  // especially Gmail's server-side image proxy, which caches by URL independent of the
+  // recipient's browser and won't clear on a page refresh) keeps serving those bytes for up
+  // to 24h even after the underlying chart-rendering code is fixed. Confirmed exactly this
+  // way (fixed 2026-08-07): repeated manual test sends earlier the same day, before a chart
+  // renderer fix shipped, poisoned that day's cache entries; a fresh send afterward reused
+  // the identical URL and kept showing the pre-fix broken image. Tying the cache key to the
+  // deploying commit means a future rendering fix can never be silently shadowed by a stale
+  // cache again, while still preserving the caching benefit between deploys for repeat opens
+  // of the same already-sent report.
+  let src = `${BASE_URL}/api/chart?u=${encodeURIComponent(acct.user_id)}&a=${encodeURIComponent(agentId)}&d=${encodeURIComponent(c.dataset)}&t=${type}&date=${dateStr}&sig=${sig}&v=${CHART_RENDER_VERSION}`;
   if (c.color)   src += `&color=${encodeURIComponent(c.color)}`;
   if (c.opacity != null) src += `&opacity=${encodeURIComponent(c.opacity)}`;
   if (c.outline) src += `&outline=${encodeURIComponent(c.outline)}`;
