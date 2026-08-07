@@ -42,6 +42,7 @@
     { "src": "favicon.svg",   "use": "@vercel/static" },
     { "src": "og.svg",        "use": "@vercel/static" },
     { "src": "og.png",        "use": "@vercel/static" },
+    { "src": "BebasNeue.ttf", "use": "@vercel/static" },
     { "src": "js/globals.js",         "use": "@vercel/static" },
     { "src": "js/init.js",            "use": "@vercel/static" },
     { "src": "js/race.js",            "use": "@vercel/static" },

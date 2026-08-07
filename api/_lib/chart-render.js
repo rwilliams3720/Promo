@@ -28,8 +28,13 @@ function fontFaceCss() {
   try {
     const b64 = readFileSync(path.join(process.cwd(), 'BebasNeue.ttf')).toString('base64');
     _fontFaceCss = `@font-face{font-family:'BebasNeue';src:url('data:font/truetype;base64,${b64}') format('truetype');}`;
-  } catch {
-    _fontFaceCss = ''; // font file missing — falls back to (nonexistent) system fonts rather than crashing chart render
+  } catch (err) {
+    // Falls back to the (nonexistent-on-Vercel) system font list rather than crashing chart
+    // render — but that fallback IS the original "every label renders as an empty box" bug,
+    // so log loudly rather than degrading silently. This exact silent-degrade is why the
+    // missing-BebasNeue.ttf-from-vercel.json regression (2026-08-06) shipped undetected.
+    console.error('[chart-render] BebasNeue.ttf failed to load — chart labels will render as empty boxes:', err.message);
+    _fontFaceCss = '';
   }
   return _fontFaceCss;
 }
