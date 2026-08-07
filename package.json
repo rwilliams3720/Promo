@@ -4,6 +4,7 @@
   "private": true,
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
+    "@resvg/resvg-js": "^2.6.2",
     "@supabase/supabase-js": "^2.49.4",
     "resend": "^6.12.2",
     "sharp": "^0.34.5",

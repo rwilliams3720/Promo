@@ -1,43 +1,38 @@
-// Hand-rolled SVG bar/line/scatter renderer, converted to PNG via sharp — same SVG→PNG
-// pipeline already proven working on Vercel by api/og.js. No chart library dependency;
-// our needs are simple (a handful of categories/points per image) so a small generator
-// is easier to keep dark-theme-consistent with the email than fighting a library's
-// theming API. Native size is 2x the <img> display size in the email so charts stay
-// sharp on retina displays.
-import sharp from 'sharp';
-import { readFileSync } from 'fs';
+// Hand-rolled SVG bar/line/scatter renderer, converted to PNG via @resvg/resvg-js. No
+// chart library dependency; our needs are simple (a handful of categories/points per
+// image) so a small generator is easier to keep dark-theme-consistent with the email
+// than fighting a library's theming API. Native size is 2x the <img> display size in
+// the email so charts stay sharp on retina displays.
+//
+// Renderer choice (2026-08-06): originally used `sharp`, same as api/og.js, with the
+// font embedded as a base64 @font-face data URI. That doesn't work — Vercel's
+// serverless runtime has no system fonts installed, and sharp's SVG renderer
+// (librsvg, via fontconfig) does NOT reliably resolve fonts embedded as data URIs; it
+// needs an actual font file it can point fontconfig at. This shipped invisible in
+// production for weeks because og.js has the identical bug — its embedded-font SVG
+// also renders blank text on Vercel, just never scrutinized closely (an OG preview
+// image, not something a user stares at) — so "proven working" was never actually
+// true. Confirmed by testing api/og.js in production directly: same blank-box text.
+// @resvg/resvg-js (Rust, via napi-rs, same category of prebuilt-native-binary
+// dependency sharp already is) accepts an explicit font FILE PATH and does not depend
+// on system fontconfig at all, so this is the fix, not the previous embedding trick.
+import { Resvg } from '@resvg/resvg-js';
+import { existsSync } from 'fs';
 import path from 'path';
 
 const W = 720, H = 340;
 const PAD_L = 64, PAD_R = 24, PAD_T = 34, PAD_B = 54;
 const PLOT_W = W - PAD_L - PAD_R;
 const PLOT_H = H - PAD_T - PAD_B;
-const FONT = "'BebasNeue', 'Helvetica', 'Arial', sans-serif";
-
-// Vercel's serverless runtime has NO system fonts installed at all — `font-family:
-// Helvetica,Arial,sans-serif` matches nothing, and sharp's SVG renderer (librsvg) then
-// draws every character as an empty missing-glyph box instead of failing loudly (this
-// exact symptom — bars/gridlines render fine, every label is a blank box — is what
-// shipped before this fix). og.js/og.svg already solved this by embedding the font
-// directly in the SVG as base64 data so rendering never depends on the host having any
-// font installed; mirrored here rather than relying on the OS. Read + base64-encoded
-// once at module load (cached across warm invocations) rather than per-request.
-let _fontFaceCss = null;
-function fontFaceCss() {
-  if (_fontFaceCss) return _fontFaceCss;
-  try {
-    const b64 = readFileSync(path.join(process.cwd(), 'BebasNeue.ttf')).toString('base64');
-    _fontFaceCss = `@font-face{font-family:'BebasNeue';src:url('data:font/truetype;base64,${b64}') format('truetype');}`;
-  } catch (err) {
-    // Falls back to the (nonexistent-on-Vercel) system font list rather than crashing chart
-    // render — but that fallback IS the original "every label renders as an empty box" bug,
-    // so log loudly rather than degrading silently. This exact silent-degrade is why the
-    // missing-BebasNeue.ttf-from-vercel.json regression (2026-08-06) shipped undetected.
-    console.error('[chart-render] BebasNeue.ttf failed to load — chart labels will render as empty boxes:', err.message);
-    _fontFaceCss = '';
-  }
-  return _fontFaceCss;
-}
+const FONT = 'BebasNeue';
+// Must also be listed under `config.includeFiles` on the api/chart.js build entry in
+// vercel.json — @vercel/node's file tracer can't statically detect a `path.join(process.cwd(), …)`
+// argument, so without that explicit entry this file silently isn't bundled into the
+// deployed function even though it exists in the repo and works fine under `vercel dev`
+// (which just reads straight off the working directory, no bundling step at all). This
+// exact gap is why the very first attempt at this fix passed local testing and did
+// nothing in production.
+const FONT_PATH = path.join(process.cwd(), 'BebasNeue.ttf');
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -134,7 +129,6 @@ export function renderChartSvg({ title, labels, values, color, opacity, outline,
   }
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-    <defs><style>${fontFaceCss()}</style></defs>
     <rect width="${W}" height="${H}" rx="12" fill="#060e1c"/>
     <text x="${PAD_L}" y="24" font-size="15" font-weight="700" fill="#e8f4fd" font-family="${FONT}">${esc(title)}</text>
     ${axes}
@@ -143,6 +137,19 @@ export function renderChartSvg({ title, labels, values, color, opacity, outline,
 }
 
 export async function renderChartPng(opts) {
+  // Fail loud, not silent: resvg-js doesn't error on a missing font file, it just quietly
+  // renders no text (same "blank box" symptom the last two bugs shipped as). Throwing here
+  // surfaces as a 500 on the chart <img> — an obviously broken image — instead of a
+  // plausible-looking chart with invisible labels nobody notices until a report gets sent.
+  if (!existsSync(FONT_PATH)) {
+    throw new Error(`Chart font missing at ${FONT_PATH} — check vercel.json includeFiles for api/chart.js`);
+  }
   const svg = renderChartSvg(opts);
-  return sharp(Buffer.from(svg), { density: 144 }).png().toBuffer();
+  // density-equivalent scaling: SVG is authored at native W×H (see top of file — already
+  // 2x the <img> display size for retina), so no extra fitTo scaling needed here, just a
+  // straight render at the SVG's own declared width/height.
+  const resvg = new Resvg(svg, {
+    font: { fontFiles: [FONT_PATH], loadSystemFonts: false, defaultFontFamily: FONT },
+  });
+  return resvg.render().asPng();
 }
