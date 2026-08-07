@@ -5,12 +5,34 @@
 // theming API. Native size is 2x the <img> display size in the email so charts stay
 // sharp on retina displays.
 import sharp from 'sharp';
+import { readFileSync } from 'fs';
+import path from 'path';
 
 const W = 720, H = 340;
 const PAD_L = 64, PAD_R = 24, PAD_T = 34, PAD_B = 54;
 const PLOT_W = W - PAD_L - PAD_R;
 const PLOT_H = H - PAD_T - PAD_B;
-const FONT = 'Helvetica,Arial,sans-serif';
+const FONT = "'BebasNeue', 'Helvetica', 'Arial', sans-serif";
+
+// Vercel's serverless runtime has NO system fonts installed at all — `font-family:
+// Helvetica,Arial,sans-serif` matches nothing, and sharp's SVG renderer (librsvg) then
+// draws every character as an empty missing-glyph box instead of failing loudly (this
+// exact symptom — bars/gridlines render fine, every label is a blank box — is what
+// shipped before this fix). og.js/og.svg already solved this by embedding the font
+// directly in the SVG as base64 data so rendering never depends on the host having any
+// font installed; mirrored here rather than relying on the OS. Read + base64-encoded
+// once at module load (cached across warm invocations) rather than per-request.
+let _fontFaceCss = null;
+function fontFaceCss() {
+  if (_fontFaceCss) return _fontFaceCss;
+  try {
+    const b64 = readFileSync(path.join(process.cwd(), 'BebasNeue.ttf')).toString('base64');
+    _fontFaceCss = `@font-face{font-family:'BebasNeue';src:url('data:font/truetype;base64,${b64}') format('truetype');}`;
+  } catch {
+    _fontFaceCss = ''; // font file missing — falls back to (nonexistent) system fonts rather than crashing chart render
+  }
+  return _fontFaceCss;
+}
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -107,6 +129,7 @@ export function renderChartSvg({ title, labels, values, color, opacity, outline,
   }
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+    <defs><style>${fontFaceCss()}</style></defs>
     <rect width="${W}" height="${H}" rx="12" fill="#060e1c"/>
     <text x="${PAD_L}" y="24" font-size="15" font-weight="700" fill="#e8f4fd" font-family="${FONT}">${esc(title)}</text>
     ${axes}
