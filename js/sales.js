@@ -2385,6 +2385,17 @@ function _buildCommAgentDetailHtml(r) {
 // Mirrors the Paid/Status cell logic from the owner's table (renderCommissions) so the
 // member's own view — which previously had no code path referencing r.paid at all — shows
 // whether a payment was actually recorded, not just the computed Earned/Net figures.
+// Compact "· $X on date, $Y on date" trail — only rendered when there's more than one
+// installment recorded (a single installment is already fully described by the amount/
+// date shown next to it, so repeating it here would be redundant).
+function _fmtInstallmentTrail(paid) {
+  const fmt2 = n => (n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const list = Array.isArray(paid?.installments) ? paid.installments : [];
+  if (list.length < 2) return '';
+  const parts = list.map(i => `$${fmt2(i.amount)}${i.date ? ` on ${escHtml(i.date)}` : ''}`).join(', ');
+  return `<div style="color:var(--muted);font-size:11px;margin-top:2px;">${parts}</div>`;
+}
+
 function _buildCommPaidStatusHtml(r) {
   const fmt2   = n => (n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const isPaid = r.paid?.amount_paid != null;
@@ -2397,14 +2408,17 @@ function _buildCommPaidStatusHtml(r) {
       : (r.outstanding_receivable || 0) > 0
         ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(0,212,255,.12);color:var(--accent);" title="From a prior split payment — still owed to you">$${fmt2(r.outstanding_receivable)} owed</span>`
         : `<span style="font-size:11px;padding:2px 8px;border-radius:20px;${isPaid ? 'background:rgba(0,229,180,.15);color:var(--accent2)' : 'background:rgba(255,255,255,.06);color:var(--muted)'};">${isPaid ? 'Paid' : 'Unpaid'}</span>`;
-  return `<div style="display:flex;align-items:center;gap:10px;margin:.5rem 0;font-size:12px;">
-    <span style="color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-size:10px;">Payment</span>
-    ${isPaid
-      ? `<span style="font-weight:600;">$${fmt2(r.paid.amount_paid)}${r.paid.paid_date ? ` on ${escHtml(r.paid.paid_date)}` : ''}</span>
-         ${isSplit ? `<span style="color:var(--muted);">($${fmt2(r.paid.amount_disbursed)} disbursed so far)</span>` : ''}
-         ${r.paid.notes ? `<span style="color:var(--muted);">— ${escHtml(r.paid.notes)}</span>` : ''}`
-      : ''}
-    ${badge}
+  return `<div style="margin:.5rem 0;font-size:12px;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span style="color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-size:10px;">Payment</span>
+      ${isPaid
+        ? `<span style="font-weight:600;">$${fmt2(r.paid.amount_paid)}${r.paid.paid_date ? ` on ${escHtml(r.paid.paid_date)}` : ''}</span>
+           ${isSplit ? `<span style="color:var(--muted);">($${fmt2(r.paid.amount_disbursed)} disbursed so far)</span>` : ''}
+           ${r.paid.notes ? `<span style="color:var(--muted);">— ${escHtml(r.paid.notes)}</span>` : ''}`
+        : ''}
+      ${badge}
+    </div>
+    ${isPaid ? _fmtInstallmentTrail(r.paid) : ''}
   </div>`;
 }
 
@@ -2516,7 +2530,11 @@ function renderCommissions() {
           </td>
           <td style="padding:8px 10px;text-align:right;">
             ${isPaid
-              ? `<div style="font-weight:600;">$${fmt2(parseFloat(r.paid.amount_paid))}</div>
+              ? `<div style="font-weight:600;">$${fmt2(parseFloat(r.paid.amount_paid))}${
+                  Array.isArray(r.paid.installments) && r.paid.installments.length > 1
+                    ? ` <span style="font-weight:400;color:var(--muted);font-size:10px;cursor:help;" title="${escHtml(r.paid.installments.map(i => `$${fmt2(i.amount)}${i.date ? ' on ' + i.date : ''}`).join(', '))}">(${r.paid.installments.length} payments)</span>`
+                    : ''
+                }</div>
                  ${notes ? `<div style="font-size:10px;color:var(--muted);margin-top:1px;">${escHtml(notes)}</div>` : ''}`
               : `<span style="color:var(--muted);">—</span>`}
           </td>
@@ -2611,11 +2629,12 @@ function toggleCommSaleDetail(id) {
   if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 
-function openPayForm(agentId, agentName, earned, month) {
-  // Find bank_summary (or carry-forward data) for this agent from last loaded commission data
+// Resolves this agent's bank_summary (or a synthetic one for non-bank accounts with
+// carry-forward) from the last-loaded commission data — needed by both the full pay form
+// and the add-installment form, since either save path reconciles the bank balance.
+function _payFormBankSummary(agentId) {
   const agentRow = (_commData?.results || []).find(r => r.agent_id === agentId);
   let bankSummary = agentRow?.bank_summary || null;
-  // For non-bank accounts with carry-forward, build a synthetic bank entry so it persists
   if (!bankSummary && agentRow && ((agentRow.carry_forward_in || 0) !== 0 || (agentRow.carry_forward_out || 0) !== 0)) {
     bankSummary = {
       earned:         (agentRow.earned || 0) + (agentRow.bonus_earned || 0) - (agentRow.chargeback_total || 0),
@@ -2628,6 +2647,10 @@ function openPayForm(agentId, agentName, earned, month) {
       drawdown:       0,
     };
   }
+  return bankSummary;
+}
+
+function openPayForm(agentId, agentName, earned, month) {
   const container = document.getElementById('comm-pay-modal');
   if (!container) return;
   const existing = _commPayments[agentId] || null;
@@ -2635,6 +2658,93 @@ function openPayForm(agentId, agentName, earned, month) {
   // A payment is a split/partial one when amount_disbursed was recorded lower than amount_paid.
   const isSplit = paid && existing.amount_disbursed != null && existing.amount_disbursed < existing.amount_paid;
   container.style.display = '';
+  // Already has a payment on record — default to the installment-history + add-payment
+  // view (recording a SECOND payment must not clobber the first one's date, which is what
+  // reusing the full form here used to do). "Edit Full Record" remains available as an
+  // escape hatch for correcting a mistake, not for logging a legitimate second payment.
+  if (paid) {
+    _renderInstallmentPayView(agentId, agentName, month, existing, isSplit);
+  } else {
+    _renderFullPayForm(agentId, agentName, month, earned, null);
+  }
+  container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function _renderInstallmentPayView(agentId, agentName, month, existing, isSplit) {
+  const container = document.getElementById('comm-pay-modal');
+  if (!container) return;
+  const fmt2 = n => (n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  // Fall back to a single synthetic installment from the legacy fields when installments
+  // is empty — covers a row saved before this feature existed, or the brief window between
+  // this code deploying and the backfill migration running (see CLAUDE.md "Commission
+  // payment installments").
+  const list = Array.isArray(existing.installments) && existing.installments.length
+    ? existing.installments
+    : [{ amount: existing.amount_disbursed != null ? existing.amount_disbursed : existing.amount_paid, date: existing.paid_date, notes: existing.notes }];
+  const disbursedTotal = existing.amount_disbursed != null ? parseFloat(existing.amount_disbursed) : parseFloat(existing.amount_paid);
+  const remaining = Math.max(0, Math.round((parseFloat(existing.amount_paid) - disbursedTotal) * 100) / 100);
+  const historyRows = list.map(i =>
+    `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:12px;">
+      <span>$${fmt2(i.amount)}${i.date ? ` on ${escHtml(i.date)}` : ''}</span>
+      ${i.notes ? `<span style="color:var(--muted);">${escHtml(i.notes)}</span>` : ''}
+    </div>`).join('');
+
+  const bankSummary = _payFormBankSummary(agentId);
+  const bankArg = bankSummary ? `'${escHtml(JSON.stringify(bankSummary))}'` : 'null';
+
+  container.innerHTML = `
+    <div class="panel" style="margin-top:1rem;border:1px solid var(--border);border-radius:10px;padding:1rem;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:.5rem;">Record Payment — ${escHtml(agentName)}</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:.5rem;">Full obligation: <span style="color:var(--text);font-weight:600;">$${fmt2(existing.amount_paid)}</span></div>
+      <div style="background:var(--deep);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:.75rem;">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Payment History</div>
+        ${historyRows}
+      </div>
+      ${remaining > 0 ? `
+        <div style="font-size:12px;margin-bottom:.5rem;"><span style="color:var(--muted);">Remaining owed:</span> <span style="color:var(--accent);font-weight:700;">$${fmt2(remaining)}</span></div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:.75rem;">If this stays unpaid, it carries forward as owed into next month automatically.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;margin-bottom:.75rem;">
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">AMOUNT</label>
+            <input id="inst-amount" type="number" min="0" step="0.01" max="${remaining}" value="${remaining}" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 8px;font-size:13px;outline:none;box-sizing:border-box;">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">DATE</label>
+            <input id="inst-date" type="date" value="${new Date().toISOString().slice(0,10)}" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 8px;font-size:13px;outline:none;box-sizing:border-box;">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">NOTES</label>
+            <input id="inst-notes" type="text" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 8px;font-size:13px;outline:none;box-sizing:border-box;">
+          </div>
+        </div>
+        <div id="pay-msg" style="font-size:12px;margin-bottom:.5rem;display:none;"></div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn btn-primary" style="font-size:13px;" onclick="addCommissionInstallment('${escHtml(agentId)}','${escHtml(month)}',this,${bankArg})">Record Payment</button>
+          <button class="btn btn-secondary" style="font-size:13px;" onclick="document.getElementById('comm-pay-modal').style.display='none'">Cancel</button>
+          <button style="margin-left:auto;background:none;border:none;color:var(--muted);font-size:11px;text-decoration:underline;cursor:pointer;" onclick="_renderFullPayForm('${escHtml(agentId)}','${escHtml(agentName)}','${escHtml(month)}',0,${bankArg})">Edit full record instead</button>
+        </div>
+      ` : `
+        <div style="font-size:12px;color:var(--accent2);margin-bottom:.75rem;">&#x2713; Fully paid.</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn btn-secondary" style="font-size:13px;" onclick="document.getElementById('comm-pay-modal').style.display='none'">Close</button>
+          <button style="margin-left:auto;background:none;border:none;color:var(--muted);font-size:11px;text-decoration:underline;cursor:pointer;" onclick="_renderFullPayForm('${escHtml(agentId)}','${escHtml(agentName)}','${escHtml(month)}',0,${bankArg})">Edit full record instead</button>
+        </div>
+      `}
+    </div>`;
+}
+
+// The original single-record form — creates the FIRST installment for a not-yet-paid
+// month, or (via the "Edit full record instead" escape hatch above) directly overwrites
+// the whole payment record to correct a mistake. Not used to log a legitimate second
+// payment — that goes through addCommissionInstallment/_renderInstallmentPayView instead,
+// which preserves the first payment's date rather than replacing it.
+function _renderFullPayForm(agentId, agentName, month, earned, bankSummaryOverride) {
+  const container = document.getElementById('comm-pay-modal');
+  if (!container) return;
+  const existing = _commPayments[agentId] || null;
+  const paid = existing?.amount_paid != null;
+  const isSplit = paid && existing.amount_disbursed != null && existing.amount_disbursed < existing.amount_paid;
+  const bankSummary = bankSummaryOverride || _payFormBankSummary(agentId);
   container.innerHTML = `
     <div class="panel" style="margin-top:1rem;border:1px solid var(--border);border-radius:10px;padding:1rem;">
       <div style="font-size:13px;font-weight:700;margin-bottom:.75rem;">Record Payment — ${escHtml(agentName)}</div>
@@ -2652,6 +2762,7 @@ function openPayForm(agentId, agentName, earned, month) {
           <input id="pay-notes" type="text" value="${paid ? escHtml(existing.notes || '') : ''}" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 8px;font-size:13px;outline:none;box-sizing:border-box;">
         </div>
       </div>
+      ${paid ? `<div style="font-size:11px;color:#ffb300;margin-bottom:.5rem;">&#x26A0; This overwrites the entire payment record, including prior installment history. Use this only to correct a mistake.</div>` : ''}
       <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;margin-bottom:.5rem;">
         <input type="checkbox" id="pay-split" ${isSplit ? 'checked' : ''} onchange="document.getElementById('pay-disbursed-row').style.display=this.checked?'':'none'">
         Split payment — only part of this has actually been paid out so far
@@ -2668,6 +2779,29 @@ function openPayForm(agentId, agentName, earned, month) {
       </div>
     </div>`;
   container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+async function addCommissionInstallment(agentId, month, btn, bankSummaryJson) {
+  const amount = parseFloat(document.getElementById('inst-amount')?.value);
+  const paidDate = document.getElementById('inst-date')?.value || null;
+  const notes = document.getElementById('inst-notes')?.value || null;
+  if (isNaN(amount) || amount <= 0) { showInlineMsg('pay-msg', 'Enter a valid amount.', 'err'); return; }
+  btn.disabled = true;
+  let bankEntry = null;
+  if (bankSummaryJson) {
+    try { bankEntry = JSON.parse(bankSummaryJson); } catch(_) {}
+  }
+  try {
+    const r = await fetch('/api/commissions', {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agentId, month, addInstallment: true, amount, paidDate, notes, bankEntry }),
+    });
+    if (!r.ok) { const d = await r.json(); showInlineMsg('pay-msg', d.error || 'Error', 'err'); return; }
+    document.getElementById('comm-pay-modal').style.display = 'none';
+    await loadCommissions();
+  } catch(e) { showInlineMsg('pay-msg', e.message, 'err'); }
+  finally { btn.disabled = false; }
 }
 
 async function saveCommissionPayment(agentId, month, btn, bankSummaryJson) {

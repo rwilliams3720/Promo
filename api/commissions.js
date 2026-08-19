@@ -293,12 +293,28 @@ export default async function handler(req, res) {
       }
     }
 
-    // Fetch commission payments for this month
-    const { data: payments } = await supabase
-      .from('commission_payments')
-      .select('agent_id, amount_paid, amount_disbursed, paid_date, notes')
-      .eq('user_id', dataUserId)
-      .eq('month', label);
+    // Fetch commission payments for this month. `installments` may not exist yet on an
+    // account whose commission_payments table predates that column (pending migration) —
+    // retry without it rather than letting the whole GET fail, same pattern as the
+    // manual_override lock check below.
+    let payments;
+    {
+      const res = await supabase
+        .from('commission_payments')
+        .select('agent_id, amount_paid, amount_disbursed, paid_date, notes, installments')
+        .eq('user_id', dataUserId)
+        .eq('month', label);
+      if (res.error) {
+        const fallback = await supabase
+          .from('commission_payments')
+          .select('agent_id, amount_paid, amount_disbursed, paid_date, notes')
+          .eq('user_id', dataUserId)
+          .eq('month', label);
+        payments = (fallback.data || []).map(p => ({ ...p, installments: [] }));
+      } else {
+        payments = res.data;
+      }
+    }
 
     const paymentByAgent = {};
     for (const p of (payments || [])) paymentByAgent[p.agent_id] = p;
@@ -545,33 +561,94 @@ export default async function handler(req, res) {
   if (req.method === 'PATCH') {
     if (!isOwner) return res.status(403).json({ error: 'Only the account owner can record payments' });
 
-    const { month, agentId, amountPaid, amountDisbursed, paidDate, notes, bankEntry, bankOnly } = req.body || {};
+    let { month, agentId, amountPaid, amountDisbursed, paidDate, notes, bankEntry, bankOnly, addInstallment } = req.body || {};
     if (!month || !agentId) return res.status(400).json({ error: 'month and agentId required' });
 
-    // bankOnly: this call is _autoSaveCarryForwards's passive ledger snapshot (fired on
-    // every commissions page render, for every agent, always with amountPaid: null — see
-    // js/sales.js), NOT an actual "record a payment" action. It must never touch
-    // commission_payments — only saveCommissionPayment (the real Mark Paid flow) may do
-    // that. Skipping this upsert for bankOnly calls is what actually enforces that;
-    // amountPaid being null was previously (wrongly) trusted as an implicit signal for
-    // the same thing, which silently wiped a real recorded payment back to null the first
-    // time this auto-save was ever allowed to run again for an already-paid month (fixed
-    // 2026-08-04 — see CLAUDE.md "commission_payments wiped by ledger auto-save").
-    if (!bankOnly) {
-      const { error } = await supabase
+    if (addInstallment) {
+      // A second (or third...) payment settling more of an already-recorded month's
+      // deficit — distinct from the normal full-record save below, which would overwrite
+      // paid_date/notes and lose the FIRST payment's date instead of adding a new one.
+      // amount_paid (the full obligation) is fixed once a month is first marked paid;
+      // only amount_disbursed and the installments history grow here. See CLAUDE.md
+      // "Commission payment installments".
+      const installmentAmount = parseFloat(req.body?.amount);
+      if (isNaN(installmentAmount) || installmentAmount <= 0) {
+        return res.status(400).json({ error: 'Enter a valid installment amount' });
+      }
+      const { data: existing, error: fetchErr } = await supabase
         .from('commission_payments')
-        .upsert({
-          user_id:          dataUserId,
-          month,
-          agent_id:         agentId,
-          amount_paid:      amountPaid      != null ? parseFloat(amountPaid)      : null,
-          // NULL = fully disbursed (matches amount_paid). A caller only sends a lower
-          // amountDisbursed for a split/partial payment — see "Mark Paid" split checkbox.
-          amount_disbursed: amountDisbursed != null ? parseFloat(amountDisbursed) : null,
-          paid_date:        paidDate || null,
-          notes:            notes    || null,
-        }, { onConflict: 'user_id,month,agent_id' });
+        .select('amount_paid, amount_disbursed, installments')
+        .eq('user_id', dataUserId).eq('month', month).eq('agent_id', agentId)
+        .maybeSingle();
+      if (fetchErr) return res.status(500).json({ error: fetchErr.message });
+      if (!existing || existing.amount_paid == null) {
+        return res.status(400).json({ error: 'No existing payment on record for this month — use Mark Paid first' });
+      }
+      const priorInstallments = Array.isArray(existing.installments) ? existing.installments : [];
+      const priorDisbursed = existing.amount_disbursed != null ? parseFloat(existing.amount_disbursed) : parseFloat(existing.amount_paid);
+      const newDisbursed = Math.round((priorDisbursed + installmentAmount) * 100) / 100;
+      if (newDisbursed > parseFloat(existing.amount_paid) + 0.01) {
+        return res.status(400).json({ error: 'This installment would exceed the full obligation for the month' });
+      }
+      const newInstallments = [...priorInstallments, { amount: installmentAmount, date: paidDate || null, notes: notes || null }];
+      const { error: updateErr } = await supabase
+        .from('commission_payments')
+        .update({
+          amount_disbursed: newDisbursed,
+          paid_date:         paidDate || null, // most recent installment's date, for the existing single-field summary display
+          notes:              notes    || null, // most recent installment's note, same reasoning
+          installments:       newInstallments,
+        })
+        .eq('user_id', dataUserId).eq('month', month).eq('agent_id', agentId);
+      if (updateErr) return res.status(500).json({ error: updateErr.message });
 
+      // Feed the same bank-reconciliation logic below (unchanged) using the now-current
+      // cumulative totals, exactly as if this had been a normal full-record save with
+      // these amounts — a second installment that fully settles the month must reconcile
+      // the bank balance down to zero (or whatever remains) the same way the first would.
+      amountPaid = parseFloat(existing.amount_paid);
+      amountDisbursed = newDisbursed;
+    } else if (!bankOnly) {
+      // bankOnly: this call is _autoSaveCarryForwards's passive ledger snapshot (fired on
+      // every commissions page render, for every agent, always with amountPaid: null — see
+      // js/sales.js), NOT an actual "record a payment" action. It must never touch
+      // commission_payments — only saveCommissionPayment (the real Mark Paid flow) may do
+      // that. Skipping this upsert for bankOnly calls is what actually enforces that;
+      // amountPaid being null was previously (wrongly) trusted as an implicit signal for
+      // the same thing, which silently wiped a real recorded payment back to null the first
+      // time this auto-save was ever allowed to run again for an already-paid month (fixed
+      // 2026-08-04 — see CLAUDE.md "commission_payments wiped by ledger auto-save").
+      //
+      // A full save always starts a fresh installments history of exactly one entry — this
+      // is the "first payment" (or a deliberate full-record correction/overwrite via the
+      // "Edit Full Record" escape hatch), never an append. Follow-up payments go through
+      // the addInstallment branch above instead.
+      const singleInstallment = amountPaid != null
+        ? [{ amount: amountDisbursed != null ? parseFloat(amountDisbursed) : parseFloat(amountPaid), date: paidDate || null, notes: notes || null }]
+        : [];
+      const paymentRow = {
+        user_id:          dataUserId,
+        month,
+        agent_id:         agentId,
+        amount_paid:      amountPaid      != null ? parseFloat(amountPaid)      : null,
+        // NULL = fully disbursed (matches amount_paid). A caller only sends a lower
+        // amountDisbursed for a split/partial payment — see "Mark Paid" split checkbox.
+        amount_disbursed: amountDisbursed != null ? parseFloat(amountDisbursed) : null,
+        paid_date:        paidDate || null,
+        notes:            notes    || null,
+      };
+      let { error } = await supabase
+        .from('commission_payments')
+        .upsert({ ...paymentRow, installments: singleInstallment }, { onConflict: 'user_id,month,agent_id' });
+      if (error) {
+        // installments column not migrated yet on this account — retry without it rather
+        // than letting a live Mark Paid save fail outright. This table is shared across
+        // every account on the platform, so one account's pending migration must not break
+        // payment recording for the rest.
+        ({ error } = await supabase
+          .from('commission_payments')
+          .upsert(paymentRow, { onConflict: 'user_id,month,agent_id' }));
+      }
       if (error) return res.status(500).json({ error: error.message });
     }
 
