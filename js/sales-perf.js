@@ -39,7 +39,12 @@ function spDisplayLabel(key, rawVal) {
 }
 
 function spActiveEntries() {
-  let entries = _spEntries;
+  // Excludes cancelled/charged-back sales — matches the Race tab (api/_lib/race-data.js
+  // filters is_cancelled=false) and keeps this tab's totals consistent with it. The raw
+  // Sales Log list (_filteredSalesEntries in this same file) intentionally still shows
+  // cancelled entries with their chargeback badge; only this tab's aggregate counts/charts
+  // exclude them. See CLAUDE.md "Cross-report consistency".
+  let entries = _spEntries.filter(e => !e.is_cancelled);
   if (_spLocationFilter && _spLocationFilter !== 'all') {
     entries = entries.filter(e => (e.location || '').trim() === _spLocationFilter);
   }
@@ -74,7 +79,10 @@ function spGroup(entries, dimKey) {
   entries.forEach(e => {
     const k = spFieldVal(dimKey, e);
     if (!g[k]) g[k] = { count: 0, premium: 0 };
-    g[k].count++;
+    // Weighted by sale_weight (0.5 for either side of a split sale, 1 otherwise) — matches
+    // the Race tab so a shared deal isn't double-counted here relative to standings. Premium
+    // needs no such adjustment: written_premium is already each agent's own split share.
+    g[k].count += (e.sale_weight ?? 1);
     if (e.written_premium) g[k].premium += parseFloat(e.written_premium) || 0;
   });
   return g;
@@ -129,7 +137,9 @@ function spRender() {
 function spRenderSummary(entries) {
   const el = document.getElementById('sp-summary');
   if (!el) return;
-  const count = entries.length;
+  // Weighted by sale_weight, same as spGroup() — a split sale's two rows sum to 1 policy,
+  // not 2, consistent with how the Race tab counts it.
+  const count = entries.reduce((s, e) => s + (e.sale_weight ?? 1), 0);
   const prem  = entries.reduce((s, e) => s + (parseFloat(e.written_premium) || 0), 0);
   el.textContent = count + (count === 1 ? ' policy' : ' policies') +
     (prem ? '  ·  $' + prem.toLocaleString('en-US', { maximumFractionDigits: 0 }) + ' premium' : '');

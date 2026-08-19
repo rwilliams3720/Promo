@@ -187,9 +187,15 @@ export default async function handler(req, res) {
     }
 
     // Selected month
+    // No `source` filter — uploaded sales (source='upload' or unset on older rows) must
+    // show here the same as manual/checklist entries, or they'd count toward Race tab
+    // standings and the Daily Report (neither of which filter by source) while being
+    // invisible and unmanageable in the Sales Log/Performance UI. The chargebackMode
+    // query below had this same filter removed for the identical reason back on
+    // 2026-07-02 ("Fix chargeback report missing uploaded policies") — this path was
+    // just never updated to match at the time. See CLAUDE.md "Cross-report consistency".
     let q1 = supabase.from('sales_log').select(COLS)
       .eq('user_id', dataUserId)
-      .in('source', ['manual', 'checklist'])
       .gte('sale_date', fromDate)
       .lte('sale_date', toDate)
       .order('sale_date', { ascending: false });
@@ -205,7 +211,6 @@ export default async function handler(req, res) {
     if (includeUnissued === '1') {
       let q2 = supabase.from('sales_log').select(COLS)
         .eq('user_id', dataUserId)
-        .in('source', ['manual', 'checklist'])
         .is('issued_date', null)
         .or(`sale_date.lt.${fromDate},sale_date.gt.${toDate}`)
         .order('sale_date', { ascending: false })

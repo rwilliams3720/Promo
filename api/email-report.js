@@ -195,16 +195,20 @@ async function buildReport(userId, dateStr, dateLabel, acct) {
       .select('agent_id,disposition,talk_secs')
       .eq('user_id', userId).eq('call_dt', dateStr)
       .not('disposition', 'in', '(internal,other,skip)'),
+    // is_cancelled excluded and sale_weight selected on all three — matches the Race tab
+    // (api/_lib/race-data.js) so a chargeback doesn't inflate this report and a split sale
+    // counts as one combined policy across both agents, not two. See CLAUDE.md
+    // "Cross-report consistency".
     supabase.from('sales_log')
-      .select('agent_id,product')
-      .eq('user_id', userId).eq('sale_date', dateStr),
+      .select('agent_id,product,sale_weight')
+      .eq('user_id', userId).eq('sale_date', dateStr).eq('is_cancelled', false),
     isPremium
-      ? supabase.from('sales_log').select('agent_id,product,written_premium')
-          .eq('user_id', userId).gte('sale_date', mtdStart).lte('sale_date', dateStr)
+      ? supabase.from('sales_log').select('agent_id,product,written_premium,sale_weight')
+          .eq('user_id', userId).gte('sale_date', mtdStart).lte('sale_date', dateStr).eq('is_cancelled', false)
       : Promise.resolve({ data: null }),
     isPremium
-      ? supabase.from('sales_log').select('agent_id,product,written_premium')
-          .eq('user_id', userId).gte('sale_date', ytdStart).lte('sale_date', dateStr)
+      ? supabase.from('sales_log').select('agent_id,product,written_premium,sale_weight')
+          .eq('user_id', userId).gte('sale_date', ytdStart).lte('sale_date', dateStr).eq('is_cancelled', false)
       : Promise.resolve({ data: null }),
     supabase.from('race_data').select('agent_id,name,team').eq('user_id', userId),
     supabase.from('agent_roster').select('agent_id,name').eq('user_id', userId).eq('active', true),
@@ -257,15 +261,17 @@ async function buildReport(userId, dateStr, dateLabel, acct) {
     totalTalkSecs += row.talk_secs || 0;
   }
 
-  // Aggregate daily sales per agent
+  // Aggregate daily sales per agent — weighted by sale_weight (0.5/side of a split sale),
+  // matching the Race tab, so a shared deal isn't double-counted here.
   const salesStats = {};
   for (const id of Object.keys(agentInfo)) salesStats[id] = {};
   let totalPolicies = 0;
   for (const row of (sales || [])) {
     if (!row.agent_id) continue;
     if (!salesStats[row.agent_id]) salesStats[row.agent_id] = {};
-    salesStats[row.agent_id][row.product] = (salesStats[row.agent_id][row.product] || 0) + 1;
-    totalPolicies++;
+    const weight = row.sale_weight ?? 1;
+    salesStats[row.agent_id][row.product] = (salesStats[row.agent_id][row.product] || 0) + weight;
+    totalPolicies += weight;
   }
 
   // Aggregate MTD/YTD sales per agent per product (premium only)
@@ -284,7 +290,8 @@ function aggregateSalesByAgentProduct(rows) {
   for (const row of rows) {
     if (!row.agent_id || !row.product) continue;
     if (!stats[row.agent_id]) stats[row.agent_id] = {};
-    stats[row.agent_id][row.product] = (stats[row.agent_id][row.product] || 0) + 1;
+    // Weighted by sale_weight — see the query comment above for why.
+    stats[row.agent_id][row.product] = (stats[row.agent_id][row.product] || 0) + (row.sale_weight ?? 1);
   }
   return stats;
 }

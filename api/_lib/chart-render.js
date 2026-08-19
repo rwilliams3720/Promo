@@ -68,8 +68,15 @@ function niceMax(max) {
 }
 
 function fmtVal(v, dollar) {
-  const n = Math.round(v);
-  return dollar ? '$' + n.toLocaleString('en-US') : n.toLocaleString('en-US');
+  if (dollar) return '$' + Math.round(v).toLocaleString('en-US');
+  // Policy-count values are sale_weight-weighted (0.5 per side of a split sale, see
+  // CLAUDE.md "Cross-report consistency") and can legitimately be a half-integer —
+  // rounding here would print "12" for a chart whose bar height, and every other report's
+  // number for the same agent/period, is actually 11.5, reintroducing the exact
+  // cross-report mismatch this consistency pass was meant to eliminate. Round only to
+  // avoid floating-point noise (e.g. 11.499999999998), not to the nearest whole number.
+  const n = Math.round(v * 100) / 100;
+  return n.toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
 
 function buildAxes(max, dollar) {

@@ -167,7 +167,7 @@ export default async function handler(req, res) {
 
       const { data: rows } = await supabase
         .from('sales_log')
-        .select('product, written_premium')
+        .select('product, written_premium, sale_weight')
         .eq('user_id', u).eq('agent_id', a)
         .gte('sale_date', periodStart).lte('sale_date', date)
         .eq('is_cancelled', false)
@@ -177,7 +177,9 @@ export default async function handler(req, res) {
       for (const p of SALES_PRODUCTS) totals[p] = 0;
       for (const row of (rows || [])) {
         if (!SALES_PRODUCTS.includes(row.product)) continue;
-        totals[row.product] += isDollar ? (parseFloat(row.written_premium) || 0) : 1;
+        // Policy-count mode weighted by sale_weight (matches the Race tab); dollar mode
+        // needs no adjustment — written_premium is already each agent's own split share.
+        totals[row.product] += isDollar ? (parseFloat(row.written_premium) || 0) : (row.sale_weight ?? 1);
       }
       labels = SALES_PRODUCTS.map(p => PRODUCT_LABELS[p].split('/')[0]);
       values = SALES_PRODUCTS.map(p => totals[p]);
