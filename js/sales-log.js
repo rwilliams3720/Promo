@@ -445,6 +445,7 @@ let _salesLogAllYear      = false;
 let _salesLogIssuedFilter = 'all';
 let _salesLogCustomFrom   = null; // YYYY-MM-DD when quarterly mode active
 let _salesLogCustomTo     = null;
+let _salesLogSort         = 'date'; // 'date' | 'agent' | 'product'
 let _spEntries        = [];
 let _spMetric         = 'count';
 let _spDateMode       = 'month';
@@ -569,6 +570,11 @@ function filterSalesLog() { renderSalesLog(); }
 
 function onSalesLogIssuedFilterChange() {
   _salesLogIssuedFilter = document.getElementById('sl-issued-filter')?.value || 'all';
+  renderSalesLog();
+}
+
+function onSalesLogSortChange() {
+  _salesLogSort = document.getElementById('sl-sort-sel')?.value || 'date';
   renderSalesLog();
 }
 
@@ -867,14 +873,20 @@ async function moveChargebackDate(hash, newDate) {
   } catch(e) { console.error('moveChargebackDate:', e); }
 }
 
-function _renderSlScorecard(entries) {
+function _renderSlScorecard(rawEntries) {
   const sc = document.getElementById('sl-scorecard');
   if (!sc) return;
+  // Excludes cancelled/charged-back sales and weights split sales by sale_weight (0.5/side)
+  // — matches the Race tab and Sales Performance tab (see CLAUDE.md "Cross-report
+  // consistency"). The raw row list below this scorecard intentionally still shows
+  // cancelled entries with their chargeback badge; only this aggregate scorecard excludes
+  // them, same split as spActiveEntries()/spGroup() in js/sales-perf.js.
+  const entries = rawEntries.filter(e => !e.is_cancelled);
   const counts = {};
   const prems  = {};
   entries.forEach(e => {
     if (!e.product) return;
-    counts[e.product] = (counts[e.product] || 0) + 1;
+    counts[e.product] = (counts[e.product] || 0) + (e.sale_weight ?? 1);
     if (e.written_premium) prems[e.product] = (prems[e.product] || 0) + parseFloat(e.written_premium);
   });
   const fmtN  = n => (n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -886,8 +898,9 @@ function _renderSlScorecard(entries) {
     return pill(`${escHtml(label)} <strong>${counts[k]}</strong>${prem}`);
   });
 
-  // Totals pill pushed to the right
-  const totalCount = entries.length;
+  // Totals pill pushed to the right — sum of the already-weighted per-product counts
+  // above, not entries.length, so a split sale still contributes 1 total, not 2.
+  const totalCount = Object.values(counts).reduce((a, b) => a + b, 0);
   const totalPrem  = Object.values(prems).reduce((a, b) => a + b, 0);
   if (totalCount) {
     const premStr = totalPrem ? `<div style="font-size:10px;color:var(--muted);margin-top:1px;">$${fmtN(totalPrem)}</div>` : '';

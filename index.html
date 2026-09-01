@@ -983,6 +983,11 @@
             <option value="issued">Issued</option>
             <option value="unissued">Not Issued</option>
           </select>
+          <select id="sl-sort-sel" onchange="onSalesLogSortChange()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;" title="Sort order">
+            <option value="date">Sort: Date</option>
+            <option value="agent">Sort: Team Member</option>
+            <option value="product">Sort: Policy Type</option>
+          </select>
           <label style="font-size:12px;color:var(--text);display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;user-select:none;"><input type="checkbox" id="sl-show-unissued" onchange="onSalesLogFilterChange()"> Show unissued from other months</label>
           <label style="font-size:12px;color:var(--text);display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;user-select:none;"><input type="checkbox" id="sl-show-hidden" onchange="onSalesLogFilterChange()"> Show hidden</label>
           <button class="btn btn-secondary" style="margin-left:auto;padding:4px 12px;font-size:12px;white-space:nowrap;" onclick="downloadSalesLogXlsx()">↓ Download .xlsx</button>

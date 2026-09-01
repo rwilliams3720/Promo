@@ -391,12 +391,23 @@ function renderSalesLog() {
   const scopeEntries = entries.filter(inScope);
   const crossEntries = entries.filter(e => !inScope(e));
 
-  const sortFn = (a, b) => {
+  // Default 'date' sort keeps unissued-first (so open items surface), then most-recent
+  // sale date. 'agent'/'product' sort primarily by that field (A→Z), falling back to the
+  // same date-desc ordering for entries that tie — e.g. all of one agent's sales grouped
+  // together, most recent first within the group.
+  const dateSortFn = (a, b) => {
     const d = (a.issued_date ? 1 : 0) - (b.issued_date ? 1 : 0);
     return d !== 0 ? d : (b.sale_date || '').localeCompare(a.sale_date || '');
   };
+  const agentName = e => _agentRoster.find(a => a.agent_id === e.agent_id)?.name || e.agent_id || '';
+  const productLabel = e => labelForCat(e.product);
+  const sortFn = _salesLogSort === 'agent'
+    ? (a, b) => agentName(a).localeCompare(agentName(b)) || dateSortFn(a, b)
+    : _salesLogSort === 'product'
+      ? (a, b) => productLabel(a).localeCompare(productLabel(b)) || dateSortFn(a, b)
+      : dateSortFn;
   scopeEntries.sort(sortFn);
-  crossEntries.sort((a, b) => (b.sale_date || '').localeCompare(a.sale_date || ''));
+  crossEntries.sort(sortFn);
 
   _renderSlScorecard(scopeEntries);
 

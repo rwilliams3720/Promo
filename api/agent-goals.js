@@ -60,7 +60,12 @@ export default async function handler(req, res) {
 
     if (req.query.withActuals === '1') {
       const refDate = req.query.refDate || null; // YYYY-MM — sets reference month for recurring goal actuals
-      return res.status(200).json(await computeActuals(data || [], dataUserId, refDate));
+      // Needed to compute "now" in the account's own local date (see currentPeriodDates)
+      // rather than the server's raw UTC date. dataUserId is the DATA owner, not
+      // necessarily the caller (a member's own accounts row has no timezone/is admin-only
+      // fields relevant here) — always look up the owner's own row.
+      const { data: ownerAcct } = await supabase.from('accounts').select('timezone').eq('user_id', dataUserId).single();
+      return res.status(200).json(await computeActuals(data || [], dataUserId, refDate, ownerAcct?.timezone));
     }
     return res.status(200).json(data || []);
   }
@@ -120,16 +125,28 @@ export default async function handler(req, res) {
   return res.status(405).json({ error: 'Method not allowed' });
 }
 
-function currentPeriodDates(periodType, refDateStr) {
+function currentPeriodDates(periodType, refDateStr, timezone) {
   let yr, mo;
   if (refDateStr) {
     const parts = refDateStr.split('-').map(Number);
     yr = parts[0];
     mo = parts[1] - 1; // 0-indexed
   } else {
-    const now = new Date();
-    yr = now.getUTCFullYear();
-    mo = now.getUTCMonth();
+    // "Now" must be the account's LOCAL date, not the server's raw UTC date — every US
+    // timezone lags UTC, so for several hours every day (roughly 4-5pm-midnight Pacific)
+    // the server's UTC calendar date has already rolled to tomorrow while the account's
+    // real business day/month hasn't ended yet. Near a period boundary (most obviously
+    // the 1st of a month) this made a recurring goal's "current period" silently roll
+    // over hours early, showing 0/target for a goal that was legitimately on pace the
+    // entire time the actual local day/month was still in progress — reported as "Goals
+    // aren't capturing the checked products" (the product-scope filtering was never the
+    // problem; the date window computed for it was) (fixed 2026-09-01). Same
+    // Intl.DateTimeFormat('en-CA', tz) technique already used by todayInTz/yesterdayInTz
+    // in api/email-report.js — en-CA formats as YYYY-MM-DD directly, no parsing needed.
+    const localToday = new Intl.DateTimeFormat('en-CA', { timeZone: timezone || 'UTC' }).format(new Date());
+    const [ly, lm] = localToday.split('-').map(Number);
+    yr = ly;
+    mo = lm - 1; // 0-indexed
   }
   if (periodType === 'monthly') {
     const s = new Date(Date.UTC(yr, mo, 1)), e = new Date(Date.UTC(yr, mo + 1, 0));
@@ -149,13 +166,13 @@ function currentPeriodDates(periodType, refDateStr) {
   return { start: s, end: e };
 }
 
-async function computeActuals(goals, dataUserId, refDateStr) {
+async function computeActuals(goals, dataUserId, refDateStr, timezone) {
   if (!goals.length) return goals;
 
   // Recurring goals use the reference period's date range for actuals
   const effective = goals.map(g => {
     if (!g.is_recurring) return g;
-    const curr = currentPeriodDates(g.period_type, refDateStr);
+    const curr = currentPeriodDates(g.period_type, refDateStr, timezone);
     return { ...g, _eff_start: curr.start, _eff_end: curr.end };
   });
 
