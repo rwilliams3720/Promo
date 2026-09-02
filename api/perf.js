@@ -129,7 +129,45 @@ export default async function handler(req, res) {
       }
     }
 
-    function mapToRows(periodMap) {
+    // Yearly view only ever reflected the current unarchived stretch of call_log — every
+    // archive/reset (confirmArchive in js/account.js) deletes call_log entirely after
+    // copying a scored snapshot into historical_wins, so "Yearly" silently showed just
+    // whatever accumulated since the last archive point instead of the calendar year
+    // (fixed 2026-09-01, reported as "yearly option shows but data isn't there because of
+    // the archive and reset"). historical_wins retains enough per-agent-per-month detail
+    // (placed/answered/missed/voicemail/talk_min/avg_min) to merge into the live yearly
+    // totals for every metric except max_min (single longest call) — that was never
+    // archived anywhere and can't be reconstructed, so any yearly agent-row spanning at
+    // least one archived month shows Max Min as unavailable ("—") rather than a number
+    // that would silently only reflect the current unarchived month, mislabeled as a
+    // full-year max. See CLAUDE.md "Yearly Call Performance archive merge".
+    const hasArchived = new Set(); // `${year}|${agent_id}` — suppress maxMin for these
+    const { data: histRows } = await supabase
+      .from('historical_wins')
+      .select('agent_id,name,team,month,placed,answered,missed,voicemail,talk_min,avg_min')
+      .eq('user_id', dataUserId);
+    for (const h of (histRows || [])) {
+      const year = String(h.month || '').trim().split(' ').pop();
+      if (!/^\d{4}$/.test(year)) continue;
+      if (!agentMeta[h.agent_id]) agentMeta[h.agent_id] = { name: h.name || h.agent_id, team: h.team || 'sales' };
+      if (!yearly[year]) yearly[year] = {};
+      if (!yearly[year].__race) yearly[year].__race = { voicemail: 0, missed: 0 };
+      yearly[year].__race.voicemail += h.voicemail || 0;
+      yearly[year].__race.missed    += h.missed    || 0;
+      if (!yearly[year][h.agent_id]) yearly[year][h.agent_id] = { placed:0, answered:0, talkMin:0, talkCalls:0, maxSecs:0 };
+      const s = yearly[year][h.agent_id];
+      s.placed   += h.placed  || 0;
+      s.answered += h.answered|| 0;
+      s.talkMin  += h.talk_min|| 0;
+      // No archived call-count survives — imply one from avg_min so re-combining with the
+      // live month's real talkCalls still produces a properly WEIGHTED average, not a
+      // naive average-of-averages (an archived month with 500 calls must count for more
+      // than a live partial month with 20).
+      if (h.avg_min > 0) s.talkCalls += (h.talk_min || 0) / h.avg_min;
+      hasArchived.add(`${year}|${h.agent_id}`);
+    }
+
+    function mapToRows(periodMap, suppressMaxFor) {
       const rows = [];
       for (const [period, agents] of Object.entries(periodMap)) {
         const race = agents.__race || { voicemail:0, missed:0 };
@@ -138,7 +176,7 @@ export default async function handler(req, res) {
           if (id === '__race') continue;
           const info   = agentMeta[id] || { name: id, team: 'sales' };
           const avgMin = s.talkCalls > 0 ? Math.round((s.talkMin/s.talkCalls)*100)/100 : 0;
-          const maxMin = Math.round(s.maxSecs/60*100)/100;
+          const maxMin = suppressMaxFor?.has(`${period}|${id}`) ? null : Math.round(s.maxSecs/60*100)/100;
           totPlaced   += s.placed;
           totAnswered += s.answered;
           totTalkMin  += s.talkMin;
@@ -157,7 +195,7 @@ export default async function handler(req, res) {
       daily:   mapToRows(daily),
       weekly:  mapToRows(weekly),
       monthly: mapToRows(monthly),
-      yearly:  mapToRows(yearly),
+      yearly:  mapToRows(yearly, hasArchived),
       vmSlots,
       _debug: { rowCount: (logs || []).length },
     });

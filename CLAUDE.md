@@ -1072,10 +1072,23 @@ Account tab shows a "Sandbox — Reset My Data" section for `_isAdmin` accounts.
 4. Scores current `race_data` using `scoring_config` → inserts/replaces `historical_wins` rows
 5. Writes team-level aggregates to `historical_months`
 6. **Deletes** `race_data` rows — next upload creates a fresh roster
-7. Clears `race_config.current_month`
-8. Deletes-before-insert on `historical_wins` to prevent duplicate rows (no unique constraint)
+7. **Also deletes all `call_log` rows for the account** (`js/account.js`, immediately after the `historical_wins`/`historical_months` writes) — not previously documented here even though it's been true all along; found while investigating why the Call Performance tab's "Yearly" view only ever showed the current unarchived stretch (see "Yearly Call Performance archive merge" below). Only a scored per-agent-per-month snapshot survives into `historical_wins` — no per-call, per-day, or `call_slot` detail is retained anywhere past this point.
+8. Clears `race_config.current_month`
+9. Deletes-before-insert on `historical_wins` to prevent duplicate rows (no unique constraint)
 
 Month format written by `confirmArchive`: `"Apr 2026"` (abbreviated, `_ABBR[month]` array).
+
+### Yearly Call Performance archive merge (fixed 2026-09-01)
+
+Reported as "Performance call tab shows an option for yearly, but the data is not there because of the archive and reset." Confirmed exactly right: `api/perf.js` built its `yearly` bucket purely from `call_log`, which `confirmArchive` (above) deletes entirely on every archive — so "Yearly" silently showed only whatever had accumulated since the last archive point, not the calendar year. Verified against real production data mid-fix, in an unplanned but perfect natural test: the account's own August archive fired *while this was being investigated*, moving `call_log` from ~16,700 August-only rows to zero and folding August into `historical_wins` — before-and-after querying both states confirmed the merge below reproduces the exact combined total either way.
+
+`historical_wins` retains enough per-agent-per-month detail (`placed, answered, missed, voicemail, talk_min, avg_min`) to reconstruct every Yearly metric **except Max Min** (single longest call) — that column was never archived anywhere at any granularity and structurally cannot be recovered for a past month. Fix, in `api/perf.js`: after building `yearly` from live `call_log` as before, fetch every `historical_wins` row for the account, group by year (parsed from the trailing token of `month`, robust to both the abbreviated `"Apr 2026"` `confirmArchive` writes and the full `"January 2026"` the out-of-order-upload path writes), and merge each row's stats directly into the same `yearly[year][agent_id]` accumulator `mapToRows()` already reads — so no changes were needed to the row-building or JSON response shape itself, only to what feeds it. `voicemail`/`missed` merge into the same `__race` bucket the live path already populates.
+
+**Avg Min** is weighted, not naively averaged: an archived month has no surviving raw call count, so `talk_min / avg_min` (when `avg_min > 0`) backs out an *implied* call count, added to that agent's yearly `talkCalls` alongside the live month's real count — an archived month with hundreds of calls correctly outweighs a partial live month with a handful, rather than the two months' averages being blended 50/50 regardless of volume.
+
+**Max Min** is explicitly suppressed (`null`, not `0` or a silently-partial number) for any yearly agent-row that includes at least one archived month — tracked via a `hasArchived` Set keyed `${year}|${agent_id}`, passed into `mapToRows()`'s existing max-min line only for the `yearly` call (`daily`/`weekly`/`monthly` are untouched, since those periods don't span an archive boundary the same way). `js/perf.js`'s renderer shows "—" when `r[9] == null`, distinct from a real `0`. This was an explicit account-owner choice between two options (merge-with-Max-Min-caveat vs. drop the Yearly option entirely) — chosen over simply removing Yearly, since every other metric IS fully reconstructable.
+
+**Takeaway**: `js/account.js`'s `confirmArchive()` deleting `call_log` in full was true well before this fix and is a hard constraint on any future "make X work across an archive boundary" request for call data — anything not captured in `historical_wins`/`historical_months` at archive time (per-call detail, per-day granularity, the voicemail heatmap, Max Min) is gone permanently, not just hard to query. Check what the archive actually retains before assuming a "just query further back" fix is possible.
 
 ### archiveCallStatsToHistorical (upload.js)
 Called server-side on out-of-order upload (uploaded month < current race month). Writes `historical_wins` + `historical_months`. Month format: `"January 2026"` (full). Normalized in `ai-analysis.js` via `row.month.slice(0,3) + ' ' + row.month.split(' ')[1]`.

@@ -114,11 +114,16 @@ function renderPerf() {
     const teamBadge = team
       ? `<span class="team-badge ${team==='sales'?'badge-sales':'badge-service'}">${team}</span>`
       : '';
+    // Max Min is explicitly null (not 0) for a yearly row spanning an archived month —
+    // that metric was never archived and can't be reconstructed, so show "—" rather than
+    // a misleadingly precise-looking "0 min" or a number that's silently only the current
+    // unarchived month's max. See api/perf.js "Yearly Call Performance archive merge".
+    const maxMinCell = r[9] == null ? '—' : fmtMins(r[9]);
     return `<tr${isTotal?' class="total-row"':''}>
       <td>${r[1]}${teamBadge ? ' '+teamBadge : ''}</td>
       <td>${r[3]||0}</td><td>${r[4]||0}</td>
       <td>${r[5]||0}</td><td>${r[6]||0}</td>
-      <td>${fmtMins(r[7])}</td><td>${fmtMins(r[8])}</td><td>${fmtMins(r[9])}</td>
+      <td>${fmtMins(r[7])}</td><td>${fmtMins(r[8])}</td><td>${maxMinCell}</td>
     </tr>`;
   }).join('') || '<tr><td colspan="8" style="color:var(--muted);text-align:center;padding:20px">No data</td></tr>';
 }
