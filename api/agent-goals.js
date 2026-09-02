@@ -181,7 +181,7 @@ async function computeActuals(goals, dataUserId, refDateStr, timezone) {
 
   const [salesRes, actRes] = await Promise.all([
     supabase.from('sales_log')
-      .select('agent_id, product, written_premium, sale_date, is_cancelled')
+      .select('agent_id, product, written_premium, sale_date, is_cancelled, sale_weight')
       .eq('user_id', dataUserId)
       .gte('sale_date', minStart)
       .lte('sale_date', maxEnd),
@@ -202,14 +202,21 @@ async function computeActuals(goals, dataUserId, refDateStr, timezone) {
     const agSales = salesRows.filter(s => s.agent_id === goal.agent_id && s.sale_date >= pStart && s.sale_date <= pEnd);
     const agActs  = actRows.filter(a => a.agent_id === goal.agent_id && a.activity_date >= pStart && a.activity_date <= pEnd);
 
+    // Weighted by sale_weight (0.5 for either side of a split sale) rather than a flat
+    // row count — matches the Race tab, Sales Performance, and the Daily Report (see
+    // CLAUDE.md "Cross-report consistency"). A split sale is one real deal shared by two
+    // agents; counting each side as a full 1 toward a policy goal double-credits it,
+    // exactly the same bug already fixed everywhere else this got counted (fixed
+    // 2026-09-01 — Goals was simply never included in that original reconciliation pass).
+    const weightOf = s => s.sale_weight ?? 1;
     const actuals = {};
     for (const prod of POLICY_PRODUCTS) {
       if (goal.goals[prod] !== undefined) {
-        actuals[prod] = agSales.filter(s => s.product === prod).length;
+        actuals[prod] = agSales.filter(s => s.product === prod).reduce((sum, s) => sum + weightOf(s), 0);
       }
     }
     if (goal.goals.policies !== undefined) {
-      actuals.policies = agSales.filter(s => POLICY_PRODUCTS.includes(s.product)).length;
+      actuals.policies = agSales.filter(s => POLICY_PRODUCTS.includes(s.product)).reduce((sum, s) => sum + weightOf(s), 0);
     }
     if (goal.goals.premium !== undefined) {
       actuals.premium = agSales.reduce((s, r) => s + (parseFloat(r.written_premium) || 0), 0);
@@ -225,7 +232,7 @@ async function computeActuals(goals, dataUserId, refDateStr, timezone) {
         // predate this field and are always product groups — keep that the default.
         actuals['combined_' + grp.id] = grp.type === 'activity'
           ? agActs.filter(a => (grp.activity_type_ids || []).includes(a.activity_type_id)).reduce((s, a) => s + (a.count || 0), 0)
-          : agSales.filter(s => (grp.products || []).includes(s.product)).length;
+          : agSales.filter(s => (grp.products || []).includes(s.product)).reduce((sum, s) => sum + weightOf(s), 0);
       }
     }
     return { ...goal, actuals };
