@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
-import { calcStructurePayout, computeChargebackAmount, monthLabel, monthKey, computeThresholdBonus } from './_lib/commission-calc.js';
+import { calcStructurePayout, computeChargebackAmount, commissionPremiumOf, monthLabel, monthKey, computeThresholdBonus } from './_lib/commission-calc.js';
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
@@ -98,7 +98,7 @@ export default async function handler(req, res) {
     // Sales: broad OR filter — sale_date OR issued_date within the month (for pay_on_issue support)
     const [salesRes, rosterRes, structuresRes, subcatsRes, agentStructsRes, bankLedgerRes, allPaymentsRes] = await Promise.all([
       supabase.from('sales_log')
-        .select('hash, agent_id, product, subcategory, written_premium, split_sale, split_ratio, sale_weight, teammate, sale_date, issued_date, is_cancelled, chargeback_date, chargeback_exempt, customer_name')
+        .select('hash, agent_id, product, subcategory, written_premium, issued_premium, split_sale, split_ratio, sale_weight, teammate, sale_date, issued_date, is_cancelled, chargeback_date, chargeback_exempt, customer_name')
         .eq('user_id', dataUserId)
         .or(`and(sale_date.gte.${fromDate},sale_date.lte.${toDate}),and(issued_date.gte.${fromDate},issued_date.lte.${toDate}),and(is_cancelled.eq.true,chargeback_date.gte.${fromDate},chargeback_date.lte.${toDate})`),
       supabase.from('agent_roster')
@@ -278,13 +278,17 @@ export default async function handler(req, res) {
       const cbDate = sale.chargeback_date;
       if (cbDate < fromDate || cbDate > toDate) continue;
       const primaryId = sale.agent_id;
-      const premium   = parseFloat(sale.written_premium) || 0;
+      // Same commission-basis premium computeChargebackAmount uses internally (via
+      // calcStructurePayout) — mirrored here via the shared helper so the displayed
+      // premium/share always matches what actually drove the commission dollar amount.
+      const premium   = commissionPremiumOf(sale);
       const product   = sale.product || 'other';
       if (primaryId) {
         const structList   = getStructureList(primaryId);
-        // written_premium is already this agent's own half of a split sale (see
-        // calcStructurePayout) — no ratio re-applied here either, same fix as the earned
-        // calculation, so the itemized chargeback list shows the correct premium share.
+        // issued_premium (or written_premium fallback) is already this agent's own half of
+        // a split sale (see calcStructurePayout) — no ratio re-applied here either, same
+        // fix as the earned calculation, so the itemized chargeback list shows the correct
+        // premium share.
         const share         = premium;
         const overrides     = agentById[primaryId]?.commission_product_overrides || {};
         const commission    = await computeChargebackAmount(chargebackCtx, sale, structList, overrides);

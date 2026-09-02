@@ -720,6 +720,19 @@ function setCbSort(col) {
   renderChargebackReport();
 }
 
+// The commission actually charged back (chargeback_commission) is computed against
+// issued_premium, falling back to written_premium when unset — matches
+// calcStructurePayout's basis (see CLAUDE.md "Commission premium basis") so the
+// displayed "Premium" column agrees with what really drove that dollar amount, rather
+// than the field a sale happened to differ on.
+function cbPremiumOf(e) {
+  // Excludes a stored 0 the same as unset — confirmed several real sales have
+  // issued_premium explicitly 0 alongside a genuine written_premium (a data-entry gap,
+  // not an intentional free policy); mirrors commissionPremiumOf in api/_lib/commission-calc.js.
+  const issued = parseFloat(e.issued_premium);
+  return (e.issued_premium != null && issued > 0) ? issued : (parseFloat(e.written_premium) || 0);
+}
+
 function renderChargebackReport() {
   const listEl  = document.getElementById('cb-list');
   const statsEl = document.getElementById('cb-stats-row');
@@ -735,7 +748,7 @@ function renderChargebackReport() {
   const total    = filteredAll.length;
   const cbCount  = filtered.length;
   const cbRate   = total > 0 ? (cbCount / total * 100).toFixed(1) : '0.0';
-  const cbPrem   = filtered.reduce((s, e) => s + (parseFloat(e.written_premium) || 0), 0);
+  const cbPrem   = filtered.reduce((s, e) => s + cbPremiumOf(e), 0);
   const cbComm   = filtered.reduce((s, e) => s + (e.chargeback_exempt ? 0 : (parseFloat(e.chargeback_commission) || 0)), 0);
   const rateColor = parseFloat(cbRate) > 10 ? '#ff6b6b' : parseFloat(cbRate) > 5 ? '#fbbf24' : 'var(--accent2)';
 
@@ -771,7 +784,7 @@ function renderChargebackReport() {
     if (_cbSortCol === 'sale_date')       { return _cbSortDir * (a.sale_date || '').localeCompare(b.sale_date || ''); }
     if (_cbSortCol === 'agent')           { av = _agentRoster.find(x => x.agent_id === a.agent_id)?.name || a.agent_id || ''; bv = _agentRoster.find(x => x.agent_id === b.agent_id)?.name || b.agent_id || ''; return _cbSortDir * av.localeCompare(bv); }
     if (_cbSortCol === 'product')         { return _cbSortDir * labelForCat(a.product).localeCompare(labelForCat(b.product)); }
-    if (_cbSortCol === 'premium')         { return _cbSortDir * ((parseFloat(a.written_premium)||0) - (parseFloat(b.written_premium)||0)); }
+    if (_cbSortCol === 'premium')         { return _cbSortDir * (cbPremiumOf(a) - cbPremiumOf(b)); }
     if (_cbSortCol === 'commission')      { return _cbSortDir * ((parseFloat(a.chargeback_commission)||0) - (parseFloat(b.chargeback_commission)||0)); }
     return 0;
   };
@@ -785,7 +798,7 @@ function renderChargebackReport() {
   const canMoveCb = !_isMember || _isAdmin || ['captain','chief_officer'].includes(_memberRole);
   const renderCbRow = e => {
     const ag = _agentRoster.find(a => a.agent_id === e.agent_id)?.name || e.agent_id || '—';
-    const pr = e.written_premium ? '$' + Number(e.written_premium).toFixed(2) : '—';
+    const pr = cbPremiumOf(e) ? '$' + cbPremiumOf(e).toFixed(2) : '—';
     const cm = e.chargeback_exempt ? '<span style="font-size:10px;background:rgba(0,229,180,.12);color:var(--accent2);border:1px solid rgba(0,229,180,.2);border-radius:3px;padding:1px 5px;">Waived</span>' : ('-$' + (parseFloat(e.chargeback_commission)||0).toFixed(2));
     const cbDateCell = canMoveCb
       ? `<input type="date" value="${escHtml(e.chargeback_date || '')}" onchange="moveChargebackDate('${escHtml(e.hash)}',this.value)" style="background:var(--deep);border:1px solid var(--border);color:#ff6b6b;border-radius:4px;padding:2px 4px;font-size:11px;outline:none;width:126px;">`

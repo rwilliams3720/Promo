@@ -1,13 +1,31 @@
 // Shared commission-rate math used by api/commissions.js and api/sales.js
 // (chargeback mode) so the two reports always agree on dollar amounts.
 
+// The commission-basis premium for a sale: issued_premium when it's meaningfully set,
+// falling back to written_premium otherwise. "Meaningfully set" excludes both NULL
+// (never entered — an unissued sale, or a row predating this field) AND exactly 0 —
+// confirmed against real production data that several real sales have issued_premium
+// explicitly stored as 0 (not null) alongside a genuine nonzero written_premium, almost
+// certainly a data-entry gap (a form submitting 0 instead of leaving the field blank)
+// rather than an intentional "this policy was issued for free." Treating a stored 0 as
+// authoritative would zero out real commission on those sales — checked and fixed BEFORE
+// deploy, not discovered after (fixed 2026-09-01, see CLAUDE.md "Commission premium basis").
+export function commissionPremiumOf(sale) {
+  const issued = parseFloat(sale.issued_premium);
+  return (sale.issued_premium != null && issued > 0) ? issued : (parseFloat(sale.written_premium) || 0);
+}
+
 // Apply commission rate — checks minimum threshold, subcategory override, FS rate, then product default
-export function applyRate(structure, product, subcategory, premiumShare, writtenPremium, isFS) {
+// `premium` is the sale's commission-basis premium (see commissionPremiumOf) — same value
+// as premiumShare for every caller today (a split sale's share IS the whole basis, already
+// halved at insert time), kept as a separate param in case a future caller ever needs them
+// to diverge.
+export function applyRate(structure, product, subcategory, premiumShare, premium, isFS) {
   const productCfg = structure?.rates?.[product];
   if (!productCfg) return 0;
 
   // Minimum premium threshold — whole sale must exceed this before any commission
-  if (productCfg.minimum != null && writtenPremium < productCfg.minimum) return 0;
+  if (productCfg.minimum != null && premium < productCfg.minimum) return 0;
 
   // Subcategory override takes priority over all product-level settings
   if (subcategory && productCfg.subcategories?.[subcategory]) {
@@ -100,7 +118,12 @@ export function calcStructurePayout(agentId, struct, sales, roster, isFinancialS
 
   for (const sale of sales) {
     if (sale.is_cancelled) continue; // cancelled handled separately as chargebacks
-    const premium = parseFloat(sale.written_premium) || 0;
+    // Commission basis: issued_premium (what was actually underwritten/bound), falling
+    // back to written_premium — see commissionPremiumOf above (fixed 2026-09-01, see
+    // CLAUDE.md "Commission premium basis" — previously written_premium was used
+    // exclusively everywhere, regardless of this structure's pay_on_issue setting, which
+    // only ever gated which DATE field decided the month, never which premium field).
+    const premium = commissionPremiumOf(sale);
     const product = sale.product || 'other';
     const isSplit = !!sale.split_sale;
     const isFS = isFinancialService[sale.subcategory] || false;
@@ -300,7 +323,7 @@ async function fetchAgentMonthSales(ctx, agentId, ey, em) {
   const eLast = new Date(ey, em, 0).getDate();
   const eTo   = `${ey}-${String(em).padStart(2, '0')}-${String(eLast).padStart(2, '0')}`;
   const { data } = await ctx.supabase.from('sales_log')
-    .select('hash, agent_id, product, subcategory, written_premium, split_sale, split_ratio, sale_weight, teammate, sale_date, issued_date, is_cancelled, customer_name')
+    .select('hash, agent_id, product, subcategory, written_premium, issued_premium, split_sale, split_ratio, sale_weight, teammate, sale_date, issued_date, is_cancelled, customer_name')
     .eq('user_id', ctx.dataUserId)
     .eq('agent_id', agentId)
     .or(`and(sale_date.gte.${eFrom},sale_date.lte.${eTo}),and(issued_date.gte.${eFrom},issued_date.lte.${eTo})`);
