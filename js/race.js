@@ -70,17 +70,21 @@ async function loadRaceData() {
     }
   }
 
-  // Step 2: fetch call and sales data scoped to the current race month
-  let vmQ = _supabase.from('call_log').select('*', { count: 'exact', head: true }).eq('user_id', _dataUserId).eq('disposition', 'voicemail');
-  let msQ = _supabase.from('call_log').select('*', { count: 'exact', head: true }).eq('user_id', _dataUserId).eq('disposition', 'missed');
-  let slQ = _supabase.from('sales_log').select('agent_id,product').eq('user_id', _dataUserId).in('product', ['deposit','other','other2','other3','other4','other5']);
+  // Step 2: fetch call and sales data scoped to the current race month.
+  // If no race month is set (race_config.current_month is blanked to '' by an
+  // Archive & Reset until the owner picks a new one), there's no safe range to
+  // scope by — querying with no bounds at all would sum every voicemail/missed
+  // call and every deposit/other sale ever logged, not just this month's. Skip
+  // these entirely rather than ever run them unscoped (same root cause fixed in
+  // api/_lib/race-data.js — see CLAUDE.md "Annual Raise-Eligibility Tracker").
+  let vmRes = { count: 0 }, msRes = { count: 0 }, slRes = { data: [] };
   if (fromDate && toDate) {
-    vmQ = vmQ.gte('call_dt', fromDate).lte('call_dt', toDate);
-    msQ = msQ.gte('call_dt', fromDate).lte('call_dt', toDate);
-    slQ = slQ.gte('sale_date', fromDate).lte('sale_date', toDate);
+    [vmRes, msRes, slRes] = await Promise.all([
+      _supabase.from('call_log').select('*', { count: 'exact', head: true }).eq('user_id', _dataUserId).eq('disposition', 'voicemail').gte('call_dt', fromDate).lte('call_dt', toDate),
+      _supabase.from('call_log').select('*', { count: 'exact', head: true }).eq('user_id', _dataUserId).eq('disposition', 'missed').gte('call_dt', fromDate).lte('call_dt', toDate),
+      _supabase.from('sales_log').select('agent_id,product').eq('user_id', _dataUserId).in('product', ['deposit','other','other2','other3','other4','other5']).gte('sale_date', fromDate).lte('sale_date', toDate),
+    ]);
   }
-
-  const [vmRes, msRes, slRes] = await Promise.all([vmQ, msQ, slQ]);
 
   _raceWideVm     = vmRes.count || 0;
   _raceWideMissed = msRes.count || 0;

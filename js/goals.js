@@ -217,6 +217,175 @@ function _removeCgRow(agentId, idx) {
   [...container.children].forEach((row, i) => { row.id = `gf-cg-${agentId}-${i}`; });
 }
 
+// ── Raise-Eligibility Goal config (annual goals only) ────────────────────────
+function updateRaiseSectionVisibility(agentId) {
+  const typeEl  = document.getElementById('gf-type-' + agentId);
+  const section = document.getElementById('gf-raise-section-' + agentId);
+  if (!typeEl || !section) return;
+  section.style.display = typeEl.value === 'annual' ? '' : 'none';
+}
+
+function toggleRaiseFieldsVisibility(agentId) {
+  const cb     = document.getElementById('gf-raise-enabled-' + agentId);
+  const fields = document.getElementById('gf-raise-fields-' + agentId);
+  if (cb && fields) fields.style.display = cb.checked ? '' : 'none';
+}
+
+function toggleRaiseComboFields(agentId) {
+  const mode      = document.getElementById('gf-raise-combo-' + agentId)?.value;
+  const locWrap   = document.getElementById('gf-raise-loc-wrap-' + agentId);
+  const agWrap    = document.getElementById('gf-raise-agmetric-wrap-' + agentId);
+  const blendWrap = document.getElementById('gf-raise-blendwt-wrap-' + agentId);
+  if (locWrap)   locWrap.style.display   = mode === 'individual' ? 'none' : '';
+  if (agWrap)    agWrap.style.display    = mode === 'individual' ? 'none' : '';
+  if (blendWrap) blendWrap.style.display = mode === 'blended'    ? ''     : 'none';
+}
+
+function toggleRaiseRewardFields(agentId) {
+  const mode = document.getElementById('gf-raise-rewardmode-' + agentId)?.value;
+  const prop = document.getElementById('gf-raise-prop-' + agentId);
+  const thr  = document.getElementById('gf-raise-threshold-' + agentId);
+  if (prop) prop.style.display = mode === 'proportional' ? '' : 'none';
+  if (thr)  thr.style.display  = mode === 'threshold'    ? '' : 'none';
+}
+
+function toggleRaiseStretchFields(agentId) {
+  const mode = document.getElementById('gf-raise-stretchmode-' + agentId)?.value;
+  const wrap = document.getElementById('gf-raise-stretchpct-wrap-' + agentId);
+  if (wrap) wrap.style.display = mode === 'custom' ? '' : 'none';
+}
+
+function toggleRaiseGateFields(agentId) {
+  const cb   = document.getElementById('gf-raise-gate-enabled-' + agentId);
+  const wrap = document.getElementById('gf-raise-gate-wrap-' + agentId);
+  if (wrap) wrap.style.display = cb?.checked ? '' : 'none';
+}
+
+function _buildRaiseTierRow(agentId, idx, tier) {
+  return `<div id="gf-raise-tier-${agentId}-${idx}" style="display:flex;gap:6px;align-items:center;margin-bottom:5px;">
+    <input type="number" id="gf-raise-tier-pct-${agentId}-${idx}" min="0" max="500" placeholder="% of goal" value="${tier?.pct ?? ''}" style="width:75px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 5px;font-size:11px;outline:none;">
+    <span style="font-size:10px;color:var(--muted);">→</span>
+    <input type="number" id="gf-raise-tier-raise-${agentId}-${idx}" min="0" step="0.1" placeholder="raise %" value="${tier?.raise ?? ''}" style="width:75px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 5px;font-size:11px;outline:none;">
+    <button type="button" onclick="_removeRaiseTierRow('${agentId}',${idx})" style="background:none;border:none;color:var(--muted);font-size:15px;cursor:pointer;padding:0 2px;line-height:1;">×</button>
+  </div>`;
+}
+
+function _addRaiseTierRow(agentId) {
+  const container = document.getElementById('gf-raise-tiers-rows-' + agentId);
+  if (!container) return;
+  const idx = container.children.length;
+  container.insertAdjacentHTML('beforeend', _buildRaiseTierRow(agentId, idx, null));
+}
+
+function _removeRaiseTierRow(agentId, idx) {
+  const el = document.getElementById(`gf-raise-tier-${agentId}-${idx}`);
+  if (el) el.remove();
+  const container = document.getElementById('gf-raise-tiers-rows-' + agentId);
+  if (!container) return;
+  [...container.children].forEach((row, i) => { row.id = `gf-raise-tier-${agentId}-${i}`; });
+}
+
+function buildRaiseGoalHtml(agentId, existing, periodType) {
+  const sid = escHtml(agentId);
+  const enabled  = !!existing?.is_raise_goal;
+  const cfg      = existing?.raise_config || {};
+  const prop     = cfg.proportional || {};
+  const mode     = cfg.combination_mode || 'individual';
+  const rewardMode  = cfg.reward_mode || 'proportional';
+  const stretchMode = prop.stretch_mode || 'auto';
+  const tiers    = cfg.threshold_tiers || [];
+  const locOpts  = (_salesLocations || []).map(l =>
+    `<option value="${l.id}"${cfg.agency_location_id === l.id ? ' selected' : ''}>${escHtml(l.name)}</option>`
+  ).join('');
+  const lbl = 'font-size:9px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px;';
+  const sel = 'background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:3px 6px;font-size:11px;outline:none;';
+  const num = 'background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 5px;font-size:11px;outline:none;';
+
+  return `<div id="gf-raise-section-${sid}" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border2);display:${periodType === 'annual' ? '' : 'none'};">
+    <label style="font-size:11px;color:var(--gold);display:flex;align-items:center;gap:5px;cursor:pointer;margin-bottom:6px;">
+      <input type="checkbox" id="gf-raise-enabled-${sid}" ${enabled?'checked':''} onchange="toggleRaiseFieldsVisibility('${sid}')"> 🎯 Raise-Eligible Goal
+    </label>
+    <div id="gf-raise-fields-${sid}" style="display:${enabled?'':'none'};padding-left:4px;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;align-items:flex-end;">
+        <div>
+          <label style="${lbl}">Combination Mode</label>
+          <select id="gf-raise-combo-${sid}" onchange="toggleRaiseComboFields('${sid}')" style="${sel}">
+            <option value="individual"${mode==='individual'?' selected':''}>Individual</option>
+            <option value="blended"${mode==='blended'?' selected':''}>Blended</option>
+            <option value="separate"${mode==='separate'?' selected':''}>Separate</option>
+          </select>
+        </div>
+        <div id="gf-raise-loc-wrap-${sid}" style="display:${mode==='individual'?'none':''}">
+          <label style="${lbl}">Agency Location</label>
+          <select id="gf-raise-loc-${sid}" style="${sel}">
+            <option value="">— Select —</option>
+            ${locOpts}
+          </select>
+        </div>
+        <div id="gf-raise-agmetric-wrap-${sid}" style="display:${mode==='individual'?'none':''}">
+          <label style="${lbl}">Agency Metric</label>
+          <select id="gf-raise-agmetric-${sid}" style="${sel}">
+            <option value="count"${cfg.agency_metric!=='premium'?' selected':''}>Policy Count</option>
+            <option value="premium"${cfg.agency_metric==='premium'?' selected':''}>Premium</option>
+          </select>
+        </div>
+        <div id="gf-raise-blendwt-wrap-${sid}" style="display:${mode==='blended'?'':'none'}">
+          <label style="${lbl}">Individual Weight %</label>
+          <input type="number" id="gf-raise-blendwt-${sid}" min="0" max="100" value="${cfg.blend_individual_weight ?? 70}" style="width:60px;${num}">
+        </div>
+      </div>
+
+      <div style="margin-bottom:6px;">
+        <label style="${lbl}">Reward Calculation</label>
+        <select id="gf-raise-rewardmode-${sid}" onchange="toggleRaiseRewardFields('${sid}')" style="${sel}">
+          <option value="proportional"${rewardMode==='proportional'?' selected':''}>Proportional</option>
+          <option value="threshold"${rewardMode==='threshold'?' selected':''}>Threshold Tiers</option>
+        </select>
+      </div>
+
+      <div id="gf-raise-prop-${sid}" style="display:${rewardMode==='proportional'?'':'none'};margin-bottom:6px;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+          <div>
+            <label style="${lbl}">Target Raise %</label>
+            <input type="number" id="gf-raise-target-${sid}" min="0" step="0.1" value="${prop.target_pct ?? 3}" style="width:60px;${num}">
+          </div>
+          <div>
+            <label style="${lbl}">Max Raise %</label>
+            <input type="number" id="gf-raise-max-${sid}" min="0" step="0.1" value="${prop.max_pct ?? 4}" style="width:60px;${num}">
+          </div>
+          <div>
+            <label style="${lbl}">Stretch Breakpoint</label>
+            <select id="gf-raise-stretchmode-${sid}" onchange="toggleRaiseStretchFields('${sid}')" style="${sel}">
+              <option value="auto"${stretchMode==='auto'?' selected':''}>Auto</option>
+              <option value="custom"${stretchMode==='custom'?' selected':''}>Custom</option>
+            </select>
+          </div>
+          <div id="gf-raise-stretchpct-wrap-${sid}" style="display:${stretchMode==='custom'?'':'none'}">
+            <label style="${lbl}">Custom Breakpoint %</label>
+            <input type="number" id="gf-raise-stretchpct-${sid}" min="101" step="1" value="${prop.stretch_breakpoint_pct || ''}" placeholder="e.g. 150" style="width:65px;${num}">
+          </div>
+        </div>
+      </div>
+
+      <div id="gf-raise-threshold-${sid}" style="display:${rewardMode==='threshold'?'':'none'};margin-bottom:6px;">
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;">Tiers (% of goal → raise %)</div>
+        <div id="gf-raise-tiers-rows-${sid}">${tiers.map((t,i) => _buildRaiseTierRow(sid,i,t)).join('')}</div>
+        <button type="button" onclick="_addRaiseTierRow('${sid}')" style="font-size:11px;background:none;border:1px solid var(--border2);color:var(--muted);border-radius:4px;padding:2px 8px;cursor:pointer;margin-top:2px;">+ Add Tier</button>
+      </div>
+
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">
+        <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px;cursor:pointer;">
+          <input type="checkbox" id="gf-raise-gate-enabled-${sid}" ${cfg.gate_enabled?'checked':''} onchange="toggleRaiseGateFields('${sid}')"> Individual Gate
+        </label>
+        <div id="gf-raise-gate-wrap-${sid}" style="display:${cfg.gate_enabled?'':'none'};font-size:11px;color:var(--muted);">
+          <input type="number" id="gf-raise-gate-floor-${sid}" min="0" max="100" value="${cfg.gate_floor_pct ?? 50}" style="width:55px;${num}"> % minimum individual progress
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--muted);margin-top:4px;">Matters most for Blended/Separate — zeroes the raise if the agent's own progress falls below the floor, regardless of the combined score.</div>
+    </div>
+  </div>`;
+}
+
 function showGoalForm(agentId, existingGoalId) {
   const container = document.getElementById('goal-form-' + agentId);
   if (!container) return;
@@ -229,7 +398,7 @@ function showGoalForm(agentId, existingGoalId) {
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;align-items:flex-end;">
       <div>
         <label style="font-size:9px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px;">Period Type</label>
-        <select id="gf-type-${escHtml(agentId)}" onchange="updateGoalFormPeriods('${escHtml(agentId)}')" style="background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:3px 6px;font-size:11px;outline:none;">
+        <select id="gf-type-${escHtml(agentId)}" onchange="updateGoalFormPeriods('${escHtml(agentId)}');updateRaiseSectionVisibility('${escHtml(agentId)}')" style="background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:3px 6px;font-size:11px;outline:none;">
           ${Object.entries(PT).map(([v,l]) => `<option value="${v}"${v===periodType?' selected':''}>${l}</option>`).join('')}
         </select>
       </div>
@@ -248,6 +417,7 @@ function showGoalForm(agentId, existingGoalId) {
     </div>
     <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;">Target Metrics</div>
     <div id="gf-metrics-${escHtml(agentId)}">${buildGoalMetricsHtml(agentId, existing?.goals||{})}</div>
+    ${buildRaiseGoalHtml(agentId, existing, periodType)}
     <div style="display:flex;gap:6px;align-items:center;margin-top:8px;">
       <button onclick="saveGoalForm('${escHtml(agentId)}','${existingGoalId||''}')" style="background:var(--accent2);color:#000;border:none;border-radius:5px;padding:4px 12px;font-size:12px;cursor:pointer;font-weight:600;">Save</button>
       <button onclick="document.getElementById('goal-form-${escHtml(agentId)}').style.display='none'" style="background:none;border:1px solid var(--border2);color:var(--muted);border-radius:5px;padding:4px 10px;font-size:12px;cursor:pointer;">Cancel</button>
@@ -318,6 +488,43 @@ async function saveGoalForm(agentId, existingGoalId) {
     return;
   }
 
+  // Raise-goal config only applies to annual goals — sending is_raise_goal:false
+  // when unchecked (or when period type isn't annual) clears any stale config
+  // rather than leaving it lingering from a prior save.
+  const raiseEnabledEl = document.getElementById('gf-raise-enabled-' + agentId);
+  const is_raise_goal  = !!(raiseEnabledEl?.checked && period_type === 'annual');
+  let raise_config = {};
+  if (is_raise_goal) {
+    const stretch_mode = document.getElementById('gf-raise-stretchmode-' + agentId)?.value || 'auto';
+    const tierContainer = document.getElementById('gf-raise-tiers-rows-' + agentId);
+    const threshold_tiers = [];
+    if (tierContainer) {
+      [...tierContainer.children].forEach((row, i) => {
+        const pct   = parseFloat(document.getElementById(`gf-raise-tier-pct-${agentId}-${i}`)?.value);
+        const raise = parseFloat(document.getElementById(`gf-raise-tier-raise-${agentId}-${i}`)?.value);
+        if (!isNaN(pct) && !isNaN(raise)) threshold_tiers.push({ pct, raise });
+      });
+    }
+    raise_config = {
+      combination_mode: document.getElementById('gf-raise-combo-' + agentId)?.value || 'individual',
+      agency_location_id: document.getElementById('gf-raise-loc-' + agentId)?.value || null,
+      agency_metric: document.getElementById('gf-raise-agmetric-' + agentId)?.value || 'count',
+      blend_individual_weight: parseFloat(document.getElementById('gf-raise-blendwt-' + agentId)?.value) || 70,
+      reward_mode: document.getElementById('gf-raise-rewardmode-' + agentId)?.value || 'proportional',
+      proportional: {
+        target_pct: parseFloat(document.getElementById('gf-raise-target-' + agentId)?.value) || 0,
+        max_pct:    parseFloat(document.getElementById('gf-raise-max-' + agentId)?.value) || 0,
+        stretch_mode,
+        stretch_breakpoint_pct: stretch_mode === 'custom'
+          ? (parseFloat(document.getElementById('gf-raise-stretchpct-' + agentId)?.value) || null)
+          : null,
+      },
+      threshold_tiers,
+      gate_enabled: !!document.getElementById('gf-raise-gate-enabled-' + agentId)?.checked,
+      gate_floor_pct: parseFloat(document.getElementById('gf-raise-gate-floor-' + agentId)?.value) || 0,
+    };
+  }
+
   const saveBtn = document.querySelector(`#goal-form-${agentId} button`);
   if (saveBtn) { saveBtn.disabled=true; saveBtn.textContent='Saving…'; }
 
@@ -327,20 +534,20 @@ async function saveGoalForm(agentId, existingGoalId) {
       r = await fetch('/api/agent-goals', {
         method: 'PATCH',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: existingGoalId, goals, is_public, is_recurring }),
+        body: JSON.stringify({ id: existingGoalId, goals, is_public, is_recurring, is_raise_goal, raise_config }),
       });
     } else {
       r = await fetch('/api/agent-goals', {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agent_id: agentId, period_type, period_label, period_start, period_end, goals, is_public, is_recurring }),
+        body: JSON.stringify({ agent_id: agentId, period_type, period_label, period_start, period_end, goals, is_public, is_recurring, is_raise_goal, raise_config }),
       });
     }
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || 'Save failed');
     if (existingGoalId) {
       const idx = _agentGoals.findIndex(g => g.id === existingGoalId);
-      if (idx >= 0) _agentGoals[idx] = { ..._agentGoals[idx], goals, is_public, is_recurring };
+      if (idx >= 0) _agentGoals[idx] = { ..._agentGoals[idx], goals, is_public, is_recurring, is_raise_goal, raise_config };
     } else {
       _agentGoals.push(d);
     }
@@ -430,40 +637,62 @@ function renderRaceGoalsRow(ag) {
   const raceMo = parseMoLabel(_raceCurrentMonth);
   if (!raceMo) return '';
   const canPrivate = _isAdmin || !_isMember || ['captain','chief_officer'].includes(_memberRole);
-  const canSee = g => g.agent_id === ag.agent_id && (g.is_public || canPrivate);
-  const monthlyVisible = g => canSee(g) && g.period_type === 'monthly';
+  // A member always sees their OWN goal regardless of is_public/canPrivate —
+  // the server already scopes a non-writer's fetch to their own agent_id only
+  // (api/agent-goals.js), so this was never a real privacy boundary for their
+  // own row, just a client-side rendering gap that hid it from themselves.
+  const isOwnRow = g => _isMember && _memberAgentId && g.agent_id === _memberAgentId;
+  const canSee = g => g.agent_id === ag.agent_id && (g.is_public || canPrivate || isOwnRow(g));
+  const belongsToAgent = g => g.agent_id === ag.agent_id;
+  const PROD = { wl:'WL', ul:'UL', term:'T', health:'H', auto:'A', fire:'F' };
+  const PT_SHORT = { quarterly:'Qtrly', semi_annual:'H1/H2', annual:'Annual' };
+
+  // Selection is based on DATA EXISTENCE only, never on the current viewer's
+  // visibility — otherwise the same physical row silently swaps to a different,
+  // unrelated goal (e.g. an annual one instead of this month's) depending on who's
+  // looking, which reads as "this agent's numbers changed" rather than "I just
+  // can't see this." Visibility is applied once, below, purely to decide whether
+  // real numbers or a locked placeholder gets rendered — the selected goal itself
+  // is the same for every viewer (fixed 2026-09-02 — reported as the Race tab
+  // showing annual data for "a few agents" depending on the viewer's role, right
+  // after real annual goals started existing for some agents).
   // Prefer an exact period match for the current race month; fall back to recurring monthly
   let agGoal = _agentGoals.find(g => {
-    if (!monthlyVisible(g) || g.is_recurring) return false;
+    if (!belongsToAgent(g) || g.period_type !== 'monthly' || g.is_recurring) return false;
     const d = new Date(g.period_start + 'T00:00:00Z');
     return d.getUTCFullYear() === raceMo.year && d.getUTCMonth() === raceMo.month;
   });
-  if (!agGoal) agGoal = _agentGoals.find(g => monthlyVisible(g) && g.is_recurring);
+  if (!agGoal) agGoal = _agentGoals.find(g => belongsToAgent(g) && g.period_type === 'monthly' && g.is_recurring);
   // Fall back to monthly goal for current calendar month (handles race month lag when month just turned)
   if (!agGoal) {
     const calMoStr = `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}`;
-    agGoal = _agentGoals.find(g => {
-      if (!monthlyVisible(g) || g.is_recurring) return false;
-      return g.period_start.startsWith(calMoStr);
-    });
+    agGoal = _agentGoals.find(g =>
+      belongsToAgent(g) && g.period_type === 'monthly' && !g.is_recurring && g.period_start.startsWith(calMoStr)
+    );
   }
   // Fall back to any currently-active non-monthly goal (quarterly / semi-annual / annual)
   if (!agGoal) {
     const todayStr = new Date().toISOString().slice(0, 10);
     agGoal = _agentGoals.find(g => {
-      if (!canSee(g) || g.period_type === 'monthly') return false;
+      if (!belongsToAgent(g) || g.period_type === 'monthly') return false;
       if (g.is_recurring) return true;
       return g.period_start <= todayStr && g.period_end >= todayStr;
     });
   }
   if (!agGoal) return '';
+
+  if (!canSee(agGoal)) {
+    const pt = agGoal.period_type !== 'monthly' ? ` <span style="font-size:9px;opacity:.6;">(${PT_SHORT[agGoal.period_type]||agGoal.period_type})</span>` : '';
+    return `<div style="margin-top:5px;padding:5px 7px;background:var(--deep);border-radius:5px;border:1px solid var(--border2);">
+      <div style="font-size:9px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">Goals${pt} 🔒</div>
+    </div>`;
+  }
+
   // Always use the server-computed actuals (same source the Goals tab uses) — race_data's ag[key]
   // is a different pipeline (race-month-scoped, sale_weight-adjusted, needs an explicit rebuild
   // trigger) and drifts from agGoal.actuals whenever the race month is set manually, a sale is
   // edited without a recalc, or the agent has split sales. See CLAUDE.md if this note is stale.
   const showPeriodTag = agGoal.period_type !== 'monthly';
-  const PROD = { wl:'WL', ul:'UL', term:'T', health:'H', auto:'A', fire:'F' };
-  const PT_SHORT = { quarterly:'Qtrly', semi_annual:'H1/H2', annual:'Annual' };
   const items = [];
   for (const [key, target] of Object.entries(agGoal.goals || {})) {
     if (!target || key === 'combined_groups') continue;
@@ -662,13 +891,126 @@ function _renderAgencyGoalsSection() {
   </div>`;
 }
 
+// ── Raise-Eligibility Goal — self-view card ──────────────────────────────────
+// Client-only toggle state, not persisted — re-renders via the same
+// re-render-on-state-change pattern already used by setGoalsFilter/goalsSetMonth.
+let _raiseAnnualizeState = {}; // goalId -> bool
+
+function toggleRaiseAnnualize(goalId) {
+  _raiseAnnualizeState[goalId] = !_raiseAnnualizeState[goalId];
+  renderGoalsTab();
+}
+
+function _raiseColorVar(color) {
+  return color === 'green' ? 'var(--accent2)' : color === 'yellow' ? 'var(--warn)' : 'var(--danger)';
+}
+
+// Renders only for a self-viewing member — an owner who is also on their own
+// roster has no field identifying "which roster row is me" (same known,
+// already-accepted gap as elsewhere in the app), so they won't see this card.
+function renderMyRaiseGoalModule() {
+  if (!_isMember || !_memberAgentId) return '';
+  const goals = (_goalsTabGoals || []).filter(g =>
+    g.agent_id === _memberAgentId && g.is_raise_goal && g.period_type === 'annual'
+  );
+  if (!goals.length) return '';
+  return goals.map(_renderRaiseGoalCard).join('');
+}
+
+function _renderRaiseGoalCard(g) {
+  const rs   = g.raise_status || {};
+  const cfg  = g.raise_config || {};
+  const mode = cfg.combination_mode || 'individual';
+  const displayLabel = g.is_recurring ? currentPeriodLabel(g.period_type) : g.period_label;
+  const annualized = !!_raiseAnnualizeState[g.id];
+
+  let bodyHtml;
+  if (mode === 'separate') {
+    const indColor = _raiseColorVar(rs.ytd_color);
+    const agColor  = _raiseColorVar(rs.agency_color);
+    const agPct    = rs.agency_pct != null ? Math.round(rs.agency_pct) : null;
+    bodyHtml = `
+      <div style="margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;"><span>You</span><span style="color:${indColor};">${Math.round(rs.individual_pct||0)}%</span></div>
+        <div style="height:6px;background:var(--border2);border-radius:3px;overflow:hidden;"><div style="height:6px;width:${Math.min(100,rs.individual_pct||0)}%;background:${indColor};border-radius:3px;"></div></div>
+      </div>
+      <div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;"><span>Agency</span><span style="color:${agColor};">${agPct != null ? agPct+'%' : '—'}</span></div>
+        <div style="height:6px;background:var(--border2);border-radius:3px;overflow:hidden;"><div style="height:6px;width:${Math.min(100,agPct||0)}%;background:${agColor};border-radius:3px;"></div></div>
+      </div>
+      <div style="font-size:10px;color:var(--muted);margin-top:6px;">Shown side by side — whoever makes the raise call weighs both.</div>`;
+  } else {
+    const pct   = annualized ? rs.annualized_pct : (mode === 'blended' ? rs.combined_pct : rs.individual_pct);
+    const color = annualized ? rs.annualized_color : rs.ytd_color;
+    const colorVar = _raiseColorVar(color);
+    const earned = annualized ? rs.projected_pct : rs.earned_pct;
+
+    bodyHtml = `
+      <div style="height:8px;background:var(--border2);border-radius:5px;overflow:hidden;margin-bottom:6px;">
+        <div style="height:8px;width:${Math.min(100,pct||0)}%;background:${colorVar};border-radius:5px;"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:6px;">
+        <span style="color:${colorVar};">${Math.round(pct||0)}% ${annualized ? 'projected (annualized)' : (mode==='blended'?'combined (YTD)':'(YTD)')}</span>
+        ${rs.gate_passed && earned != null ? `<span style="color:var(--gold);">${earned.toFixed(2)}% raise ${annualized?'projected':'earned'} so far</span>` : ''}
+      </div>`;
+    if (mode === 'blended') {
+      const iw = cfg.blend_individual_weight ?? 70;
+      bodyHtml += `<div style="font-size:10px;color:var(--muted);margin-bottom:6px;">${iw}% you + ${100-iw}% agency</div>`;
+    }
+    if (!rs.gate_passed) {
+      bodyHtml += `<div style="font-size:11px;color:var(--danger);background:rgba(255,77,109,.1);border:1px solid rgba(255,77,109,.3);border-radius:6px;padding:5px 8px;margin-bottom:6px;">Raise forced to 0% — individual progress is below the ${cfg.gate_floor_pct ?? 0}% floor.</div>`;
+    }
+    if (cfg.reward_mode === 'threshold' && Array.isArray(cfg.threshold_tiers) && cfg.threshold_tiers.length) {
+      const sorted = [...cfg.threshold_tiers].sort((a,b) => a.pct - b.pct);
+      const tierPills = sorted.map((t,i) => {
+        const active = i === rs.tier_index;
+        return `<span style="font-size:10px;padding:1px 7px;border-radius:10px;margin-right:4px;${active?`background:${colorVar};color:#000;font-weight:600;`:'background:var(--card2);color:var(--muted);'}">${t.pct}%→${t.raise}%</span>`;
+      }).join('');
+      bodyHtml += `<div style="margin-bottom:6px;">${tierPills}</div>`;
+    }
+    bodyHtml += `<label style="display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--muted);cursor:pointer;">
+      <input type="checkbox" ${annualized?'checked':''} onchange="toggleRaiseAnnualize('${escHtml(g.id)}')"> Show annualized projection
+    </label>`;
+  }
+
+  return `<div style="background:linear-gradient(180deg, rgba(255,209,102,.08), transparent 70%);border:1px solid rgba(255,209,102,.3);border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem;">
+    <div style="font-size:13px;font-weight:700;color:var(--gold);margin-bottom:6px;">🎯 Raise Eligibility <span style="font-weight:400;color:var(--muted);font-size:11px;">(${escHtml(displayLabel)})</span></div>
+    ${bodyHtml}
+  </div>`;
+}
+
+// Read-only YTD-only summary for a raise goal shown to someone other than the
+// goal's own agent (owner/captain/CO viewing the normal Goals tab card list) —
+// no annualize toggle, per spec's "agent's own view only" for that control.
+function _renderReadOnlyRaiseBlock(g) {
+  const rs = g.raise_status;
+  if (!rs) return '';
+  const cfg  = g.raise_config || {};
+  const mode = cfg.combination_mode || 'individual';
+  const pct  = mode === 'blended' ? rs.combined_pct : rs.individual_pct;
+  const colorVar = _raiseColorVar(rs.ytd_color);
+  const earnedTxt = !rs.gate_passed
+    ? 'Gated — 0% raise'
+    : (rs.earned_pct != null ? `${rs.earned_pct.toFixed(2)}% raise earned` : '');
+  return `<div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border2);">
+    <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;">
+      <span style="color:var(--gold);">🎯 Raise Eligibility</span>
+      <span style="color:${colorVar};">${Math.round(pct||0)}%${earnedTxt?' · '+earnedTxt:''}</span>
+    </div>
+    <div style="height:5px;background:var(--border2);border-radius:3px;overflow:hidden;">
+      <div style="height:5px;width:${Math.min(100,pct||0)}%;background:${colorVar};border-radius:3px;"></div>
+    </div>
+  </div>`;
+}
+
 function renderGoalsTab() {
   const el = document.getElementById('goals-content');
   if (!el) return;
   const PT = { monthly:'Monthly', quarterly:'Quarterly', semi_annual:'Semi-Annual', annual:'Annual' };
   const ML = { wl:'WL', ul:'UL', term:'Term', health:'Health', auto:'Auto', fire:'Fire', policies:'Total Policies', premium:'Premium ($)' };
 
-  const agencyHtml = _renderAgencyGoalsSection();
+  const myRaiseHtml = renderMyRaiseGoalModule();
+  const agencyHtml  = _renderAgencyGoalsSection();
 
   let filtered = _goalsViewFilter === 'all'
     ? _goalsTabGoals
@@ -685,7 +1027,7 @@ function renderGoalsTab() {
     });
   }
 
-  if (!filtered.length && !agencyHtml) {
+  if (!filtered.length && !agencyHtml && !myRaiseHtml) {
     const MO_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
     const moLabel = _goalsSelectedMonth ? (() => { const [y,m] = _goalsSelectedMonth.split('-').map(Number); return ` for ${MO_FULL[m-1]} ${y}`; })() : '';
     el.innerHTML = `<div style="color:var(--muted);font-size:13px;text-align:center;padding:2rem;">No goals found${moLabel}. Set goals in <button class="btn btn-secondary" style="padding:2px 8px;font-size:12px;" onclick="goToAccountTab('sales','ma-agents-section')">Account → Sales → Team</button></div>`;
@@ -750,6 +1092,11 @@ function renderGoalsTab() {
     const rowsHtml = rows.join('');
     const displayLabel = g.is_recurring ? currentPeriodLabel(g.period_type) : g.period_label;
     const range        = g.is_recurring ? currentPeriodRange(g.period_type) : { start: g.period_start, end: g.period_end };
+    // The self-viewing member's own raise goal already gets the richer,
+    // interactive card via renderMyRaiseGoalModule() at the top of the tab —
+    // skip it here so it isn't shown twice.
+    const isSelfView = _isMember && _memberAgentId && g.agent_id === _memberAgentId;
+    const raiseHtml  = (g.is_raise_goal && !isSelfView) ? _renderReadOnlyRaiseBlock(g) : '';
     return `<div style="background:var(--deep);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;margin-bottom:8px;">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
         <span style="font-size:13px;font-weight:600;">${escHtml(displayLabel)}</span>
@@ -758,6 +1105,7 @@ function renderGoalsTab() {
         <span style="font-size:10px;color:var(--muted);margin-left:auto;">${range.start} – ${range.end}</span>
       </div>
       ${rowsHtml}
+      ${raiseHtml}
     </div>`;
   }).join('');
 
@@ -792,6 +1140,6 @@ function renderGoalsTab() {
     agentGoalsHtml = Object.entries(byAgent).map(([agentId]) => renderAgentBlock(agentId, false)).join('');
   }
 
-  el.innerHTML = agencyHtml + (agentGoalsHtml || (agencyHtml ? '' : '<div style="color:var(--muted);font-size:13px;text-align:center;padding:2rem;">No agent goals for this filter.</div>'));
+  el.innerHTML = myRaiseHtml + agencyHtml + (agentGoalsHtml || ((agencyHtml || myRaiseHtml) ? '' : '<div style="color:var(--muted);font-size:13px;text-align:center;padding:2rem;">No agent goals for this filter.</div>'));
 }
 

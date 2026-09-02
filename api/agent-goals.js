@@ -1,4 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
+import {
+  computeMonthsElapsed, computeIndividualProgressPct, computeAgencyProgressPct,
+  computeCombinedProgressPct, gatePassed, computeProportionalReward,
+  computeThresholdReward, sanitizeRaiseConfig, annualizedPct, colorForYtd, colorForAnnualized,
+} from './_lib/raise-calc.js';
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 const WRITE_ROLES = ['captain', 'chief_officer'];
@@ -65,7 +70,9 @@ export default async function handler(req, res) {
       // necessarily the caller (a member's own accounts row has no timezone/is admin-only
       // fields relevant here) — always look up the owner's own row.
       const { data: ownerAcct } = await supabase.from('accounts').select('timezone').eq('user_id', dataUserId).single();
-      return res.status(200).json(await computeActuals(data || [], dataUserId, refDate, ownerAcct?.timezone));
+      const withActuals = await computeActuals(data || [], dataUserId, refDate, ownerAcct?.timezone);
+      const withRaise   = await attachRaiseStatus(withActuals, dataUserId, ownerAcct?.timezone);
+      return res.status(200).json(withRaise);
     }
     return res.status(200).json(data || []);
   }
@@ -80,14 +87,32 @@ export default async function handler(req, res) {
     const valid = ['monthly', 'quarterly', 'semi_annual', 'annual'];
     if (!valid.includes(period_type)) return res.status(400).json({ error: 'Invalid period_type' });
 
-    const { is_recurring } = req.body || {};
+    const { is_recurring, is_raise_goal, raise_config } = req.body || {};
+    // A raise goal is a flag on an existing ANNUAL goal — a raise doesn't make
+    // sense against a monthly/quarterly window, so this is enforced here
+    // rather than left to the frontend to police on its own.
+    if (is_raise_goal && period_type !== 'annual') {
+      return res.status(400).json({ error: 'Raise-eligible goals must be annual' });
+    }
+    let sanitizedRaiseConfig = {};
+    if (is_raise_goal) {
+      sanitizedRaiseConfig = sanitizeRaiseConfig(raise_config);
+      if (sanitizedRaiseConfig.combination_mode !== 'individual' && sanitizedRaiseConfig.agency_location_id) {
+        const { data: locRow } = await supabase.from('sales_locations')
+          .select('id').eq('id', sanitizedRaiseConfig.agency_location_id).eq('user_id', dataUserId).maybeSingle();
+        if (!locRow) return res.status(400).json({ error: 'Agency location not found' });
+      }
+    }
+
     const { data, error } = await supabase.from('agent_goals').upsert({
       user_id: dataUserId,
       agent_id, period_type, period_label,
       period_start, period_end,
       goals: goals || {},
-      is_public:     !!is_public,
-      is_recurring:  !!is_recurring,
+      is_public:      !!is_public,
+      is_recurring:   !!is_recurring,
+      is_raise_goal:  !!is_raise_goal,
+      raise_config:   sanitizedRaiseConfig,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'user_id,agent_id,period_type,period_label' }).select().single();
     if (error) return res.status(500).json({ error: error.message });
@@ -97,7 +122,7 @@ export default async function handler(req, res) {
   // PATCH — update fields
   if (req.method === 'PATCH') {
     if (!canWrite) return res.status(403).json({ error: 'Insufficient role' });
-    const { id, goals, is_public, is_recurring, period_start, period_end } = req.body || {};
+    const { id, goals, is_public, is_recurring, period_start, period_end, is_raise_goal, raise_config } = req.body || {};
     if (!id) return res.status(400).json({ error: 'id required' });
     const update = { updated_at: new Date().toISOString() };
     if (goals        !== undefined) update.goals       = goals;
@@ -105,6 +130,30 @@ export default async function handler(req, res) {
     if (is_recurring !== undefined) update.is_recurring = !!is_recurring;
     if (period_start)               update.period_start = period_start;
     if (period_end)                 update.period_end   = period_end;
+
+    if (is_raise_goal !== undefined) {
+      if (is_raise_goal) {
+        // period_type isn't itself editable via PATCH, so it has to be looked
+        // up rather than trusted from the request body.
+        const { data: existingGoal } = await supabase.from('agent_goals')
+          .select('period_type').eq('id', id).eq('user_id', dataUserId).single();
+        if (existingGoal?.period_type !== 'annual') {
+          return res.status(400).json({ error: 'Raise-eligible goals must be annual' });
+        }
+        const sanitizedRaiseConfig = sanitizeRaiseConfig(raise_config);
+        if (sanitizedRaiseConfig.combination_mode !== 'individual' && sanitizedRaiseConfig.agency_location_id) {
+          const { data: locRow } = await supabase.from('sales_locations')
+            .select('id').eq('id', sanitizedRaiseConfig.agency_location_id).eq('user_id', dataUserId).maybeSingle();
+          if (!locRow) return res.status(400).json({ error: 'Agency location not found' });
+        }
+        update.is_raise_goal = true;
+        update.raise_config  = sanitizedRaiseConfig;
+      } else {
+        update.is_raise_goal = false;
+        update.raise_config  = {};
+      }
+    }
+
     const { error } = await supabase.from('agent_goals')
       .update(update).eq('id', id).eq('user_id', dataUserId);
     if (error) return res.status(500).json({ error: error.message });
@@ -237,4 +286,101 @@ async function computeActuals(goals, dataUserId, refDateStr, timezone) {
     }
     return { ...goal, actuals };
   });
+}
+
+// Attaches a `raise_status` object to every goal flagged `is_raise_goal`.
+// Mutates and returns the same array `computeActuals` already produced (its
+// goals are fresh `{...goal, actuals}` objects per call, safe to extend here
+// without touching anything else). Cheap bail-out when nothing is raise-flagged.
+async function attachRaiseStatus(goals, dataUserId, timezone) {
+  const raiseGoals = goals.filter(g => g.is_raise_goal && g.period_type === 'annual');
+  if (!raiseGoals.length) return goals;
+
+  const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: timezone || 'UTC' }).format(new Date());
+  const year = todayStr.slice(0, 4);
+  const yearStart = `${year}-01-01`;
+  const yearEnd   = `${year}-12-31`;
+
+  // Agency locations (Blended/Separate modes) — dedupe across goals so a
+  // shared location is only fetched/aggregated once, not once per goal.
+  const locationIds = [...new Set(raiseGoals.map(g => g.raise_config?.agency_location_id).filter(Boolean))];
+  const locationById = {};
+  const locationActuals = {};
+
+  if (locationIds.length) {
+    const { data: locs } = await supabase.from('sales_locations')
+      .select('id, name, goal_count_annual, goal_premium_annual')
+      .in('id', locationIds).eq('user_id', dataUserId);
+    for (const loc of (locs || [])) {
+      locationById[loc.id] = loc;
+      const { data: rows } = await supabase.from('sales_log')
+        .select('written_premium, sale_weight')
+        .eq('user_id', dataUserId)
+        .eq('location', loc.name)
+        .eq('is_cancelled', false)
+        .gte('sale_date', yearStart).lte('sale_date', yearEnd);
+      let count = 0, premium = 0;
+      for (const r of (rows || [])) {
+        count   += r.sale_weight ?? 1;
+        premium += parseFloat(r.written_premium) || 0;
+      }
+      locationActuals[loc.id] = { count, premium };
+    }
+  }
+
+  for (const goal of raiseGoals) {
+    const cfg = goal.raise_config || {};
+    const monthsElapsed = computeMonthsElapsed(goal.period_start, goal.period_end, todayStr);
+    const individualPct = computeIndividualProgressPct(goal);
+
+    let agencyPct = null;
+    if (cfg.combination_mode !== 'individual' && cfg.agency_location_id) {
+      const loc = locationById[cfg.agency_location_id];
+      const act = locationActuals[cfg.agency_location_id] || { count: 0, premium: 0 };
+      agencyPct = computeAgencyProgressPct(loc, act.count, act.premium, cfg.agency_metric);
+    }
+
+    const combinedPct = computeCombinedProgressPct(individualPct, agencyPct, cfg.combination_mode, cfg.blend_individual_weight);
+    // Separate mode has no combined number (computeCombinedProgressPct returns
+    // null for it) — the driver for color/annualize/reward in that case falls
+    // back to the agent's own individual number, consistent with the gate
+    // always keying off individual performance.
+    const driverPct = cfg.combination_mode === 'blended' ? combinedPct : individualPct;
+    const gateOk = gatePassed(individualPct, cfg.gate_enabled, cfg.gate_floor_pct);
+    const annualized = annualizedPct(driverPct, monthsElapsed);
+
+    const status = {
+      individual_pct:   individualPct,
+      agency_pct:       agencyPct,
+      agency_color:     agencyPct != null ? colorForYtd(agencyPct) : null,
+      combined_pct:      combinedPct,
+      months_elapsed:    Math.round(monthsElapsed * 10) / 10,
+      annualized_pct:    annualized,
+      gate_passed:       gateOk,
+      ytd_color:         colorForYtd(driverPct),
+      annualized_color:  colorForAnnualized(annualized),
+    };
+
+    // Separate mode intentionally carries no earned/projected number at all —
+    // per spec, whoever makes the actual raise call weighs both bars manually.
+    if (cfg.combination_mode !== 'separate') {
+      const isThreshold = cfg.reward_mode === 'threshold';
+      const prop = cfg.proportional || {};
+      const ytdReward  = isThreshold
+        ? computeThresholdReward(driverPct, cfg.threshold_tiers)
+        : computeProportionalReward(driverPct, prop.target_pct, prop.max_pct, prop.stretch_mode, prop.stretch_breakpoint_pct);
+      const projReward = isThreshold
+        ? computeThresholdReward(annualized, cfg.threshold_tiers)
+        : computeProportionalReward(annualized, prop.target_pct, prop.max_pct, prop.stretch_mode, prop.stretch_breakpoint_pct);
+
+      status.earned_pct    = gateOk ? ytdReward.earnedPct  : 0;
+      status.projected_pct = gateOk ? projReward.earnedPct : 0;
+      if (isThreshold) status.tier_index = ytdReward.tierIndex;
+      else             status.stretch_breakpoint_pct = ytdReward.stretchBreakpointPct;
+    }
+
+    goal.raise_status = status;
+  }
+
+  return goals;
 }

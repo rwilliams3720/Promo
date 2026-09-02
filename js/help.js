@@ -19,6 +19,37 @@ const HELP_GUIDES = [
       { text: 'Click "Send Invite".', img: '/img/help/invite-bosun-6.jpg' },
     ],
   },
+  {
+    id: 'raise-eligibility-member',
+    category: 'Goals & Growth',
+    title: 'Understanding Your Raise Eligibility',
+    description: 'How your annual goal progress translates into a raise, and what the colors mean.',
+    visibility: ['all'],
+    steps: [
+      { text: 'Open the Goals tab. If your manager has flagged one of your annual goals as raise-eligible, you’ll see a "🎯 Raise Eligibility" card near the top.' },
+      { text: 'The progress bar shows how close you are to your goal. Depending on how this goal is set up, you may be compared against your own numbers only, a blend of your numbers and your agency’s, or both shown side by side.' },
+      { text: 'Toggle "Show annualized projection" to see your pace projected out to the full year instead of just year-to-date — useful early in the year when your raw progress % naturally looks low.' },
+      { text: 'Bar color meaning depends on which view you’re looking at: the year-to-date view turns green at 80%+ progress; the annualized/projected view turns green at 100%+, since it’s already accounting for time remaining in the year.' },
+      { text: 'If a minimum floor is set on this goal, falling below it zeroes out the raise regardless of any blended score — you’ll see a warning banner on the card if that applies to you.' },
+      { text: 'This card is an estimate to help you track your own progress — your actual raise is decided by your manager.' },
+    ],
+  },
+  {
+    id: 'raise-eligibility-owner',
+    category: 'Goals & Growth',
+    title: 'Setting Up a Raise-Eligible Goal',
+    description: 'Flag an annual goal to track raise eligibility, choose how it’s scored, and set an optional floor.',
+    visibility: ['owner'],
+    steps: [
+      { text: 'Go to Account → Sales → Team, find the agent, and create or edit an Annual goal.' },
+      { text: 'Check "🎯 Raise-Eligible Goal" to reveal the raise settings.' },
+      { text: 'Choose a Combination Mode: Individual (just this agent), Blended (a weighted mix of this agent and an Agency Location’s annual goal), or Separate (both shown side by side with no combined score).' },
+      { text: 'If you chose Blended or Separate, pick the Agency Location to compare against and whether it’s measured by policy count or premium.' },
+      { text: 'Choose a Reward Calculation: Proportional (a target % earned at 100% of goal, scaling up to a higher max % for exceeding goal) or Threshold Tiers (fixed raise amounts unlocked at specific progress milestones).' },
+      { text: 'Optionally enable the Individual Gate and set a floor — if the agent’s own progress falls below it, the raise shows as 0% no matter what the rest of the formula would say.' },
+      { text: 'Use the Public checkbox as usual to control whether other agents can see this goal — the agent it belongs to can always see their own raise progress regardless.' },
+    ],
+  },
 ];
 
 function _canSeeHelpGuide(g) {

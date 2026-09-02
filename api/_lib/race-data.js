@@ -59,18 +59,33 @@ export async function rebuildRaceData(supabase, dataUserId, agentIds) {
     }
   }
 
-  let q = supabase.from('sales_log').select('agent_id, product, sale_weight').eq('user_id', dataUserId).eq('is_cancelled', false).in('agent_id', ids);
-  if (fromDate) q = q.gte('sale_date', fromDate);
-  if (toDate)   q = q.lt('sale_date', toDate);
-  const { data: salesRows } = await q;
-
   const totals = {};
   for (const id of ids) totals[id] = { wl: 0, ul: 0, term: 0, health: 0, auto: 0, fire: 0 };
-  for (const row of (salesRows || [])) {
-    const cat = row.product;
-    if (cat === 'other' || cat === 'deposit' || cat === 'skip' || !row.agent_id) continue;
-    if (!totals[row.agent_id]) continue;
-    if (totals[row.agent_id][cat] !== undefined) totals[row.agent_id][cat] += (row.sale_weight ?? 1);
+
+  // race_config.current_month is blanked to '' by confirmArchive (js/account.js) the
+  // moment a month is archived, and stays that way until the owner sets a new one via
+  // Set Month. A sale edited/submitted during that window (e.g. a checklist submission
+  // arriving before Set Month is clicked) used to fall through here with fromDate/toDate
+  // both null, and an unguarded query with no .gte()/.lt() at all sums EVERY sale ever
+  // entered for that agent into race_data — not "this month", not even "this year," all
+  // of it — while every other untouched agent's row stays correctly at zero from the
+  // archive's delete. That produces exactly the symptom reported: a handful of agents
+  // showing wildly inflated totals while the rest of the roster looks normal, because it
+  // only strikes whichever agents happen to get a sale mutation during the gap between an
+  // archive and the next Set Month click. Skip the aggregation entirely rather than ever
+  // let this query run unscoped (fixed 2026-09-02 — reported as "sales by agent tile /
+  // podium totals appear annual for a few agents").
+  if (fromDate && toDate) {
+    const { data: salesRows } = await supabase
+      .from('sales_log').select('agent_id, product, sale_weight')
+      .eq('user_id', dataUserId).eq('is_cancelled', false).in('agent_id', ids)
+      .gte('sale_date', fromDate).lt('sale_date', toDate);
+    for (const row of (salesRows || [])) {
+      const cat = row.product;
+      if (cat === 'other' || cat === 'deposit' || cat === 'skip' || !row.agent_id) continue;
+      if (!totals[row.agent_id]) continue;
+      if (totals[row.agent_id][cat] !== undefined) totals[row.agent_id][cat] += (row.sale_weight ?? 1);
+    }
   }
 
   const now = new Date().toISOString();
