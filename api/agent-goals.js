@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import {
   computeMonthsElapsed, computeIndividualProgressPct, computeAgencyProgressPct,
@@ -8,6 +9,71 @@ import {
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 const WRITE_ROLES = ['captain', 'chief_officer'];
 const POLICY_PRODUCTS = ['wl', 'ul', 'term', 'health', 'auto', 'fire'];
+
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const MONTH_ABBR  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+// Team/agency goals — see CLAUDE.md "Call-Metric Goals" for the full design.
+// A goal applies to more than one agent by using one of these sentinel
+// strings as agent_id instead of a real roster agent_id, on an otherwise
+// ordinary agent_goals row (same mechanism the '__unlinked_member__' sentinel
+// below already uses for a different fail-closed purpose).
+const KNOWN_SENTINELS = ['__agency__', '__team_sales__', '__team_service__'];
+const TEAM_SENTINEL_RE = /^__team_(sales|service)__$/;
+
+// Which real agent_ids a goal's agent_id resolves to: individual -> itself,
+// team sentinel -> every roster agent on that team, agency sentinel -> null
+// (no filter — every agent). rosterByTeam is built once per request/batch.
+function resolveScopeAgentIds(goalAgentId, rosterByTeam) {
+  if (goalAgentId === '__agency__') return null;
+  const m = TEAM_SENTINEL_RE.exec(goalAgentId);
+  if (m) return rosterByTeam[m[1]] || new Set();
+  return new Set([goalAgentId]);
+}
+
+// Rejects an obviously-mistyped sentinel (e.g. '__team_saels__') outright —
+// any '__'-prefixed value must exactly match a known sentinel. A real
+// agent_id is checked against the roster only when one exists for this
+// account; an account with no roster (no sales add-on) can't be validated
+// against it, so it's allowed through rather than blocking goal creation —
+// same graceful-degradation posture already used elsewhere in this app for
+// roster-less accounts.
+async function validateAgentId(agentId, dataUserId) {
+  if (agentId.startsWith('__')) return KNOWN_SENTINELS.includes(agentId);
+  const { data: rosterRows } = await supabase.from('agent_roster').select('agent_id').eq('user_id', dataUserId);
+  if (!rosterRows || !rosterRows.length) return true;
+  return rosterRows.some(r => r.agent_id === agentId);
+}
+
+const ENCRYPTION_KEY = process.env.CUSTOMER_ENCRYPTION_KEY
+  ? Buffer.from(process.env.CUSTOMER_ENCRYPTION_KEY, 'hex')
+  : null;
+
+function decryptField(ciphertext) {
+  if (!ciphertext) return null;
+  if (!ENCRYPTION_KEY || !ciphertext.includes(':')) return ciphertext;
+  try {
+    const [ivB64, encB64, tagB64] = ciphertext.split(':');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', ENCRYPTION_KEY, Buffer.from(ivB64, 'base64'));
+    decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
+    return decipher.update(Buffer.from(encB64, 'base64')) + decipher.final('utf8');
+  } catch {
+    return ciphertext;
+  }
+}
+
+// Every "YYYY-MM" month key from pStart to pEnd inclusive (goal periods are
+// always whole-month-aligned — see currentPeriodDates/getGoalPeriodOptions).
+function monthsInRange(pStart, pEnd) {
+  const months = [];
+  let [y, m] = pStart.split('-').map(Number);
+  const [endY, endM] = pEnd.split('-').map(Number);
+  while (y < endY || (y === endY && m <= endM)) {
+    months.push(`${y}-${String(m).padStart(2, '0')}`);
+    m++; if (m > 12) { m = 1; y++; }
+  }
+  return months;
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -50,14 +116,21 @@ export default async function handler(req, res) {
       .select('*').eq('user_id', dataUserId)
       .order('period_start', { ascending: false });
 
-    // Members who can't write (bosun, custom) only ever see their own agent's goals —
-    // gated on role via canWrite, not on whether roster_agent_id happens to be set. Used to
-    // fail OPEN: a bosun/custom member not yet linked to a roster agent skipped this filter
-    // entirely and got every agent's goals. Fail closed instead — an unlinked non-writer
-    // matches a sentinel agent_id that can never exist, so they see nothing until an owner
-    // links them (fixed 2026-08-05).
+    // Members who can't write (bosun, custom) only ever see their own agent's goals,
+    // their own team's, and the whole agency's — gated on role via canWrite, not on
+    // whether roster_agent_id happens to be set. Fails closed: an unlinked non-writer
+    // matches a sentinel agent_id that can never exist, so they see nothing beyond the
+    // agency until an owner links them (fixed 2026-08-05; extended 2026-09-03 for
+    // team/agency sentinel goals — without this, GET would never return a
+    // '__team_sales__'/'__agency__' row to a non-writer at all, regardless of is_public).
     if (isMember && !canWrite) {
-      q = q.eq('agent_id', memberAgentId || '__unlinked_member__');
+      const scopeIds = [memberAgentId || '__unlinked_member__', '__agency__'];
+      if (memberAgentId) {
+        const { data: rosterRow } = await supabase.from('agent_roster')
+          .select('team').eq('user_id', dataUserId).eq('agent_id', memberAgentId).maybeSingle();
+        scopeIds.push(`__team_${rosterRow?.team || 'sales'}__`);
+      }
+      q = q.in('agent_id', scopeIds);
     }
 
     const { data, error } = await q;
@@ -86,6 +159,9 @@ export default async function handler(req, res) {
     }
     const valid = ['monthly', 'quarterly', 'semi_annual', 'annual'];
     if (!valid.includes(period_type)) return res.status(400).json({ error: 'Invalid period_type' });
+    if (!(await validateAgentId(agent_id, dataUserId))) {
+      return res.status(400).json({ error: 'Unknown agent_id' });
+    }
 
     const { is_recurring, is_raise_goal, raise_config } = req.body || {};
     // A raise goal is a flag on an existing ANNUAL goal — a raise doesn't make
@@ -228,6 +304,23 @@ async function computeActuals(goals, dataUserId, refDateStr, timezone) {
   const minStart = effective.reduce((m, g) => (g._eff_start||g.period_start) < m ? (g._eff_start||g.period_start) : m, effective[0]._eff_start||effective[0].period_start);
   const maxEnd   = effective.reduce((m, g) => (g._eff_end  ||g.period_end  ) > m ? (g._eff_end  ||g.period_end  ) : m, effective[0]._eff_end  ||effective[0].period_end  );
 
+  // Team/agency goals aggregate across more than one agent_id — resolve the
+  // account's roster-by-team once per request, reused for every goal's scope
+  // resolution below (individual goals resolve to just themselves, unaffected).
+  const needsRoster = effective.some(g => g.agent_id === '__agency__' || TEAM_SENTINEL_RE.test(g.agent_id));
+  const rosterByTeam = { sales: new Set(), service: new Set() };
+  if (needsRoster) {
+    const { data: rosterRows } = await supabase.from('agent_roster').select('agent_id, team').eq('user_id', dataUserId);
+    if (rosterRows && rosterRows.length) {
+      for (const r of rosterRows) (rosterByTeam[r.team || 'sales'] ||= new Set()).add(r.agent_id);
+    } else {
+      // No roster (account without the sales add-on) — race_data.team carries the
+      // same default-to-'sales' assumption already used everywhere else in the app.
+      const { data: rdRows } = await supabase.from('race_data').select('agent_id, team').eq('user_id', dataUserId);
+      for (const r of (rdRows || [])) (rosterByTeam[r.team || 'sales'] ||= new Set()).add(r.agent_id);
+    }
+  }
+
   const [salesRes, actRes] = await Promise.all([
     supabase.from('sales_log')
       .select('agent_id, product, written_premium, sale_date, is_cancelled, sale_weight')
@@ -245,11 +338,23 @@ async function computeActuals(goals, dataUserId, refDateStr, timezone) {
   const salesRows = (salesRes.data || []).filter(s => !s.is_cancelled);
   const actRows   = actRes.data || [];
 
+  // Call-metric actuals (handle_rate/voicemail_count/missed_calls) need a
+  // separate, potentially-expensive data source — only computed when at
+  // least one goal in this batch actually tracks one of them.
+  const needsCallMetrics = effective.some(g =>
+    g.goals?.handle_rate !== undefined || g.goals?.voicemail_count !== undefined || g.goals?.missed_calls !== undefined
+  );
+  const callMetricsByGoal = needsCallMetrics
+    ? await computeCallMetricActuals(effective, dataUserId, minStart, maxEnd, rosterByTeam)
+    : {};
+
   return effective.map(goal => {
-    const pStart  = goal._eff_start || goal.period_start;
-    const pEnd    = goal._eff_end   || goal.period_end;
-    const agSales = salesRows.filter(s => s.agent_id === goal.agent_id && s.sale_date >= pStart && s.sale_date <= pEnd);
-    const agActs  = actRows.filter(a => a.agent_id === goal.agent_id && a.activity_date >= pStart && a.activity_date <= pEnd);
+    const pStart   = goal._eff_start || goal.period_start;
+    const pEnd     = goal._eff_end   || goal.period_end;
+    const scopeIds = resolveScopeAgentIds(goal.agent_id, rosterByTeam);
+    const inScope  = id => scopeIds === null || scopeIds.has(id);
+    const agSales = salesRows.filter(s => inScope(s.agent_id) && s.sale_date >= pStart && s.sale_date <= pEnd);
+    const agActs  = actRows.filter(a => inScope(a.agent_id) && a.activity_date >= pStart && a.activity_date <= pEnd);
 
     // Weighted by sale_weight (0.5 for either side of a split sale) rather than a flat
     // row count — matches the Race tab, Sales Performance, and the Daily Report (see
@@ -284,8 +389,110 @@ async function computeActuals(goals, dataUserId, refDateStr, timezone) {
           : agSales.filter(s => (grp.products || []).includes(s.product)).reduce((sum, s) => sum + weightOf(s), 0);
       }
     }
+
+    const cm = callMetricsByGoal[goal.id];
+    if (cm) {
+      if (goal.goals.handle_rate !== undefined) {
+        const inbound = cm.answered + cm.missed + cm.voicemail;
+        actuals.handle_rate = inbound > 0 ? Math.round(cm.answered / inbound * 100) : 0;
+      }
+      if (goal.goals.voicemail_count !== undefined) actuals.voicemail_count = cm.voicemail;
+      if (goal.goals.missed_calls    !== undefined) actuals.missed_calls    = cm.missed;
+    }
+
     return { ...goal, actuals };
   });
+}
+
+// Aggregates answered/missed/voicemail counts per goal for the 3 call-metric
+// keys, merging archived (historical_wins, month-level) and live (call_log,
+// per-call) data — call_log rows are hard-deleted on every Archive & Reset,
+// so an annual goal's period will usually span several already-archived
+// months plus the live one. Same merge strategy as api/perf.js's "Yearly Call
+// Performance archive merge" fix (2026-09-01), applied here for goal actuals
+// instead of the Call Performance tab.
+async function computeCallMetricActuals(goals, dataUserId, minStart, maxEnd, rosterByTeam) {
+  const relevant = goals.filter(g =>
+    g.goals?.handle_rate !== undefined || g.goals?.voicemail_count !== undefined || g.goals?.missed_calls !== undefined
+  );
+  if (!relevant.length) return {};
+
+  // mergedByMonth: "YYYY-MM" -> { agentId -> {answered,missed,voicemail} }
+  const mergedByMonth = {};
+  const addTo = (monthKey, agentId, v) => {
+    if (!mergedByMonth[monthKey]) mergedByMonth[monthKey] = {};
+    if (!mergedByMonth[monthKey][agentId]) mergedByMonth[monthKey][agentId] = { answered: 0, missed: 0, voicemail: 0 };
+    const t = mergedByMonth[monthKey][agentId];
+    t.answered  += v.answered  || 0;
+    t.missed    += v.missed    || 0;
+    t.voicemail += v.voicemail || 0;
+  };
+
+  const { data: histRows } = await supabase.from('historical_wins')
+    .select('agent_id, month, answered, missed, voicemail')
+    .eq('user_id', dataUserId);
+  const histMonthsCovered = new Set();
+  for (const h of (histRows || [])) {
+    const parts = String(h.month || '').trim().split(/\s+/);
+    if (parts.length < 2) continue;
+    let mi = MONTH_NAMES.findIndex(x => x.toLowerCase() === parts[0].toLowerCase());
+    if (mi < 0) mi = MONTH_ABBR.findIndex(x => x.toLowerCase() === parts[0].toLowerCase());
+    const yr = parseInt(parts[1], 10);
+    if (mi < 0 || isNaN(yr)) continue;
+    const monthKey = `${yr}-${String(mi + 1).padStart(2, '0')}`;
+    addTo(monthKey, h.agent_id, { answered: h.answered, missed: h.missed, voicemail: h.voicemail });
+    histMonthsCovered.add(monthKey);
+  }
+
+  // Only query live call_log for months historical_wins doesn't already cover.
+  const liveMonths = monthsInRange(minStart, maxEnd).filter(mo => !histMonthsCovered.has(mo));
+  if (liveMonths.length) {
+    const [ly, lm] = liveMonths[0].split('-').map(Number);
+    const [hy, hm] = liveMonths[liveMonths.length - 1].split('-').map(Number);
+    const liveFrom = `${ly}-${String(lm).padStart(2, '0')}-01`;
+    const lastDay  = new Date(hy, hm, 0).getDate();
+    const liveTo   = `${hy}-${String(hm).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+    const PAGE = 1000;
+    let from = 0;
+    while (true) {
+      const { data, error } = await supabase.from('call_log')
+        .select('agent_id, disposition, call_dt')
+        .eq('user_id', dataUserId)
+        .in('disposition', ['answered', 'missed', 'voicemail'])
+        .gte('call_dt', liveFrom).lte('call_dt', liveTo)
+        .order('hash', { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error || !data || !data.length) break;
+      for (const row of data) {
+        const agentId = decryptField(row.agent_id);
+        if (!agentId || agentId === 'skip') continue;
+        const d = String(row.call_dt || '');
+        if (d.length < 7) continue;
+        const monthKey = d.slice(0, 7);
+        addTo(monthKey, agentId, { [row.disposition]: 1 });
+      }
+      if (data.length < PAGE) break;
+      from += PAGE;
+    }
+  }
+
+  const result = {};
+  for (const goal of relevant) {
+    const pStart = goal._eff_start || goal.period_start;
+    const pEnd   = goal._eff_end   || goal.period_end;
+    const scopeIds = resolveScopeAgentIds(goal.agent_id, rosterByTeam);
+    let answered = 0, missed = 0, voicemail = 0;
+    for (const monthKey of monthsInRange(pStart, pEnd)) {
+      const byAgent = mergedByMonth[monthKey] || {};
+      for (const [agentId, v] of Object.entries(byAgent)) {
+        if (scopeIds !== null && !scopeIds.has(agentId)) continue;
+        answered += v.answered; missed += v.missed; voicemail += v.voicemail;
+      }
+    }
+    result[goal.id] = { answered, missed, voicemail };
+  }
+  return result;
 }
 
 // Attaches a `raise_status` object to every goal flagged `is_raise_goal`.

@@ -212,7 +212,7 @@ function renderAgentRoster() {
     return;
   }
   const showStructure = _hasCommissionsAddon || _isAdmin;
-  container.innerHTML = _agentRoster.map(a => {
+  container.innerHTML = _renderScopeGoalsPanel() + _agentRoster.map(a => {
     const safeId = escHtml(a.agent_id);
     const structSection = showStructure ? (() => {
       const assignedIds = a.commission_structure_ids || (a.commission_structure_id ? [a.commission_structure_id] : []);

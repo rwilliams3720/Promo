@@ -116,6 +116,20 @@ function buildGoalMetricsHtml(agentId, existingGoals) {
     <label style="font-size:11px;min-width:130px;">Premium ($)</label>
     <input type="number" id="gf-val-${escHtml(agentId)}-premium" min="0" value="${escHtml(String(premVal))}" placeholder="target" style="width:70px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 5px;font-size:11px;outline:none;${premVal?'':'display:none;'}">
   </div>`);
+  // Call metrics — core data, no addon gate (unlike activity types below).
+  const CALL_METRICS = [
+    { key: 'handle_rate',     label: 'Handle Rate (%) — higher is better', max: '100' },
+    { key: 'voicemail_count', label: 'Voicemail Count — lower is better',  max: '' },
+    { key: 'missed_calls',    label: 'Missed Calls — lower is better',     max: '' },
+  ];
+  for (const cm of CALL_METRICS) {
+    const val = existingGoals[cm.key] || '';
+    rows.push(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+      <input type="checkbox" id="gf-check-${escHtml(agentId)}-${cm.key}" ${val?'checked':''} onchange="goalMetricToggle('${escHtml(agentId)}','${cm.key}')">
+      <label style="font-size:11px;min-width:130px;">${cm.label}</label>
+      <input type="number" id="gf-val-${escHtml(agentId)}-${cm.key}" min="0" ${cm.max?`max="${cm.max}"`:''} value="${escHtml(String(val))}" placeholder="target" style="width:70px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 5px;font-size:11px;outline:none;${val?'':'display:none;'}">
+    </div>`);
+  }
   if (_hasCommissionsAddon || _isAdmin) {
     for (const t of _activityTypes) {
       const key = 'activity_' + t.id;
@@ -443,7 +457,7 @@ async function saveGoalForm(agentId, existingGoalId) {
   const is_recurring = recurringEl?.checked || false;
 
   const goals = {};
-  const PROD_KEYS = ['wl','ul','term','health','auto','fire','policies','premium'];
+  const PROD_KEYS = ['wl','ul','term','health','auto','fire','policies','premium','handle_rate','voicemail_count','missed_calls'];
   for (const key of PROD_KEYS) {
     const cb  = document.getElementById(`gf-check-${agentId}-${key}`);
     const inp = document.getElementById(`gf-val-${agentId}-${key}`);
@@ -580,7 +594,7 @@ function renderAgentRosterGoalsSection(a) {
     .sort((x, y) => x.period_start < y.period_start ? 1 : -1);
   const sid = escHtml(a.agent_id);
   const PT  = { monthly:'Monthly', quarterly:'Quarterly', semi_annual:'Semi-Annual', annual:'Annual' };
-  const ML  = { wl:'WL', ul:'UL', term:'Term', health:'Health', auto:'Auto', fire:'Fire', policies:'Policies', premium:'Premium' };
+  const ML  = { wl:'WL', ul:'UL', term:'Term', health:'Health', auto:'Auto', fire:'Fire', policies:'Policies', premium:'Premium', handle_rate:'Handle Rate', voicemail_count:'Voicemail', missed_calls:'Missed Calls' };
   const goalRows = agGoals.map(g => {
     const keys = Object.keys(g.goals||{}).filter(k => g.goals[k] && k !== 'combined_groups');
     const cgPills = (g.goals.combined_groups || []).map(grp => {
@@ -617,6 +631,25 @@ function renderAgentRosterGoalsSection(a) {
     </div>
     ${agGoals.length ? goalRows : '<div style="font-size:11px;color:var(--muted);">No goals set</div>'}
     <div id="goal-form-${sid}" style="display:none;margin-top:6px;"></div>
+  </div>`;
+}
+
+const SCOPE_LABELS = { __agency__: 'Whole Agency', __team_sales__: 'Sales Team', __team_service__: 'Service Team' };
+
+// Team/agency goals aren't real roster agents — this renders authoring cards
+// for the 3 sentinel scopes, reusing renderAgentRosterGoalsSection() as-is
+// (it only ever reads a.agent_id, so a synthetic {agent_id: sentinel} object
+// works unmodified). Writer-only, matching the server's WRITE_ROLES gate.
+function _renderScopeGoalsPanel() {
+  const canWrite = _isAdmin || !_isMember || ['captain','chief_officer'].includes(_memberRole);
+  if (!canWrite) return '';
+  const cards = Object.keys(SCOPE_LABELS).map(id => `<div style="margin-bottom:.75rem;">
+    <div style="font-weight:700;font-size:13px;margin-bottom:4px;">${SCOPE_LABELS[id]}</div>
+    ${renderAgentRosterGoalsSection({ agent_id: id })}
+  </div>`).join('');
+  return `<div style="margin-bottom:1.5rem;border:1px solid var(--border2);border-radius:10px;padding:.85rem;">
+    <div style="font-size:13px;font-weight:700;color:var(--accent2);margin-bottom:.75rem;">Team &amp; Agency Goals</div>
+    ${cards}
   </div>`;
 }
 
@@ -910,8 +943,15 @@ function _raiseColorVar(color) {
 // already-accepted gap as elsewhere in the app), so they won't see this card.
 function renderMyRaiseGoalModule() {
   if (!_isMember || !_memberAgentId) return '';
+  // Every member is inherently "in" their own team and the whole agency, so
+  // their team-scoped and agency-scoped raise goals belong in this self-view
+  // module too, not just their individual one — the server (GET /api/agent-goals)
+  // already scopes a non-writer's fetch to exactly these three, so no further
+  // visibility check is needed here, only identifying which rows are "mine."
+  const myTeam = _agentRoster.find(a => a.agent_id === _memberAgentId)?.team || 'sales';
+  const relevantIds = new Set([_memberAgentId, `__team_${myTeam}__`, '__agency__']);
   const goals = (_goalsTabGoals || []).filter(g =>
-    g.agent_id === _memberAgentId && g.is_raise_goal && g.period_type === 'annual'
+    relevantIds.has(g.agent_id) && g.is_raise_goal && g.period_type === 'annual'
   );
   if (!goals.length) return '';
   return goals.map(_renderRaiseGoalCard).join('');
@@ -973,8 +1013,9 @@ function _renderRaiseGoalCard(g) {
     </label>`;
   }
 
+  const scopeLabel = SCOPE_LABELS[g.agent_id] ? ` — ${SCOPE_LABELS[g.agent_id]}` : '';
   return `<div style="background:linear-gradient(180deg, rgba(255,209,102,.08), transparent 70%);border:1px solid rgba(255,209,102,.3);border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem;">
-    <div style="font-size:13px;font-weight:700;color:var(--gold);margin-bottom:6px;">🎯 Raise Eligibility <span style="font-weight:400;color:var(--muted);font-size:11px;">(${escHtml(displayLabel)})</span></div>
+    <div style="font-size:13px;font-weight:700;color:var(--gold);margin-bottom:6px;">🎯 Raise Eligibility${scopeLabel} <span style="font-weight:400;color:var(--muted);font-size:11px;">(${escHtml(displayLabel)})</span></div>
     ${bodyHtml}
   </div>`;
 }
@@ -1007,7 +1048,7 @@ function renderGoalsTab() {
   const el = document.getElementById('goals-content');
   if (!el) return;
   const PT = { monthly:'Monthly', quarterly:'Quarterly', semi_annual:'Semi-Annual', annual:'Annual' };
-  const ML = { wl:'WL', ul:'UL', term:'Term', health:'Health', auto:'Auto', fire:'Fire', policies:'Total Policies', premium:'Premium ($)' };
+  const ML = { wl:'WL', ul:'UL', term:'Term', health:'Health', auto:'Auto', fire:'Fire', policies:'Total Policies', premium:'Premium ($)', handle_rate:'Handle Rate', voicemail_count:'Voicemail Count', missed_calls:'Missed Calls' };
 
   const myRaiseHtml = renderMyRaiseGoalModule();
   const agencyHtml  = _renderAgencyGoalsSection();
@@ -1059,8 +1100,8 @@ function renderGoalsTab() {
       const numTgt = parseFloat(target) || 0;
       const pct    = actual !== null && numTgt > 0 ? Math.min(100, Math.round(actual/numTgt*100)) : null;
       const col    = pct === null ? 'var(--muted)' : pct>=100 ? 'var(--accent2)' : pct>=70 ? '#fbbf24' : 'var(--danger)';
-      const dispA  = actual === null ? '—' : key==='premium' ? '$'+Math.round(actual).toLocaleString() : actual;
-      const dispT  = key === 'premium' ? '$'+parseFloat(target).toLocaleString() : target;
+      const dispA  = actual === null ? '—' : key==='premium' ? '$'+Math.round(actual).toLocaleString() : key==='handle_rate' ? actual+'%' : actual;
+      const dispT  = key === 'premium' ? '$'+parseFloat(target).toLocaleString() : key==='handle_rate' ? target+'%' : target;
       return `<div style="margin-bottom:8px;">
         <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">
           <span>${escHtml(label)}</span>
@@ -1112,13 +1153,23 @@ function renderGoalsTab() {
   const renderAgentBlock = (agentId, indent) => {
     const goals = byAgent[agentId];
     if (!goals?.length) return '';
-    const name  = (_agentRoster.find(x => x.agent_id === agentId)?.name) || agentId;
+    const name  = SCOPE_LABELS[agentId] || (_agentRoster.find(x => x.agent_id === agentId)?.name) || agentId;
     const cards = renderGoalCards(goals);
     return `<div style="margin-bottom:1rem;${indent ? 'margin-left:1.5rem;padding-left:.75rem;border-left:2px solid var(--border2);' : ''}">
       <div style="font-size:${indent ? '13' : '14'}px;font-weight:700;margin-bottom:.5rem;padding-bottom:.4rem;border-bottom:1px solid var(--border2);">${escHtml(name)}</div>
       ${cards || ''}
     </div>`;
   };
+
+  // Team/agency sentinel goals never appear in an org chart group's agentIds
+  // (those only ever list real roster agents) — pulled out and rendered
+  // separately here so they don't silently vanish under any account using an
+  // org chart, then removed from byAgent so the loop below doesn't also try
+  // (and fail) to render them a second time.
+  const scopeGoalsHtml = Object.keys(SCOPE_LABELS)
+    .map(id => byAgent[id] ? renderAgentBlock(id, false) : '')
+    .join('');
+  for (const id of Object.keys(SCOPE_LABELS)) delete byAgent[id];
 
   const groups = _getOrgGroups();
   let agentGoalsHtml;
@@ -1140,6 +1191,6 @@ function renderGoalsTab() {
     agentGoalsHtml = Object.entries(byAgent).map(([agentId]) => renderAgentBlock(agentId, false)).join('');
   }
 
-  el.innerHTML = myRaiseHtml + agencyHtml + (agentGoalsHtml || ((agencyHtml || myRaiseHtml) ? '' : '<div style="color:var(--muted);font-size:13px;text-align:center;padding:2rem;">No agent goals for this filter.</div>'));
+  el.innerHTML = myRaiseHtml + agencyHtml + scopeGoalsHtml + (agentGoalsHtml || ((agencyHtml || myRaiseHtml || scopeGoalsHtml) ? '' : '<div style="color:var(--muted);font-size:13px;text-align:center;padding:2rem;">No agent goals for this filter.</div>'));
 }
 

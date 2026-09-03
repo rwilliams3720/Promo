@@ -8,6 +8,20 @@ const REWARD_MODES = ['proportional', 'threshold'];
 const STRETCH_MODES = ['auto', 'custom'];
 const AGENCY_METRICS = ['count', 'premium'];
 
+// Call-metric goal keys — fixed, system-defined metrics, so their direction
+// (higher-is-better vs lower-is-better) is a hardcoded fact, not a per-goal
+// choice, unlike bonus_activity_types.analysis_direction (which IS
+// per-account-configurable, for arbitrary custom activities). handle_rate is
+// higher-better (the existing actual/target ratio shape already works);
+// voicemail_count/missed_calls are lower-better (fewer is the goal).
+const CALL_METRIC_KEYS = ['handle_rate', 'voicemail_count', 'missed_calls'];
+const LOWER_BETTER_KEYS = new Set(['voicemail_count', 'missed_calls']);
+// Caps a lower-better metric's ratio at 200% so a near-zero actual (e.g. 0
+// missed calls against a target of 5) can't produce an outlier — e.g. 5/0 —
+// that would dominate the plain average this function takes across every
+// active ratio on the goal.
+const LOWER_BETTER_RATIO_CAP = 2;
+
 function round2(n) { return Math.round(n * 100) / 100; }
 
 // Fractional months elapsed within an annual period, based on calendar days —
@@ -52,6 +66,15 @@ export function computeIndividualProgressPct(goal) {
       const target = Number(grp.target);
       if (target > 0) ratios.push((Number(actuals['combined_' + grp.id]) || 0) / target);
     }
+  }
+  for (const key of CALL_METRIC_KEYS) {
+    const target = Number(goals[key]);
+    if (goals[key] === undefined || !(target > 0)) continue;
+    const actual = Number(actuals[key]) || 0;
+    const ratio = LOWER_BETTER_KEYS.has(key)
+      ? (actual > 0 ? Math.min(target / actual, LOWER_BETTER_RATIO_CAP) : LOWER_BETTER_RATIO_CAP)
+      : actual / target; // handle_rate — same shape as every higher-better ratio above
+    ratios.push(ratio);
   }
 
   if (!ratios.length) return 0;
