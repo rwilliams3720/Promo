@@ -3168,7 +3168,8 @@ function _buildLocCgRow(locId, period, idx, grp, prods) {
     <div style="flex:1;">
       <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:4px;">
         <input id="loc-cg-lbl-${period}-${locId}-${idx}" type="text" placeholder="Label (e.g. Auto+Fire)" value="${escHtml(grp?.label||'')}" style="flex:1;min-width:90px;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 5px;font-size:11px;outline:none;">
-        <input id="loc-cg-tgt-${period}-${locId}-${idx}" type="number" min="0" placeholder="target" value="${grp?.target||''}" style="width:55px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 4px;font-size:11px;outline:none;">
+        <input id="loc-cg-tgt-${period}-${locId}-${idx}" type="number" min="0" placeholder="policy target" title="Policy count target" value="${grp?.target||''}" style="width:80px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 4px;font-size:11px;outline:none;">
+        <input id="loc-cg-tgtprem-${period}-${locId}-${idx}" type="number" min="0" placeholder="premium target $" title="Premium target ($) — independent of the policy target, set either or both" value="${grp?.target_premium||''}" style="width:90px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 4px;font-size:11px;outline:none;">
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">${
         prods.map(c => `<label style="font-size:10px;display:flex;align-items:center;gap:3px;cursor:pointer;white-space:nowrap;"><input type="checkbox" id="loc-cg-p-${period}-${locId}-${idx}-${c.key}" ${sel.includes(c.key)?'checked':''}> ${escHtml(c.label||c.key)}</label>`).join('')
@@ -3225,8 +3226,12 @@ async function saveLocationDetails(id, btn) {
     return [...container.children].map((row, i) => {
       const label   = document.getElementById(`loc-cg-lbl-${period}-${id}-${i}`)?.value?.trim() || '';
       const target  = parseFloat(document.getElementById(`loc-cg-tgt-${period}-${id}-${i}`)?.value) || 0;
+      const target_premium = parseFloat(document.getElementById(`loc-cg-tgtprem-${period}-${id}-${i}`)?.value) || 0;
       const products = policyProds.filter(c => document.getElementById(`loc-cg-p-${period}-${id}-${i}-${c.key}`)?.checked).map(c => c.key);
-      return (products.length >= 2 && target > 0) ? { id: 'lcg' + i, label: label || products.join('+'), products, target } : null;
+      if (products.length < 2 || (target <= 0 && target_premium <= 0)) return null;
+      const grp = { id: 'lcg' + i, label: label || products.join('+'), products, target };
+      if (target_premium > 0) grp.target_premium = target_premium;
+      return grp;
     }).filter(Boolean);
   };
   const combined_product_goals_monthly = collectLocCg('mo');

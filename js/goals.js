@@ -8,6 +8,57 @@ async function loadAgentGoals() {
   } catch(e) { _agentGoals = []; _goalsLoaded = true; }
   // Race tab may have already rendered before goals loaded — re-render it now
   if (_raceData.length) renderRace(_raceData);
+  renderHeaderAgencyProgress();
+}
+
+// Condensed Whole Agency progress bar pinned to the app header (Account →
+// Sales → Team → Team & Agency Goals → Whole Agency → a goal's "📌 Show in
+// header" checkbox) — account-wide setting, visible to everyone, not a
+// per-viewer preference. Derived from _agentGoals (already fetched for every
+// user at login by loadAgentGoals(), no separate request needed) rather than
+// a dedicated endpoint. Respects the same Public/Private visibility a
+// non-writer already gets on the Goals tab — a private pinned goal only
+// shows for writers, not leaked into every member's header.
+function renderHeaderAgencyProgress() {
+  const box = document.getElementById('header-agency-progress');
+  if (!box) return;
+  const g = (_agentGoals || []).find(x => x.agent_id === '__agency__' && x.show_in_header && x.header_progress);
+  const canPrivate = _isAdmin || !_isMember || ['captain','chief_officer'].includes(_memberRole);
+  if (!g || (!g.is_public && !canPrivate)) { box.style.display = 'none'; return; }
+  box.style.display = '';
+  const ot  = !!document.getElementById('hap-ot')?.checked;
+  const hp  = g.header_progress;
+  const pct = ot ? hp.projected_pct : hp.progress_pct;
+  const color = ot ? hp.projected_color : hp.progress_color;
+  const colorVar = color === 'green' ? 'var(--accent2)' : color === 'yellow' ? 'var(--warn)' : 'var(--danger)';
+  const fillEl = document.getElementById('hap-fill');
+  const pctEl  = document.getElementById('hap-pct');
+  const lblEl  = document.getElementById('hap-label');
+  const detEl  = document.getElementById('hap-detail');
+  if (fillEl) { fillEl.style.width = Math.max(0, Math.min(100, pct)) + '%'; fillEl.style.background = colorVar; }
+  if (pctEl)  { pctEl.textContent = Math.round(pct*10)/10 + '%' + (ot ? ' on-track pace' : ' cumulative'); pctEl.style.color = colorVar; }
+  const periodLabel = g.is_recurring ? currentPeriodLabel(g.period_type) : g.period_label;
+  if (lblEl)  { lblEl.textContent = `Whole Agency Goal — ${periodLabel}`; }
+  if (detEl) {
+    // Per-metric actual/target breakdown, same labels used everywhere else a
+    // goal's raw metrics are shown (renderGoalCards) — makes the header bar
+    // legible on its own instead of just a bare, unexplained percentage.
+    const ML = { wl:'WL', ul:'UL', term:'Term', health:'Health', auto:'Auto', fire:'Fire', policies:'Policies', premium:'Premium', handle_rate:'Handle Rate', voicemail_count:'Voicemail', missed_calls:'Missed Calls' };
+    const parts = Object.entries(g.goals || {}).filter(([k,v]) => v && k !== 'combined_groups').map(([k,target]) => {
+      const actual = g.actuals?.[k];
+      const dispA = k === 'premium' ? '$'+Math.round(actual||0).toLocaleString() : (actual ?? 0);
+      const dispT = k === 'premium' ? '$'+Number(target).toLocaleString() : target;
+      return `${ML[k]||k} ${dispA}/${dispT}`;
+    });
+    for (const grp of (g.goals.combined_groups || [])) {
+      if (grp.target) parts.push(`${escHtml(grp.label||grp.id)} ${g.actuals?.['combined_'+grp.id] ?? 0}/${grp.target}`);
+      if (grp.target_premium) parts.push(`${escHtml(grp.label||grp.id)} $${Math.round(g.actuals?.['combined_'+grp.id+'_premium']||0).toLocaleString()}/$${Number(grp.target_premium).toLocaleString()}`);
+    }
+    detEl.textContent = parts.length ? parts.join(' · ') : (ot ? 'Projected pace toward year-end' : 'Cumulative toward goal');
+    detEl.title = ot
+      ? 'Current pace projected to the end of the goal\'s period — the same "on track" idea as an individual\'s own annualized raise projection.'
+      : 'Raw progress so far, not adjusted for how much of the period has elapsed.';
+  }
 }
 
 function currentPeriodLabel(periodType) {
@@ -208,7 +259,8 @@ function _buildCgRow(agentId, idx, grp, cats) {
     <div style="flex:1;">
       <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:4px;">
         <input id="gf-cg-lbl-${sid}-${idx}" type="text" placeholder="Label (e.g. Auto+Fire)" value="${escHtml(grp?.label||'')}" style="flex:1;min-width:90px;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 5px;font-size:11px;outline:none;">
-        <input id="gf-cg-tgt-${sid}-${idx}" type="number" min="0" placeholder="target" value="${grp?.target||''}" style="width:55px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 4px;font-size:11px;outline:none;">
+        <input id="gf-cg-tgt-${sid}-${idx}" type="number" min="0" placeholder="policy target" title="Policy count target" value="${grp?.target||''}" style="width:80px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 4px;font-size:11px;outline:none;">
+        <input id="gf-cg-tgtprem-${sid}-${idx}" type="number" min="0" placeholder="premium target $" title="Premium target ($) — independent of the policy target, set either or both" value="${grp?.target_premium||''}" style="width:90px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 4px;font-size:11px;outline:none;">
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">${
         cats.map(c => `<label style="font-size:10px;display:flex;align-items:center;gap:3px;cursor:pointer;white-space:nowrap;"><input type="checkbox" id="gf-cg-p-${sid}-${idx}-${c.key}" ${sel.includes(c.key)?'checked':''}> ${escHtml(c.label||c.key)}</label>`).join('')
@@ -274,10 +326,8 @@ function toggleRaiseFieldsVisibility(agentId) {
 function toggleRaiseComboFields(agentId) {
   const mode      = document.getElementById('gf-raise-combo-' + agentId)?.value;
   const locWrap   = document.getElementById('gf-raise-loc-wrap-' + agentId);
-  const agWrap    = document.getElementById('gf-raise-agmetric-wrap-' + agentId);
   const blendWrap = document.getElementById('gf-raise-blendwt-wrap-' + agentId);
   if (locWrap)   locWrap.style.display   = mode === 'individual' ? 'none' : '';
-  if (agWrap)    agWrap.style.display    = mode === 'individual' ? 'none' : '';
   if (blendWrap) blendWrap.style.display = mode === 'blended'    ? ''     : 'none';
 }
 
@@ -326,6 +376,7 @@ function _removeRaiseTierRow(agentId, idx) {
 }
 
 const ALL_LOCATIONS_SENTINEL = '__all_locations__';
+const WHOLE_AGENCY_GOAL_SENTINEL = '__whole_agency_goal__';
 
 function buildRaiseGoalHtml(agentId, existing, periodType) {
   const sid = escHtml(agentId);
@@ -344,7 +395,11 @@ function buildRaiseGoalHtml(agentId, existing, periodType) {
   const lbl = 'font-size:9px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px;';
   const sel = 'background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:3px 6px;font-size:11px;outline:none;';
   const num = 'background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 5px;font-size:11px;outline:none;';
-  const info = text => `<span title="${escHtml(text)}" style="cursor:help;opacity:.8;">ⓘ</span>`;
+  // Plain ASCII "i" drawn as a small circle via CSS, not the Unicode ⓘ glyph —
+  // that character isn't covered by every font this app's users might have,
+  // and renders as a missing-glyph "?" box when it isn't (reported live
+  // 2026-09-04). An ASCII letter in a CSS circle can't hit that failure mode.
+  const info = text => `<span title="${escHtml(text)}" style="cursor:help;display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border-radius:50%;border:1px solid var(--muted);color:var(--muted);font-size:9px;font-style:italic;font-family:Georgia,'Times New Roman',serif;line-height:1;vertical-align:middle;">i</span>`;
 
   return `<div id="gf-raise-section-${sid}" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border2);display:${RAISE_ELIGIBLE_PERIOD_TYPES.includes(periodType) ? '' : 'none'};">
     <label id="gf-raise-label-${sid}" style="font-size:11px;color:var(--gold);display:flex;align-items:center;gap:5px;cursor:${eligible?'pointer':'not-allowed'};margin-bottom:6px;opacity:${eligible?'1':'.45'};" title="${eligible?'':'Must be Recurring to use raise eligibility on a monthly goal.'}">
@@ -353,7 +408,7 @@ function buildRaiseGoalHtml(agentId, existing, periodType) {
     <div id="gf-raise-fields-${sid}" style="display:${enabled?'':'none'};padding-left:4px;">
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;align-items:flex-end;">
         <div>
-          <label style="${lbl}">Combination Mode ${info('Individual: only this agent\'s own progress counts. Blended: a weighted mix of this agent\'s progress and an Agency Location\'s (or All Locations\') goal, combined into one score — pulled from each location\'s own Office Goals (Account → Sales → Locations), not the separate "Whole Agency" goal under Team & Agency Goals. Separate: both shown side by side with no combined score — whoever makes the raise call weighs both manually.')}</label>
+          <label style="${lbl}">Combination Mode ${info('Individual: only this agent\'s own progress counts. Blended: a weighted mix of this agent\'s progress and the Agency Location\'s progress, combined into one score. Separate: both shown side by side with no combined score — whoever makes the raise call weighs both manually.')}</label>
           <select id="gf-raise-combo-${sid}" onchange="toggleRaiseComboFields('${sid}')" style="${sel}">
             <option value="individual"${mode==='individual'?' selected':''}>Individual</option>
             <option value="blended"${mode==='blended'?' selected':''}>Blended</option>
@@ -361,18 +416,12 @@ function buildRaiseGoalHtml(agentId, existing, periodType) {
           </select>
         </div>
         <div id="gf-raise-loc-wrap-${sid}" style="display:${mode==='individual'?'none':''}">
-          <label style="${lbl}">Agency Location ${info('Pulls the target from that location\'s own Office Goals (Account → Sales → Locations → Edit) — NOT from the "Whole Agency" card under Account → Sales → Team → Team & Agency Goals, which is a separate, independent goal. All Locations: blends against every location with goals enabled, added together, instead of one specific office. Useful when the agent isn\'t tied to a single location, or the raise should reflect overall agency performance.')}</label>
+          <label style="${lbl}">Agency Location ${info('Three different sources, pick one: a specific office or All Locations pull from each location\'s own Office Goals (Account → Sales → Locations → Edit) — a plain sales target, not itself raise-eligible. Whole Agency Goal instead aligns with the agency\'s own annual/monthly goal that\'s ALSO flagged 🎯 Raise-Eligible (Account → Sales → Team → Team & Agency Goals → Whole Agency) — use this when the intent is "the individual is only eligible if they hit their own goal, and the size of their raise scales with whether the whole agency hit its own raise-eligible goal too." Set the Individual Gate to 100% to enforce that exact rule. For a specific office/All Locations, policy count and premium are automatically blended together whenever the location has both goals set — a location writing fewer, bigger policies isn\'t penalized against one writing more, smaller ones, same as an individual\'s own goal already works.')}</label>
           <select id="gf-raise-loc-${sid}" style="${sel}">
             <option value="">— Select —</option>
+            <option value="${WHOLE_AGENCY_GOAL_SENTINEL}"${cfg.agency_location_id === WHOLE_AGENCY_GOAL_SENTINEL ? ' selected' : ''}>Whole Agency Goal (raise-eligible)</option>
             <option value="${ALL_LOCATIONS_SENTINEL}"${cfg.agency_location_id === ALL_LOCATIONS_SENTINEL ? ' selected' : ''}>All Locations</option>
             ${locOpts}
-          </select>
-        </div>
-        <div id="gf-raise-agmetric-wrap-${sid}" style="display:${mode==='individual'?'none':''}">
-          <label style="${lbl}">Agency Metric ${info('Whether the Agency Location\'s (or All Locations\') goal is measured by policy count or total written premium.')}</label>
-          <select id="gf-raise-agmetric-${sid}" style="${sel}">
-            <option value="count"${cfg.agency_metric!=='premium'?' selected':''}>Policy Count</option>
-            <option value="premium"${cfg.agency_metric==='premium'?' selected':''}>Premium</option>
           </select>
         </div>
         <div id="gf-raise-blendwt-wrap-${sid}" style="display:${mode==='blended'?'':'none'}">
@@ -459,6 +508,9 @@ function showGoalForm(agentId, existingGoalId) {
       <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px;cursor:pointer;padding-bottom:2px;" title="Auto-apply these targets to each new period — no need to recreate monthly">
         <input type="checkbox" id="gf-recurring-${escHtml(agentId)}" ${existing?.is_recurring?'checked':''} onchange="updateRaiseSectionVisibility('${escHtml(agentId)}')"> ↻ Recurring
       </label>
+      ${agentId === '__agency__' ? `<label style="font-size:11px;color:var(--gold);display:flex;align-items:center;gap:5px;cursor:pointer;padding-bottom:2px;" title="Pins a condensed progress bar to the app header, next to the Sign Out button — visible to everyone, not just you. Only one goal can be pinned at a time; checking this unpins any other.">
+        <input type="checkbox" id="gf-showheader-${escHtml(agentId)}" ${existing?.show_in_header?'checked':''}> 📌 Show in header
+      </label>` : ''}
     </div>
     <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;">Target Metrics</div>
     <div id="gf-metrics-${escHtml(agentId)}">${buildGoalMetricsHtml(agentId, existing?.goals||{})}</div>
@@ -486,6 +538,8 @@ async function saveGoalForm(agentId, existingGoalId) {
   const period_end   = selOpt.dataset.end;
   const is_public    = publicEl?.checked    || false;
   const is_recurring = recurringEl?.checked || false;
+  const showHeaderEl = document.getElementById('gf-showheader-' + agentId);
+  const show_in_header = agentId === '__agency__' ? (showHeaderEl?.checked || false) : undefined;
 
   const goals = {};
   const PROD_KEYS = ['wl','ul','term','health','auto','fire','policies','premium','handle_rate','voicemail_count','missed_calls'];
@@ -510,8 +564,15 @@ async function saveGoalForm(agentId, existingGoalId) {
     [...cgContainer.children].forEach((row, i) => {
       const label   = document.getElementById(`gf-cg-lbl-${agentId}-${i}`)?.value?.trim() || '';
       const target  = parseFloat(document.getElementById(`gf-cg-tgt-${agentId}-${i}`)?.value) || 0;
+      const target_premium = parseFloat(document.getElementById(`gf-cg-tgtprem-${agentId}-${i}`)?.value) || 0;
       const products = _cgCats.filter(c => document.getElementById(`gf-cg-p-${agentId}-${i}-${c.key}`)?.checked).map(c => c.key);
-      if (products.length >= 2 && target > 0) combinedGroups.push({ id: 'cg' + i, label: label || products.join('+'), products, target });
+      // Policy target and premium target are independent — either or both may be set,
+      // same as the plain (non-combined) Total Policies / Premium ($) fields already are.
+      if (products.length >= 2 && (target > 0 || target_premium > 0)) {
+        const grp = { id: 'cg' + i, label: label || products.join('+'), products, target };
+        if (target_premium > 0) grp.target_premium = target_premium;
+        combinedGroups.push(grp);
+      }
     });
   }
   const acgContainer = document.getElementById(`gf-acg-rows-${agentId}`);
@@ -556,7 +617,7 @@ async function saveGoalForm(agentId, existingGoalId) {
     raise_config = {
       combination_mode: document.getElementById('gf-raise-combo-' + agentId)?.value || 'individual',
       agency_location_id: document.getElementById('gf-raise-loc-' + agentId)?.value || null,
-      agency_metric: document.getElementById('gf-raise-agmetric-' + agentId)?.value || 'count',
+      agency_metric: 'count', // vestigial — computeAgencyProgressPct blends count+premium now, field no longer selectable
       blend_individual_weight: parseFloat(document.getElementById('gf-raise-blendwt-' + agentId)?.value) || 70,
       reward_mode: document.getElementById('gf-raise-rewardmode-' + agentId)?.value || 'proportional',
       proportional: {
@@ -582,23 +643,27 @@ async function saveGoalForm(agentId, existingGoalId) {
       r = await fetch('/api/agent-goals', {
         method: 'PATCH',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: existingGoalId, goals, is_public, is_recurring, is_raise_goal, raise_config }),
+        body: JSON.stringify({ id: existingGoalId, goals, is_public, is_recurring, is_raise_goal, raise_config, show_in_header }),
       });
     } else {
       r = await fetch('/api/agent-goals', {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agent_id: agentId, period_type, period_label, period_start, period_end, goals, is_public, is_recurring, is_raise_goal, raise_config }),
+        body: JSON.stringify({ agent_id: agentId, period_type, period_label, period_start, period_end, goals, is_public, is_recurring, is_raise_goal, raise_config, show_in_header }),
       });
     }
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || 'Save failed');
     if (existingGoalId) {
       const idx = _agentGoals.findIndex(g => g.id === existingGoalId);
-      if (idx >= 0) _agentGoals[idx] = { ..._agentGoals[idx], goals, is_public, is_recurring, is_raise_goal, raise_config };
+      if (idx >= 0) _agentGoals[idx] = { ..._agentGoals[idx], goals, is_public, is_recurring, is_raise_goal, raise_config, show_in_header };
     } else {
       _agentGoals.push(d);
     }
+    // header_progress is only ever computed server-side (attachHeaderProgress,
+    // api/agent-goals.js) — a locally-patched goal object never has it, so
+    // pinning/unpinning needs a real refetch, not just a local cache patch.
+    if (agentId === '__agency__') loadAgentGoals().catch(() => {});
     document.getElementById('goal-form-' + agentId).style.display = 'none';
     renderAgentRoster();
   } catch(e) {
@@ -632,8 +697,12 @@ function renderAgentRosterGoalsSection(a) {
   const goalRows = agGoals.map(g => {
     const keys = Object.keys(g.goals||{}).filter(k => g.goals[k] && k !== 'combined_groups');
     const cgPills = (g.goals.combined_groups || []).map(grp => {
-      const act = g.actuals?.['combined_' + grp.id] ?? '—';
-      return `${escHtml(grp.label||grp.id)}:${act}/${grp.target}`;
+      // Policy target and premium target are independent — a group may have
+      // either or both set.
+      const parts = [];
+      if (grp.target) parts.push(`${g.actuals?.['combined_' + grp.id] ?? '—'}/${grp.target}`);
+      if (grp.target_premium) parts.push(`$${g.actuals?.['combined_' + grp.id + '_premium'] ?? '—'}/$${grp.target_premium}`);
+      return `${escHtml(grp.label||grp.id)}:${parts.join(', ')}`;
     });
     const summary = [...keys.slice(0,4).map(k => {
       if (k.startsWith('activity_')) {
@@ -779,11 +848,19 @@ function renderRaceGoalsRow(ag) {
     items.push({ label, actual, target, pct, col });
   }
   for (const grp of (agGoal.goals.combined_groups || [])) {
-    if (!grp.target) continue;
-    const actual = agGoal.actuals?.['combined_' + grp.id] ?? 0;
-    const pct = grp.target > 0 ? Math.min(100, Math.round(actual / grp.target * 100)) : 0;
-    const col = pct >= 100 ? 'var(--accent2)' : pct >= 70 ? '#fbbf24' : 'var(--muted)';
-    items.push({ label: grp.label || grp.id, actual, target: grp.target, pct, col });
+    // Policy target and premium target are independent — a group may have either or both.
+    if (grp.target) {
+      const actual = agGoal.actuals?.['combined_' + grp.id] ?? 0;
+      const pct = grp.target > 0 ? Math.min(100, Math.round(actual / grp.target * 100)) : 0;
+      const col = pct >= 100 ? 'var(--accent2)' : pct >= 70 ? '#fbbf24' : 'var(--muted)';
+      items.push({ label: grp.label || grp.id, actual, target: grp.target, pct, col });
+    }
+    if (grp.target_premium) {
+      const actual = agGoal.actuals?.['combined_' + grp.id + '_premium'] ?? 0;
+      const pct = grp.target_premium > 0 ? Math.min(100, Math.round(actual / grp.target_premium * 100)) : 0;
+      const col = pct >= 100 ? 'var(--accent2)' : pct >= 70 ? '#fbbf24' : 'var(--muted)';
+      items.push({ label: (grp.target ? '' : (grp.label || grp.id) + ' ') + 'Prem', actual, target: grp.target_premium, pct, col });
+    }
   }
   if (!items.length) return '';
   const lock = !agGoal.is_public ? ' <span style="font-size:9px;opacity:.7;">🔒</span>' : '';
@@ -938,9 +1015,13 @@ function _renderAgencyGoalsSection() {
   };
   const combinedRow = (groups, period) => {
     if (!Array.isArray(groups) || !groups.length) return '';
-    return `<div style="font-size:12px;margin-top:3px;"><span style="color:var(--muted);">${period} Combined Goals:</span> ${groups.map(g =>
-      `${escHtml(g.label)} (${(g.products||[]).map(p => PROD_LABELS[p]||p).join('+')}): <strong>${Number(g.target).toLocaleString()}</strong>`
-    ).join(' · ')}</div>`;
+    return `<div style="font-size:12px;margin-top:3px;"><span style="color:var(--muted);">${period} Combined Goals:</span> ${groups.map(g => {
+      // Policy target and premium target are independent — a group may have either or both.
+      const parts = [];
+      if (g.target)         parts.push(Number(g.target).toLocaleString());
+      if (g.target_premium) parts.push('$' + Number(g.target_premium).toLocaleString());
+      return `${escHtml(g.label)} (${(g.products||[]).map(p => PROD_LABELS[p]||p).join('+')}): <strong>${parts.join(' / ')}</strong>`;
+    }).join(' · ')}</div>`;
   };
   const cards = visibleLocs.map(l => {
     const items = [];
@@ -1166,24 +1247,55 @@ function renderGoalsTab() {
       </div>`;
     });
     for (const grp of (g.goals.combined_groups || [])) {
-      if (!grp.target) continue;
-      const raw    = g.actuals?.['combined_' + grp.id];
-      const actual = typeof raw === 'number' ? raw : null;
-      const numTgt = grp.target;
-      const pct    = actual !== null && numTgt > 0 ? Math.min(100, Math.round(actual/numTgt*100)) : null;
-      const col    = pct === null ? 'var(--muted)' : pct>=100 ? 'var(--accent2)' : pct>=70 ? '#fbbf24' : 'var(--danger)';
-      const dispA  = actual === null ? '—' : actual;
-      rows.push(`<div style="margin-bottom:8px;">
-        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">
-          <span>${escHtml(grp.label||grp.id)} <span style="font-size:10px;color:var(--muted);">(combined)</span></span>
-          <span style="color:${col};">${dispA} / ${numTgt}${pct!==null?' ('+pct+'%)':''}</span>
-        </div>
-        <div style="height:5px;background:var(--border2);border-radius:3px;overflow:hidden;">
-          ${pct!==null?`<div style="height:5px;width:${pct}%;background:${col};border-radius:3px;transition:width .3s;"></div>`:''}
-        </div>
-      </div>`);
+      // Policy-count target and premium target are independent — a group may
+      // have either or both, same as the plain (non-combined) Total
+      // Policies / Premium ($) fields. Render one progress bar per target
+      // that's actually set, instead of requiring the count target to exist.
+      if (!grp.target && !grp.target_premium) continue;
+      // label is pre-built HTML (see groupLabel below), already escaped at
+      // the point its one user-controlled part (grp.label) was inserted —
+      // do NOT escHtml() it again here, that turns the intentional <span>
+      // markup into visible text instead of rendering it.
+      const bar = (label, raw, numTgt, isMoney) => {
+        const actual = typeof raw === 'number' ? raw : null;
+        const pct    = actual !== null && numTgt > 0 ? Math.min(100, Math.round(actual/numTgt*100)) : null;
+        const col    = pct === null ? 'var(--muted)' : pct>=100 ? 'var(--accent2)' : pct>=70 ? '#fbbf24' : 'var(--danger)';
+        const fmt    = n => isMoney ? '$'+Math.round(n).toLocaleString() : n;
+        const dispA  = actual === null ? '—' : fmt(actual);
+        return `<div style="margin-bottom:4px;">
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">
+            <span>${label}</span>
+            <span style="color:${col};">${dispA} / ${fmt(numTgt)}${pct!==null?' ('+pct+'%)':''}</span>
+          </div>
+          <div style="height:5px;background:var(--border2);border-radius:3px;overflow:hidden;">
+            ${pct!==null?`<div style="height:5px;width:${pct}%;background:${col};border-radius:3px;transition:width .3s;"></div>`:''}
+          </div>
+        </div>`;
+      };
+      const groupLabel = `${escHtml(grp.label||grp.id)} <span style="font-size:10px;color:var(--muted);">(combined)</span>`;
+      let groupBars = '';
+      if (grp.target)         groupBars += bar(groupLabel, g.actuals?.['combined_' + grp.id], grp.target, false);
+      if (grp.target_premium) groupBars += bar(grp.target ? 'Premium' : groupLabel, g.actuals?.['combined_' + grp.id + '_premium'], grp.target_premium, true);
+      rows.push(`<div style="margin-bottom:8px;">${groupBars}</div>`);
     }
-    const rowsHtml = rows.join('');
+    // call_metric_coverage is only attached (by computeCallMetricActuals,
+    // api/agent-goals.js) when at least one month in this goal's period has
+    // no data source at all (never archived to historical_months AND not the
+    // current live month) — distinct from a genuine zero. Without this, a
+    // handle_rate/voicemail_count/missed_calls figure built from partial
+    // months looks byte-identical to a complete one.
+    const coverageHtml = g.call_metric_coverage ? (() => {
+      const cov = g.call_metric_coverage;
+      const fmtMonth = mk => {
+        const [y, m] = mk.split('-').map(Number);
+        return `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m-1]} ${y}`;
+      };
+      return `<div style="font-size:11px;color:var(--warn,#fbbf24);background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);border-radius:4px;padding:4px 8px;margin-bottom:8px;">
+        ⚠ Call data incomplete for this period — ${cov.coveredMonths} of ${cov.totalMonths} month${cov.totalMonths===1?'':'s'} available.
+        Missing: ${cov.missingMonths.map(escHtml).map(fmtMonth).join(', ')} (never archived, no data recoverable).
+      </div>`;
+    })() : '';
+    const rowsHtml = rows.join('') + coverageHtml;
     const displayLabel = g.is_recurring ? currentPeriodLabel(g.period_type) : g.period_label;
     const range        = g.is_recurring ? currentPeriodRange(g.period_type) : { start: g.period_start, end: g.period_end };
     // The self-viewing member's own raise goal already gets the richer,

@@ -6,21 +6,30 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 const POLICY_PRODUCT_KEYS = ['wl', 'ul', 'term', 'health', 'auto', 'fire'];
 
 // Same shape as an agent goal's combined_groups entries ({id, label, products,
-// target}) — reused here for a location's combined product goals (e.g. "Auto
-// + Fire: 12"), one array for the monthly targets and a separate one for
-// annual, mirroring how product_goals_monthly/product_goals_annual are
-// already two independent maps on the same row. Never trust the client array
-// as-is (same posture as sanitizeThresholdTiers in api/bonus-activities.js).
+// target, target_premium}) — reused here for a location's combined product
+// goals (e.g. "Auto + Fire: 12 policies / $50,000 premium"), one array for
+// the monthly targets and a separate one for annual, mirroring how
+// product_goals_monthly/product_goals_annual are already two independent
+// maps on the same row. target and target_premium are independent — either
+// or both may be set, same as the plain (non-combined) policy/premium goal
+// fields. Never trust the client array as-is (same posture as
+// sanitizeThresholdTiers in api/bonus-activities.js).
 function sanitizeCombinedProductGoals(raw) {
   if (!Array.isArray(raw)) return [];
   return raw
-    .map((g, i) => ({
-      id: typeof g?.id === 'string' && g.id ? g.id : 'lcg' + i,
-      label: String(g?.label || '').trim().slice(0, 60),
-      products: Array.isArray(g?.products) ? g.products.filter(p => POLICY_PRODUCT_KEYS.includes(p)) : [],
-      target: parseFloat(g?.target),
-    }))
-    .filter(g => g.products.length >= 2 && !isNaN(g.target) && g.target > 0)
+    .map((g, i) => {
+      const target = parseFloat(g?.target);
+      const targetPremium = parseFloat(g?.target_premium);
+      const entry = {
+        id: typeof g?.id === 'string' && g.id ? g.id : 'lcg' + i,
+        label: String(g?.label || '').trim().slice(0, 60),
+        products: Array.isArray(g?.products) ? g.products.filter(p => POLICY_PRODUCT_KEYS.includes(p)) : [],
+        target: !isNaN(target) && target > 0 ? target : undefined,
+      };
+      if (!isNaN(targetPremium) && targetPremium > 0) entry.target_premium = targetPremium;
+      return entry;
+    })
+    .filter(g => g.products.length >= 2 && (g.target > 0 || g.target_premium > 0))
     .slice(0, 20);
 }
 

@@ -14,6 +14,16 @@ const AGENCY_METRICS = ['count', 'premium'];
 // (__agency__/__team_sales__/__team_service__).
 export const ALL_LOCATIONS_SENTINEL = '__all_locations__';
 
+// Sentinel meaning "the Whole Agency's own raise-eligible goal" instead of a
+// sales_locations Office Goal — a different concept entirely (see CLAUDE.md
+// "Where Blended raise-goal comparisons actually pull from"). This is what
+// lets an individual's raise align with a whole-agency target the owner has
+// explicitly also flagged raise-eligible: the individual must clear their own
+// Individual Gate floor to be eligible at all, and — once cleared — the size
+// of the raise scales with how the agency's own goal is tracking, via the
+// same Blended weighting math already used for a location comparison.
+export const WHOLE_AGENCY_GOAL_SENTINEL = '__whole_agency_goal__';
+
 // Call-metric goal keys — fixed, system-defined metrics, so their direction
 // (higher-is-better vs lower-is-better) is a hardcoded fact, not a per-goal
 // choice, unlike bonus_activity_types.analysis_direction (which IS
@@ -71,6 +81,11 @@ export function computeIndividualProgressPct(goal) {
     for (const grp of goals.combined_groups) {
       const target = Number(grp.target);
       if (target > 0) ratios.push((Number(actuals['combined_' + grp.id]) || 0) / target);
+      // Premium target is independent of the policy-count target — either or
+      // both may be set on the same combined group, same shape as the plain
+      // (non-combined) policies/premium fields just above.
+      const targetPremium = Number(grp.target_premium);
+      if (targetPremium > 0) ratios.push((Number(actuals['combined_' + grp.id + '_premium']) || 0) / targetPremium);
     }
   }
   for (const key of CALL_METRIC_KEYS) {
@@ -87,24 +102,32 @@ export function computeIndividualProgressPct(goal) {
   return round2((ratios.reduce((s, r) => s + r, 0) / ratios.length) * 100);
 }
 
-// Agency progress % — actual/goal*100 for whichever of goal_count(_annual) /
-// goal_premium(_annual) agencyMetric selects. actualCount/actualPremium are
-// the caller's own period-scoped, sale_weight-summed aggregation (not
-// computed here — this file has no DB access). periodType selects which pair
-// of location goal columns applies: a monthly raise goal blends against the
-// location's MONTHLY targets (goal_count/goal_premium), not its annual ones
-// — mixing the two would silently compare a month's actual sales against a
-// whole year's target. Defaults to the annual columns when omitted, so every
-// existing annual-only caller is unaffected.
-export function computeAgencyProgressPct(location, actualCount, actualPremium, agencyMetric, periodType) {
+// Agency progress % — mean of whichever of goal_count(_annual) /
+// goal_premium(_annual) the location actually has set, same "average every
+// active ratio" shape computeIndividualProgressPct already uses. Blending
+// both (not forcing a single either/or metric) is deliberate: an office or
+// agent that writes fewer, bigger policies shouldn't be penalized against one
+// writing more, smaller ones — premium is meant to be able to offset volume,
+// same as it already can on an individual's own goal (fixed 2026-09-04,
+// previously a forced single "Agency Metric" choice — see CLAUDE.md).
+// actualCount/actualPremium are the caller's own period-scoped,
+// sale_weight-summed aggregation (not computed here — this file has no DB
+// access). periodType selects which pair of location goal columns applies: a
+// monthly raise goal blends against the location's MONTHLY targets
+// (goal_count/goal_premium), not its annual ones — mixing the two would
+// silently compare a month's actual sales against a whole year's target.
+// Defaults to the annual columns when omitted, so every existing
+// annual-only caller is unaffected.
+export function computeAgencyProgressPct(location, actualCount, actualPremium, periodType) {
   if (!location) return 0;
   const isMonthly = periodType === 'monthly';
-  if (agencyMetric === 'premium') {
-    const goal = Number(isMonthly ? location.goal_premium : location.goal_premium_annual) || 0;
-    return goal > 0 ? round2((Number(actualPremium) || 0) / goal * 100) : 0;
-  }
-  const goal = Number(isMonthly ? location.goal_count : location.goal_count_annual) || 0;
-  return goal > 0 ? round2((Number(actualCount) || 0) / goal * 100) : 0;
+  const countGoal   = Number(isMonthly ? location.goal_count   : location.goal_count_annual)   || 0;
+  const premiumGoal = Number(isMonthly ? location.goal_premium : location.goal_premium_annual) || 0;
+  const ratios = [];
+  if (countGoal   > 0) ratios.push((Number(actualCount)   || 0) / countGoal);
+  if (premiumGoal > 0) ratios.push((Number(actualPremium) || 0) / premiumGoal);
+  if (!ratios.length) return 0;
+  return round2((ratios.reduce((s, r) => s + r, 0) / ratios.length) * 100);
 }
 
 // individual -> individualPct; blended -> weighted average; separate -> null
@@ -187,6 +210,9 @@ export function sanitizeRaiseConfig(raw) {
   const cfg = raw || {};
   const combination_mode = COMBINATION_MODES.includes(cfg.combination_mode) ? cfg.combination_mode : 'individual';
   const reward_mode      = REWARD_MODES.includes(cfg.reward_mode) ? cfg.reward_mode : 'proportional';
+  // Vestigial as of 2026-09-04 — computeAgencyProgressPct() now blends
+  // count+premium together instead of picking one; kept only so an
+  // already-saved raise_config with this field doesn't get stripped.
   const agency_metric    = AGENCY_METRICS.includes(cfg.agency_metric) ? cfg.agency_metric : 'count';
 
   const prop = cfg.proportional || {};

@@ -53,7 +53,7 @@ function populatePerfDates() {
   if (prev && keys.includes(prev)) sel.value = prev;
 }
 
-const PERF_COL_LABELS = { 1:'Agent', 3:'Placed', 4:'Answered', 5:'VM', 6:'Missed', 7:'Talk Min', 8:'Avg Min', 9:'Max Min' };
+const PERF_COL_LABELS = { 1:'Agent', 3:'Placed', 4:'Answered', 5:'VM', 6:'Missed', 7:'Talk Min', 8:'Avg Min', 9:'Max Min', 10:'Handle Rate' };
 
 function setPerfSort(col) {
   if (_perfSortCol === col) {
@@ -97,14 +97,18 @@ function renderPerf() {
     });
   }
 
+  // Read the server-computed rate directly (r[10] on the TEAM TOTAL row,
+  // api/perf.js mapToRows) rather than re-deriving it here — one formula,
+  // one place, instead of two copies that could quietly drift apart. No
+  // "sum agent rows" fallback either: every period always has exactly one
+  // TEAM TOTAL row (mapToRows pushes one unconditionally), and summing
+  // agent rows' VM/Missed would always give 0 (hardcoded per-agent) — the
+  // same misleading-100% shape this column exists to avoid.
   const totalsRow = totals[0];
-  const answered  = totalsRow ? (Number(totalsRow[4]) || 0) : agents.reduce((s, r) => s + (Number(r[4]) || 0), 0);
-  const voicemail = totalsRow ? (Number(totalsRow[5]) || 0) : agents.reduce((s, r) => s + (Number(r[5]) || 0), 0);
-  const missed    = totalsRow ? (Number(totalsRow[6]) || 0) : agents.reduce((s, r) => s + (Number(r[6]) || 0), 0);
-  const inbound   = answered + voicemail + missed;
   const handleRatioEl = document.getElementById('perf-handle-ratio');
   if (handleRatioEl) {
-    handleRatioEl.textContent = inbound > 0 ? `Handle Ratio: ${Math.round(answered / inbound * 100)}%` : '';
+    const hr = totalsRow?.[10];
+    handleRatioEl.textContent = hr != null ? `Handle Ratio: ${hr}%` : '';
   }
 
   const sorted = [...agents, ...totals];
@@ -119,13 +123,18 @@ function renderPerf() {
     // a misleadingly precise-looking "0 min" or a number that's silently only the current
     // unarchived month's max. See api/perf.js "Yearly Call Performance archive merge".
     const maxMinCell = r[9] == null ? '—' : fmtMins(r[9]);
+    // Handle Rate is likewise explicitly null for every individual agent row —
+    // voicemail/missed carry no per-agent attribution, so only the pooled
+    // "— TEAM TOTAL —" row ever has a real rate to show.
+    const handleRateCell = r[10] == null ? '—' : r[10] + '%';
     return `<tr${isTotal?' class="total-row"':''}>
       <td>${r[1]}${teamBadge ? ' '+teamBadge : ''}</td>
       <td>${r[3]||0}</td><td>${r[4]||0}</td>
       <td>${r[5]||0}</td><td>${r[6]||0}</td>
       <td>${fmtMins(r[7])}</td><td>${fmtMins(r[8])}</td><td>${maxMinCell}</td>
+      <td>${handleRateCell}</td>
     </tr>`;
-  }).join('') || '<tr><td colspan="8" style="color:var(--muted);text-align:center;padding:20px">No data</td></tr>';
+  }).join('') || '<tr><td colspan="9" style="color:var(--muted);text-align:center;padding:20px">No data</td></tr>';
 }
 
 const VM_MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];

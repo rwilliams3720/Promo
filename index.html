@@ -667,6 +667,21 @@
       <h1>BOAT <span>RACE</span></h1>
       <p id="header-month">Loading…</p>
     </div>
+    <div id="header-agency-progress" style="display:none;min-width:280px;max-width:380px;flex:1;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:.65rem .9rem;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.3rem;gap:8px;">
+        <span id="hap-label" style="font-size:12px;font-weight:600;">Whole Agency</span>
+        <span id="hap-pct" style="font-size:13px;font-weight:700;white-space:nowrap;"></span>
+      </div>
+      <div style="height:7px;background:var(--border2);border-radius:4px;overflow:hidden;margin-bottom:.35rem;">
+        <div id="hap-fill" style="height:7px;width:0%;border-radius:4px;transition:width .3s, background .3s;"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <span id="hap-detail" style="font-size:10.5px;color:var(--muted);"></span>
+        <label style="display:flex;align-items:center;gap:3px;font-size:9.5px;color:var(--muted);cursor:pointer;user-select:none;white-space:nowrap;" title="On Track — projects the agency's current pace to the end of the goal's period, instead of showing raw progress so far. Same idea as the 'annualized' projection on an individual raise goal.">
+          <input type="checkbox" id="hap-ot" onchange="renderHeaderAgencyProgress()" style="width:11px;height:11px;"> OT
+        </label>
+      </div>
+    </div>
     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
       <span class="live-badge"><span class="live-dot"></span>LIVE</span>
       <span id="user-info" style="font-size:12px;color:var(--muted);font-family:'DM Mono',monospace;"></span>
@@ -966,6 +981,7 @@
             <th style="cursor:pointer;user-select:none;white-space:nowrap" onclick="setPerfSort(7)">Talk Min</th>
             <th style="cursor:pointer;user-select:none;white-space:nowrap" onclick="setPerfSort(8)">Avg Min</th>
             <th style="cursor:pointer;user-select:none;white-space:nowrap" onclick="setPerfSort(9)">Max Min</th>
+            <th style="cursor:pointer;user-select:none;white-space:nowrap" onclick="setPerfSort(10)" title="Team-wide only — voicemail/missed calls carry no per-agent attribution, so an individual row would always misleadingly read 100%">Handle Rate</th>
           </tr></thead>
           <tbody id="perf-body"></tbody>
         </table>

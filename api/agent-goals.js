@@ -4,7 +4,7 @@ import {
   computeMonthsElapsed, computeIndividualProgressPct, computeAgencyProgressPct,
   computeCombinedProgressPct, gatePassed, computeProportionalReward,
   computeThresholdReward, sanitizeRaiseConfig, annualizedPct, colorForYtd, colorForAnnualized,
-  ALL_LOCATIONS_SENTINEL,
+  ALL_LOCATIONS_SENTINEL, WHOLE_AGENCY_GOAL_SENTINEL,
 } from './_lib/raise-calc.js';
 
 // A raise goal must be annual, or monthly AND recurring — a one-off,
@@ -45,6 +45,16 @@ function callMetricScopeError(agentId, goals) {
     return 'Handle Rate, Voicemail Count, and Missed Calls can only be set on a Whole Agency goal — call data has no per-agent or per-team attribution.';
   }
   return null;
+}
+
+// Only one goal can be pinned to the app header at a time — unset it on
+// every other __agency__ goal so there's never ambiguity about which one the
+// condensed header bar reflects. Never throws — a failure here just means an
+// old pin might linger, not worth failing the actual save over.
+async function unpinOtherHeaderGoals(dataUserId, keepGoalId) {
+  await supabase.from('agent_goals').update({ show_in_header: false })
+    .eq('user_id', dataUserId).eq('agent_id', '__agency__')
+    .eq('show_in_header', true).neq('id', keepGoalId);
 }
 
 // Which real agent_ids a goal's agent_id resolves to: individual -> itself,
@@ -171,6 +181,7 @@ export default async function handler(req, res) {
       const { data: ownerAcct } = await supabase.from('accounts').select('timezone').eq('user_id', dataUserId).single();
       const withActuals = await computeActuals(data || [], dataUserId, refDate, ownerAcct?.timezone);
       const withRaise   = await attachRaiseStatus(withActuals, dataUserId, ownerAcct?.timezone);
+      attachHeaderProgress(withRaise, ownerAcct?.timezone);
       return res.status(200).json(withRaise);
     }
     return res.status(200).json(data || []);
@@ -179,7 +190,7 @@ export default async function handler(req, res) {
   // POST — create / upsert
   if (req.method === 'POST') {
     if (!canWrite) return res.status(403).json({ error: 'Insufficient role' });
-    const { agent_id, period_type, period_label, period_start, period_end, goals, is_public } = req.body || {};
+    const { agent_id, period_type, period_label, period_start, period_end, goals, is_public, show_in_header } = req.body || {};
     if (!agent_id || !period_type || !period_label || !period_start || !period_end) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
@@ -190,6 +201,9 @@ export default async function handler(req, res) {
     }
     const cmError = callMetricScopeError(agent_id, goals);
     if (cmError) return res.status(400).json({ error: cmError });
+    if (show_in_header && agent_id !== '__agency__') {
+      return res.status(400).json({ error: 'Only a Whole Agency goal can be pinned to the header' });
+    }
 
     const { is_recurring, is_raise_goal, raise_config } = req.body || {};
     // A raise goal is a flag on an ANNUAL goal, or a RECURRING MONTHLY one —
@@ -202,14 +216,14 @@ export default async function handler(req, res) {
     if (is_raise_goal) {
       sanitizedRaiseConfig = sanitizeRaiseConfig(raise_config);
       const locId = sanitizedRaiseConfig.agency_location_id;
-      if (sanitizedRaiseConfig.combination_mode !== 'individual' && locId && locId !== ALL_LOCATIONS_SENTINEL) {
+      if (sanitizedRaiseConfig.combination_mode !== 'individual' && locId && locId !== ALL_LOCATIONS_SENTINEL && locId !== WHOLE_AGENCY_GOAL_SENTINEL) {
         const { data: locRow } = await supabase.from('sales_locations')
           .select('id').eq('id', locId).eq('user_id', dataUserId).maybeSingle();
         if (!locRow) return res.status(400).json({ error: 'Agency location not found' });
       }
     }
 
-    const { data, error } = await supabase.from('agent_goals').upsert({
+    const upsertRow = {
       user_id: dataUserId,
       agent_id, period_type, period_label,
       period_start, period_end,
@@ -218,29 +232,46 @@ export default async function handler(req, res) {
       is_recurring:   !!is_recurring,
       is_raise_goal:  !!is_raise_goal,
       raise_config:   sanitizedRaiseConfig,
+      show_in_header: !!show_in_header,
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_id,agent_id,period_type,period_label' }).select().single();
+    };
+    let { data, error } = await supabase.from('agent_goals').upsert(upsertRow,
+      { onConflict: 'user_id,agent_id,period_type,period_label' }).select().single();
+    // Graceful degradation until goal-show-in-header-migration.sql has run —
+    // an unknown column fails the WHOLE upsert, not just this field.
+    if (error) {
+      const { show_in_header: _drop, ...retryRow } = upsertRow;
+      ({ data, error } = await supabase.from('agent_goals').upsert(retryRow,
+        { onConflict: 'user_id,agent_id,period_type,period_label' }).select().single());
+    }
     if (error) return res.status(500).json({ error: error.message });
+    if (data?.show_in_header) await unpinOtherHeaderGoals(dataUserId, data.id);
     return res.status(200).json(data);
   }
 
   // PATCH — update fields
   if (req.method === 'PATCH') {
     if (!canWrite) return res.status(403).json({ error: 'Insufficient role' });
-    const { id, goals, is_public, is_recurring, period_start, period_end, is_raise_goal, raise_config } = req.body || {};
+    const { id, goals, is_public, is_recurring, period_start, period_end, is_raise_goal, raise_config, show_in_header } = req.body || {};
     if (!id) return res.status(400).json({ error: 'id required' });
-    if (goals !== undefined && CALL_METRIC_KEYS.some(k => goals?.[k] !== undefined)) {
+    let existingAgentId;
+    if ((goals !== undefined && CALL_METRIC_KEYS.some(k => goals?.[k] !== undefined)) || show_in_header !== undefined) {
       const { data: existingGoal } = await supabase.from('agent_goals')
         .select('agent_id').eq('id', id).eq('user_id', dataUserId).single();
-      const cmError = callMetricScopeError(existingGoal?.agent_id, goals);
+      existingAgentId = existingGoal?.agent_id;
+      const cmError = callMetricScopeError(existingAgentId, goals);
       if (cmError) return res.status(400).json({ error: cmError });
     }
+    if (show_in_header && existingAgentId !== '__agency__') {
+      return res.status(400).json({ error: 'Only a Whole Agency goal can be pinned to the header' });
+    }
     const update = { updated_at: new Date().toISOString() };
-    if (goals        !== undefined) update.goals       = goals;
-    if (is_public    !== undefined) update.is_public   = !!is_public;
-    if (is_recurring !== undefined) update.is_recurring = !!is_recurring;
-    if (period_start)               update.period_start = period_start;
-    if (period_end)                 update.period_end   = period_end;
+    if (goals          !== undefined) update.goals          = goals;
+    if (is_public      !== undefined) update.is_public      = !!is_public;
+    if (is_recurring   !== undefined) update.is_recurring   = !!is_recurring;
+    if (show_in_header !== undefined) update.show_in_header = !!show_in_header;
+    if (period_start)                 update.period_start   = period_start;
+    if (period_end)                   update.period_end     = period_end;
 
     // period_type isn't itself editable via PATCH, so it has to be looked up
     // rather than trusted from the request body. Also needed whenever
@@ -260,7 +291,7 @@ export default async function handler(req, res) {
           }
           const sanitizedRaiseConfig = sanitizeRaiseConfig(raise_config);
           const locId = sanitizedRaiseConfig.agency_location_id;
-          if (sanitizedRaiseConfig.combination_mode !== 'individual' && locId && locId !== ALL_LOCATIONS_SENTINEL) {
+          if (sanitizedRaiseConfig.combination_mode !== 'individual' && locId && locId !== ALL_LOCATIONS_SENTINEL && locId !== WHOLE_AGENCY_GOAL_SENTINEL) {
             const { data: locRow } = await supabase.from('sales_locations')
               .select('id').eq('id', locId).eq('user_id', dataUserId).maybeSingle();
             if (!locRow) return res.status(400).json({ error: 'Agency location not found' });
@@ -281,9 +312,15 @@ export default async function handler(req, res) {
       }
     }
 
-    const { error } = await supabase.from('agent_goals')
+    let { error } = await supabase.from('agent_goals')
       .update(update).eq('id', id).eq('user_id', dataUserId);
+    // Graceful degradation until goal-show-in-header-migration.sql has run.
+    if (error && update.show_in_header !== undefined) {
+      const { show_in_header: _drop, ...retryUpdate } = update;
+      ({ error } = await supabase.from('agent_goals').update(retryUpdate).eq('id', id).eq('user_id', dataUserId));
+    }
     if (error) return res.status(500).json({ error: error.message });
+    if (update.show_in_header) await unpinOtherHeaderGoals(dataUserId, id);
     return res.status(200).json({ success: true });
   }
 
@@ -435,13 +472,23 @@ async function computeActuals(goals, dataUserId, refDateStr, timezone) {
       for (const grp of goal.goals.combined_groups) {
         // type is only set on newer activity-combined groups; existing saved groups
         // predate this field and are always product groups — keep that the default.
-        actuals['combined_' + grp.id] = grp.type === 'activity'
-          ? agActs.filter(a => (grp.activity_type_ids || []).includes(a.activity_type_id)).reduce((s, a) => s + (a.count || 0), 0)
-          : agSales.filter(s => (grp.products || []).includes(s.product)).reduce((sum, s) => sum + weightOf(s), 0);
+        if (grp.type === 'activity') {
+          actuals['combined_' + grp.id] = agActs.filter(a => (grp.activity_type_ids || []).includes(a.activity_type_id)).reduce((s, a) => s + (a.count || 0), 0);
+          continue;
+        }
+        const grpSales = agSales.filter(s => (grp.products || []).includes(s.product));
+        actuals['combined_' + grp.id] = grpSales.reduce((sum, s) => sum + weightOf(s), 0);
+        // Premium target is independent of the policy-count target — only compute
+        // this when the group actually has one set, same "either or both" shape
+        // as the plain (non-combined) policies/premium fields.
+        if (grp.target_premium) {
+          actuals['combined_' + grp.id + '_premium'] = grpSales.reduce((sum, s) => sum + (parseFloat(s.written_premium) || 0), 0);
+        }
       }
     }
 
     const cm = callMetricsByGoal[goal.id];
+    let callMetricCoverage;
     if (cm) {
       if (goal.goals.handle_rate !== undefined) {
         const inbound = cm.answered + cm.missed + cm.voicemail;
@@ -449,9 +496,14 @@ async function computeActuals(goals, dataUserId, refDateStr, timezone) {
       }
       if (goal.goals.voicemail_count !== undefined) actuals.voicemail_count = cm.voicemail;
       if (goal.goals.missed_calls    !== undefined) actuals.missed_calls    = cm.missed;
+      // Surfaced to the client so a goal spanning mostly-unarchived months
+      // shows a visible caveat instead of a silently-incomplete number —
+      // see computeCallMetricActuals for why a "missing" month can never
+      // be recovered after the fact.
+      if (cm.coverage.coveredMonths < cm.coverage.totalMonths) callMetricCoverage = cm.coverage;
     }
 
-    return { ...goal, actuals };
+    return { ...goal, actuals, ...(callMetricCoverage ? { call_metric_coverage: callMetricCoverage } : {}) };
   });
 }
 
@@ -490,6 +542,29 @@ async function computeCallMetricActuals(goals, dataUserId, minStart, maxEnd) {
     t.voicemail += v.voicemail || 0;
   };
 
+  // The account's current (still-live, not-yet-archived) race month must
+  // never be trusted from historical_months, even if a row for it exists —
+  // an out-of-order upload or a partial/early archive attempt can leave a
+  // stale or zeroed snapshot for the month that's still actively accumulating
+  // real call_log data. Same root cause and same fix already applied to AI
+  // Analysis (see CLAUDE.md "Current race month always uses live data") —
+  // this function just never got the same guard when it was built. Reported
+  // 2026-09-04 as "Sept shows 86%, but annual shows 100%": September's real,
+  // nonzero missed/voicemail were being replaced by a stale zeroed
+  // historical_months row the moment the annual aggregation pulled it in,
+  // even though querying September alone (a different code path) correctly
+  // went straight to live call_log and got the real number.
+  const { data: raceCfgRows } = await supabase.from('race_config')
+    .select('value').eq('user_id', dataUserId).eq('key', 'current_month').maybeSingle();
+  const currentMonthKey = (() => {
+    const parts = String(raceCfgRows?.value || '').trim().split(/\s+/);
+    if (parts.length < 2) return null;
+    let mi = MONTH_NAMES.findIndex(x => x.toLowerCase() === parts[0].toLowerCase());
+    if (mi < 0) mi = MONTH_ABBR.findIndex(x => x.toLowerCase() === parts[0].toLowerCase());
+    const yr = parseInt(parts[1], 10);
+    return (mi < 0 || isNaN(yr)) ? null : `${yr}-${String(mi + 1).padStart(2, '0')}`;
+  })();
+
   const { data: histRows } = await supabase.from('historical_months')
     .select('month, answered, missed, voicemail')
     .eq('user_id', dataUserId);
@@ -502,6 +577,7 @@ async function computeCallMetricActuals(goals, dataUserId, minStart, maxEnd) {
     const yr = parseInt(parts[1], 10);
     if (mi < 0 || isNaN(yr)) continue;
     const monthKey = `${yr}-${String(mi + 1).padStart(2, '0')}`;
+    if (monthKey === currentMonthKey) continue; // always re-derive the live month from call_log instead
     addTo(monthKey, { answered: h.answered, missed: h.missed, voicemail: h.voicemail });
     histMonthsCovered.add(monthKey);
   }
@@ -540,17 +616,40 @@ async function computeCallMetricActuals(goals, dataUserId, minStart, maxEnd) {
     }
   }
 
+  // Only two things can ever supply a real number for a given month: an
+  // archived historical_months row, or the account's current live race
+  // month (queried fresh from call_log above). Any OTHER month in a goal's
+  // period — never archived, and not currently live — has no data source
+  // at all and silently contributes zero, exactly like a real zero would.
+  // That's mathematically "correct" given what's in the database, but reads
+  // as a real, non-obvious number (e.g. a misleadingly high handle_rate)
+  // with no indication most of the period is actually just missing, not
+  // genuinely zero. Reported live: "when I select annual it's only showing
+  // this month's numbers" — call_log is hard-deleted on every Archive &
+  // Reset (see CLAUDE.md), so a month that was never archived is a
+  // permanent gap, not something a query can ever recover — the fix here is
+  // to surface that gap explicitly rather than to keep searching for one.
   const result = {};
   for (const goal of relevant) {
     const pStart = goal._eff_start || goal.period_start;
     const pEnd   = goal._eff_end   || goal.period_end;
     let answered = 0, missed = 0, voicemail = 0;
-    for (const monthKey of monthsInRange(pStart, pEnd)) {
+    const monthsInPeriod  = monthsInRange(pStart, pEnd);
+    const monthsCovered   = [];
+    const monthsMissing   = [];
+    for (const monthKey of monthsInPeriod) {
       const v = mergedByMonth[monthKey];
-      if (!v) continue;
-      answered += v.answered; missed += v.missed; voicemail += v.voicemail;
+      if (v) {
+        answered += v.answered; missed += v.missed; voicemail += v.voicemail;
+        monthsCovered.push(monthKey);
+      } else {
+        monthsMissing.push(monthKey);
+      }
     }
-    result[goal.id] = { answered, missed, voicemail };
+    result[goal.id] = {
+      answered, missed, voicemail,
+      coverage: { totalMonths: monthsInPeriod.length, coveredMonths: monthsCovered.length, missingMonths: monthsMissing },
+    };
   }
   return result;
 }
@@ -587,8 +686,28 @@ async function attachRaiseStatus(goals, dataUserId, timezone) {
   // an annual goal still blends against the calendar year and the annual
   // target columns, exactly as before.
   const specificGoals = raiseGoals.filter(g =>
-    g.raise_config?.agency_location_id && g.raise_config.agency_location_id !== ALL_LOCATIONS_SENTINEL);
+    g.raise_config?.agency_location_id &&
+    g.raise_config.agency_location_id !== ALL_LOCATIONS_SENTINEL &&
+    g.raise_config.agency_location_id !== WHOLE_AGENCY_GOAL_SENTINEL);
   const allLocGoals = raiseGoals.filter(g => g.raise_config?.agency_location_id === ALL_LOCATIONS_SENTINEL);
+
+  // "Whole Agency Goal" — align an individual's raise with the agency's own
+  // raise-eligible goal (Account → Sales → Team → Team & Agency Goals →
+  // Whole Agency), NOT a sales_locations Office Goal. Matched by period_type
+  // rather than exact period, since a recurring monthly individual goal
+  // should compare against whatever the CURRENT recurring monthly whole-
+  // agency goal is, not a frozen creation-time period. computeActuals()
+  // already populated .actuals for every goal in this batch, including the
+  // whole-agency one (it's just another agent_goals row), so its own
+  // progress is computed by reusing computeIndividualProgressPct() directly
+  // on it — the exact same "mean of actual/target ratios" math any goal
+  // already gets, not a new formula.
+  const wholeAgencyGoalByPeriodType = {};
+  for (const g of raiseGoals) {
+    if (g.agent_id === '__agency__' && !wholeAgencyGoalByPeriodType[g.period_type]) {
+      wholeAgencyGoalByPeriodType[g.period_type] = g;
+    }
+  }
 
   const locKeyOf = g => `${g.raise_config.agency_location_id}|${periodOf(g).start}|${periodOf(g).end}`;
   const locationIds = [...new Set(specificGoals.map(g => g.raise_config.agency_location_id))];
@@ -667,14 +786,24 @@ async function attachRaiseStatus(goals, dataUserId, timezone) {
 
     let agencyPct = null;
     if (cfg.combination_mode !== 'individual' && cfg.agency_location_id) {
-      if (cfg.agency_location_id === ALL_LOCATIONS_SENTINEL) {
+      if (cfg.agency_location_id === WHOLE_AGENCY_GOAL_SENTINEL) {
+        const wholeAgencyGoal = wholeAgencyGoalByPeriodType[goal.period_type];
+        // Never the goal comparing against itself — only relevant if the
+        // Whole Agency's own raise goal somehow also pointed back at
+        // __whole_agency_goal__, which sanitizeRaiseConfig can't prevent by
+        // construction since agent_id and agency_location_id are unrelated
+        // fields; guarding here instead of trusting that can't happen.
+        if (wholeAgencyGoal && wholeAgencyGoal.id !== goal.id) {
+          agencyPct = computeIndividualProgressPct(wholeAgencyGoal);
+        }
+      } else if (cfg.agency_location_id === ALL_LOCATIONS_SENTINEL) {
         const targets = allLocTargetsByPeriodType[goal.period_type] || {};
         const act = allLocActualByPeriodKey[`${period.start}|${period.end}`] || { count: 0, premium: 0 };
-        agencyPct = computeAgencyProgressPct(targets, act.count, act.premium, cfg.agency_metric, goal.period_type);
+        agencyPct = computeAgencyProgressPct(targets, act.count, act.premium, goal.period_type);
       } else {
         const loc = locationById[cfg.agency_location_id];
         const act = locationActualsByKey[locKeyOf(goal)] || { count: 0, premium: 0 };
-        agencyPct = computeAgencyProgressPct(loc, act.count, act.premium, cfg.agency_metric, goal.period_type);
+        agencyPct = computeAgencyProgressPct(loc, act.count, act.premium, goal.period_type);
       }
     }
 
@@ -720,5 +849,37 @@ async function attachRaiseStatus(goals, dataUserId, timezone) {
     goal.raise_status = status;
   }
 
+  return goals;
+}
+
+// Attaches a `header_progress` object to whichever __agency__ goal(s) have
+// show_in_header=true — the condensed progress bar pinned to the app header
+// (Account → Sales → Team → Team & Agency Goals → Whole Agency → a goal's
+// "Show in header" checkbox). Deliberately NOT gated on is_raise_goal or
+// isRaiseEligiblePeriod — this works for any Whole Agency goal regardless of
+// period type or raise status, unlike attachRaiseStatus above. Reuses the
+// exact same pure math (computeIndividualProgressPct/computeMonthsElapsed/
+// annualizedPct) rather than inventing new formulas — "progress toward goal"
+// and "pace-projected progress" mean the same thing here as they do for an
+// individual's own raise card, just computed for a goal that may not be
+// raise-eligible at all. Synchronous — goals already have .actuals from
+// computeActuals(), no new DB queries needed.
+function attachHeaderProgress(goals, timezone) {
+  const pinned = goals.filter(g => g.agent_id === '__agency__' && g.show_in_header);
+  if (!pinned.length) return goals;
+
+  const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: timezone || 'UTC' }).format(new Date());
+  for (const goal of pinned) {
+    const progressPct = computeIndividualProgressPct(goal);
+    const period = { start: goal._eff_start || goal.period_start, end: goal._eff_end || goal.period_end };
+    const monthsElapsed = computeMonthsElapsed(period.start, period.end, todayStr);
+    const projectedPct = annualizedPct(progressPct, monthsElapsed);
+    goal.header_progress = {
+      progress_pct:    progressPct,
+      progress_color:  colorForYtd(progressPct),
+      projected_pct:   projectedPct,
+      projected_color: colorForAnnualized(projectedPct),
+    };
+  }
   return goals;
 }

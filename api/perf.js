@@ -180,11 +180,20 @@ export default async function handler(req, res) {
           totPlaced   += s.placed;
           totAnswered += s.answered;
           totTalkMin  += s.talkMin;
+          // Handle Rate is explicitly null (not 0 or 100) for every individual
+          // agent row — voicemail/missed carry no per-agent attribution
+          // anywhere in call_log (both columns are hardcoded 0 above, by
+          // design), so a per-agent rate would read as a permanently
+          // misleading 100% for literally every agent. Only the pooled
+          // "— TEAM TOTAL —" row below has real, non-zero VM/Missed to
+          // compute a genuine rate from.
           rows.push([period, info.name, info.team, s.placed, s.answered, 0, 0,
-                     Math.round(s.talkMin*10)/10, avgMin, maxMin]);
+                     Math.round(s.talkMin*10)/10, avgMin, maxMin, null]);
         }
+        const inbound = totAnswered + race.voicemail + race.missed;
+        const handleRate = inbound > 0 ? Math.round(totAnswered / inbound * 100) : null;
         rows.push([period, '— TEAM TOTAL —', '', totPlaced, totAnswered,
-                   race.voicemail, race.missed, Math.round(totTalkMin*10)/10, 0, 0]);
+                   race.voicemail, race.missed, Math.round(totTalkMin*10)/10, 0, 0, handleRate]);
       }
       return rows;
     }
