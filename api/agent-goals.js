@@ -4,7 +4,15 @@ import {
   computeMonthsElapsed, computeIndividualProgressPct, computeAgencyProgressPct,
   computeCombinedProgressPct, gatePassed, computeProportionalReward,
   computeThresholdReward, sanitizeRaiseConfig, annualizedPct, colorForYtd, colorForAnnualized,
+  ALL_LOCATIONS_SENTINEL,
 } from './_lib/raise-calc.js';
+
+// A raise goal must be annual, or monthly AND recurring — a one-off,
+// non-recurring monthly goal only ever covers a single already-past-or-
+// current period, so there's no ongoing pace to track a raise against.
+function isRaiseEligiblePeriod(periodType, isRecurring) {
+  return periodType === 'annual' || (periodType === 'monthly' && !!isRecurring);
+}
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 const WRITE_ROLES = ['captain', 'chief_officer'];
@@ -184,18 +192,19 @@ export default async function handler(req, res) {
     if (cmError) return res.status(400).json({ error: cmError });
 
     const { is_recurring, is_raise_goal, raise_config } = req.body || {};
-    // A raise goal is a flag on an existing ANNUAL goal — a raise doesn't make
-    // sense against a monthly/quarterly window, so this is enforced here
-    // rather than left to the frontend to police on its own.
-    if (is_raise_goal && period_type !== 'annual') {
-      return res.status(400).json({ error: 'Raise-eligible goals must be annual' });
+    // A raise goal is a flag on an ANNUAL goal, or a RECURRING MONTHLY one —
+    // a one-off monthly goal has no ongoing pace to track a raise against, so
+    // this is enforced here rather than left to the frontend to police on its own.
+    if (is_raise_goal && !isRaiseEligiblePeriod(period_type, is_recurring)) {
+      return res.status(400).json({ error: 'Raise-eligible goals must be annual, or monthly and recurring' });
     }
     let sanitizedRaiseConfig = {};
     if (is_raise_goal) {
       sanitizedRaiseConfig = sanitizeRaiseConfig(raise_config);
-      if (sanitizedRaiseConfig.combination_mode !== 'individual' && sanitizedRaiseConfig.agency_location_id) {
+      const locId = sanitizedRaiseConfig.agency_location_id;
+      if (sanitizedRaiseConfig.combination_mode !== 'individual' && locId && locId !== ALL_LOCATIONS_SENTINEL) {
         const { data: locRow } = await supabase.from('sales_locations')
-          .select('id').eq('id', sanitizedRaiseConfig.agency_location_id).eq('user_id', dataUserId).maybeSingle();
+          .select('id').eq('id', locId).eq('user_id', dataUserId).maybeSingle();
         if (!locRow) return res.status(400).json({ error: 'Agency location not found' });
       }
     }
@@ -233,24 +242,40 @@ export default async function handler(req, res) {
     if (period_start)               update.period_start = period_start;
     if (period_end)                 update.period_end   = period_end;
 
-    if (is_raise_goal !== undefined) {
-      if (is_raise_goal) {
-        // period_type isn't itself editable via PATCH, so it has to be looked
-        // up rather than trusted from the request body.
-        const { data: existingGoal } = await supabase.from('agent_goals')
-          .select('period_type').eq('id', id).eq('user_id', dataUserId).single();
-        if (existingGoal?.period_type !== 'annual') {
-          return res.status(400).json({ error: 'Raise-eligible goals must be annual' });
+    // period_type isn't itself editable via PATCH, so it has to be looked up
+    // rather than trusted from the request body. Also needed whenever
+    // is_recurring is being turned off, even if is_raise_goal isn't touched
+    // this save — a monthly raise goal that stops being recurring is no
+    // longer eligible, and leaving is_raise_goal:true would orphan an
+    // invalid state that skipped this same validation on the way in.
+    if (is_raise_goal !== undefined || is_recurring === false) {
+      const { data: existingGoal } = await supabase.from('agent_goals')
+        .select('period_type, is_recurring, is_raise_goal').eq('id', id).eq('user_id', dataUserId).single();
+      const effectiveRecurring = is_recurring !== undefined ? !!is_recurring : existingGoal?.is_recurring;
+
+      if (is_raise_goal !== undefined) {
+        if (is_raise_goal) {
+          if (!isRaiseEligiblePeriod(existingGoal?.period_type, effectiveRecurring)) {
+            return res.status(400).json({ error: 'Raise-eligible goals must be annual, or monthly and recurring' });
+          }
+          const sanitizedRaiseConfig = sanitizeRaiseConfig(raise_config);
+          const locId = sanitizedRaiseConfig.agency_location_id;
+          if (sanitizedRaiseConfig.combination_mode !== 'individual' && locId && locId !== ALL_LOCATIONS_SENTINEL) {
+            const { data: locRow } = await supabase.from('sales_locations')
+              .select('id').eq('id', locId).eq('user_id', dataUserId).maybeSingle();
+            if (!locRow) return res.status(400).json({ error: 'Agency location not found' });
+          }
+          update.is_raise_goal = true;
+          update.raise_config  = sanitizedRaiseConfig;
+        } else {
+          update.is_raise_goal = false;
+          update.raise_config  = {};
         }
-        const sanitizedRaiseConfig = sanitizeRaiseConfig(raise_config);
-        if (sanitizedRaiseConfig.combination_mode !== 'individual' && sanitizedRaiseConfig.agency_location_id) {
-          const { data: locRow } = await supabase.from('sales_locations')
-            .select('id').eq('id', sanitizedRaiseConfig.agency_location_id).eq('user_id', dataUserId).maybeSingle();
-          if (!locRow) return res.status(400).json({ error: 'Agency location not found' });
-        }
-        update.is_raise_goal = true;
-        update.raise_config  = sanitizedRaiseConfig;
-      } else {
+      } else if (existingGoal?.is_raise_goal && !isRaiseEligiblePeriod(existingGoal.period_type, effectiveRecurring)) {
+        // is_raise_goal wasn't part of this save, but turning off Recurring
+        // just made an existing monthly raise goal invalid — clear it rather
+        // than leave an orphaned is_raise_goal:true a fresh save could never
+        // have produced.
         update.is_raise_goal = false;
         update.raise_config  = {};
       }
@@ -534,52 +559,123 @@ async function computeCallMetricActuals(goals, dataUserId, minStart, maxEnd) {
 // Mutates and returns the same array `computeActuals` already produced (its
 // goals are fresh `{...goal, actuals}` objects per call, safe to extend here
 // without touching anything else). Cheap bail-out when nothing is raise-flagged.
+//
+// Eligible periods: annual, or monthly AND recurring (isRaiseEligiblePeriod —
+// enforced again here, not just at save time, in case a row was written
+// before this rule existed or a bug elsewhere leaves one in an invalid state).
+// Uses each goal's EFFECTIVE period (_eff_start/_eff_end, already computed by
+// computeActuals for any recurring goal) rather than the raw stored
+// period_start/period_end — for a recurring goal those drift apart after the
+// first cycle (a monthly recurring goal's stored period_start stays pinned to
+// whichever month it was first created; a recurring annual one, to whichever
+// year). Using the raw columns here would have silently frozen "months
+// elapsed" and the agency-location comparison window at the creation period
+// forever — harmless in the annual case until a raise goal actually survives
+// past its first year, but immediately and obviously wrong for the new
+// monthly-recurring case, so fixed for both while adding the latter.
 async function attachRaiseStatus(goals, dataUserId, timezone) {
-  const raiseGoals = goals.filter(g => g.is_raise_goal && g.period_type === 'annual');
+  const raiseGoals = goals.filter(g => g.is_raise_goal && isRaiseEligiblePeriod(g.period_type, g.is_recurring));
   if (!raiseGoals.length) return goals;
 
   const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: timezone || 'UTC' }).format(new Date());
-  const year = todayStr.slice(0, 4);
-  const yearStart = `${year}-01-01`;
-  const yearEnd   = `${year}-12-31`;
+  const periodOf = g => ({ start: g._eff_start || g.period_start, end: g._eff_end || g.period_end });
 
-  // Agency locations (Blended/Separate modes) — dedupe across goals so a
-  // shared location is only fetched/aggregated once, not once per goal.
-  const locationIds = [...new Set(raiseGoals.map(g => g.raise_config?.agency_location_id).filter(Boolean))];
+  // Agency locations (Blended/Separate modes) — dedupe by (location, period)
+  // so a shared location+period pair is only fetched/aggregated once, not
+  // once per goal. A monthly goal blends against that SAME month's sales and
+  // the location's MONTHLY target columns (see computeAgencyProgressPct);
+  // an annual goal still blends against the calendar year and the annual
+  // target columns, exactly as before.
+  const specificGoals = raiseGoals.filter(g =>
+    g.raise_config?.agency_location_id && g.raise_config.agency_location_id !== ALL_LOCATIONS_SENTINEL);
+  const allLocGoals = raiseGoals.filter(g => g.raise_config?.agency_location_id === ALL_LOCATIONS_SENTINEL);
+
+  const locKeyOf = g => `${g.raise_config.agency_location_id}|${periodOf(g).start}|${periodOf(g).end}`;
+  const locationIds = [...new Set(specificGoals.map(g => g.raise_config.agency_location_id))];
   const locationById = {};
-  const locationActuals = {};
+  const locationActualsByKey = {};
 
   if (locationIds.length) {
     const { data: locs } = await supabase.from('sales_locations')
-      .select('id, name, goal_count_annual, goal_premium_annual')
+      .select('id, name, goal_count, goal_premium, goal_count_annual, goal_premium_annual')
       .in('id', locationIds).eq('user_id', dataUserId);
-    for (const loc of (locs || [])) {
-      locationById[loc.id] = loc;
+    for (const loc of (locs || [])) locationById[loc.id] = loc;
+
+    const uniqueKeys = [...new Set(specificGoals.map(locKeyOf))];
+    for (const key of uniqueKeys) {
+      const [locId, start, end] = key.split('|');
+      const loc = locationById[locId];
+      if (!loc) continue;
       const { data: rows } = await supabase.from('sales_log')
         .select('written_premium, sale_weight')
         .eq('user_id', dataUserId)
         .eq('location', loc.name)
         .eq('is_cancelled', false)
-        .gte('sale_date', yearStart).lte('sale_date', yearEnd);
+        .gte('sale_date', start).lte('sale_date', end);
       let count = 0, premium = 0;
       for (const r of (rows || [])) {
         count   += r.sale_weight ?? 1;
         premium += parseFloat(r.written_premium) || 0;
       }
-      locationActuals[loc.id] = { count, premium };
+      locationActualsByKey[key] = { count, premium };
+    }
+  }
+
+  // "All Locations" — aggregate goal_count(_annual)/goal_premium(_annual)
+  // across every goals-enabled location as the target, and every location's
+  // sales account-wide (unfiltered by `location`) as the actual, for
+  // whichever period(s) are actually referenced. Same "All Locations"
+  // semantics js/sales-log.js's Sales Log scorecard already uses.
+  const allLocTargetsByPeriodType = {};
+  const allLocActualByPeriodKey = {};
+  if (allLocGoals.length) {
+    const { data: allLocs } = await supabase.from('sales_locations')
+      .select('goal_count, goal_premium, goal_count_annual, goal_premium_annual, goals_enabled')
+      .eq('user_id', dataUserId);
+    const enabled = (allLocs || []).filter(l => l.goals_enabled);
+    allLocTargetsByPeriodType.monthly = {
+      goal_count:   enabled.reduce((s, l) => s + (Number(l.goal_count)   || 0), 0),
+      goal_premium: enabled.reduce((s, l) => s + (Number(l.goal_premium) || 0), 0),
+    };
+    allLocTargetsByPeriodType.annual = {
+      goal_count_annual:   enabled.reduce((s, l) => s + (Number(l.goal_count_annual)   || 0), 0),
+      goal_premium_annual: enabled.reduce((s, l) => s + (Number(l.goal_premium_annual) || 0), 0),
+    };
+
+    const uniquePeriods = [...new Set(allLocGoals.map(g => { const p = periodOf(g); return `${p.start}|${p.end}`; }))];
+    for (const key of uniquePeriods) {
+      const [start, end] = key.split('|');
+      const { data: rows } = await supabase.from('sales_log')
+        .select('written_premium, sale_weight')
+        .eq('user_id', dataUserId)
+        .eq('is_cancelled', false)
+        .gte('sale_date', start).lte('sale_date', end);
+      let count = 0, premium = 0;
+      for (const r of (rows || [])) {
+        count   += r.sale_weight ?? 1;
+        premium += parseFloat(r.written_premium) || 0;
+      }
+      allLocActualByPeriodKey[key] = { count, premium };
     }
   }
 
   for (const goal of raiseGoals) {
     const cfg = goal.raise_config || {};
-    const monthsElapsed = computeMonthsElapsed(goal.period_start, goal.period_end, todayStr);
+    const period = periodOf(goal);
+    const monthsElapsed = computeMonthsElapsed(period.start, period.end, todayStr);
     const individualPct = computeIndividualProgressPct(goal);
 
     let agencyPct = null;
     if (cfg.combination_mode !== 'individual' && cfg.agency_location_id) {
-      const loc = locationById[cfg.agency_location_id];
-      const act = locationActuals[cfg.agency_location_id] || { count: 0, premium: 0 };
-      agencyPct = computeAgencyProgressPct(loc, act.count, act.premium, cfg.agency_metric);
+      if (cfg.agency_location_id === ALL_LOCATIONS_SENTINEL) {
+        const targets = allLocTargetsByPeriodType[goal.period_type] || {};
+        const act = allLocActualByPeriodKey[`${period.start}|${period.end}`] || { count: 0, premium: 0 };
+        agencyPct = computeAgencyProgressPct(targets, act.count, act.premium, cfg.agency_metric, goal.period_type);
+      } else {
+        const loc = locationById[cfg.agency_location_id];
+        const act = locationActualsByKey[locKeyOf(goal)] || { count: 0, premium: 0 };
+        agencyPct = computeAgencyProgressPct(loc, act.count, act.premium, cfg.agency_metric, goal.period_type);
+      }
     }
 
     const combinedPct = computeCombinedProgressPct(individualPct, agencyPct, cfg.combination_mode, cfg.blend_individual_weight);

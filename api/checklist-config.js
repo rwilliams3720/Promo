@@ -3,6 +3,27 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
+const POLICY_PRODUCT_KEYS = ['wl', 'ul', 'term', 'health', 'auto', 'fire'];
+
+// Same shape as an agent goal's combined_groups entries ({id, label, products,
+// target}) — reused here for a location's combined product goals (e.g. "Auto
+// + Fire: 12"), one array for the monthly targets and a separate one for
+// annual, mirroring how product_goals_monthly/product_goals_annual are
+// already two independent maps on the same row. Never trust the client array
+// as-is (same posture as sanitizeThresholdTiers in api/bonus-activities.js).
+function sanitizeCombinedProductGoals(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((g, i) => ({
+      id: typeof g?.id === 'string' && g.id ? g.id : 'lcg' + i,
+      label: String(g?.label || '').trim().slice(0, 60),
+      products: Array.isArray(g?.products) ? g.products.filter(p => POLICY_PRODUCT_KEYS.includes(p)) : [],
+      target: parseFloat(g?.target),
+    }))
+    .filter(g => g.products.length >= 2 && !isNaN(g.target) && g.target > 0)
+    .slice(0, 20);
+}
+
 const DEFAULT_FORM_TYPES = [
   { form_key: 'GSD',  label: 'GSD',  active: true, sort_order: 0 },
   { form_key: 'DSS',  label: 'DSS',  active: true, sort_order: 1 },
@@ -133,7 +154,15 @@ export default async function handler(req, res) {
       supabase.from('sales_subcategories').select('*').eq('user_id', dataUserId).order('scoring_category').order('sort_order'),
     ]);
     const { data: agentData }    = await supabase.from('agent_roster').select('id, agent_id, name, active, commission_structure_id, commission_all_must_qualify, commission_product_overrides, team').eq('user_id', dataUserId).order('name');
-    const { data: locationData } = await supabase.from('sales_locations').select('id, name, active, sort_order, address, phone, hours, goal_count, goal_premium, goals_enabled, activity_goals, goal_count_annual, goal_premium_annual, goals_visibility, product_goals_monthly, product_goals_annual').eq('user_id', dataUserId).order('sort_order').order('created_at');
+    let { data: locationData, error: locSelErr } = await supabase.from('sales_locations').select('id, name, active, sort_order, address, phone, hours, goal_count, goal_premium, goals_enabled, activity_goals, goal_count_annual, goal_premium_annual, goals_visibility, product_goals_monthly, product_goals_annual, combined_product_goals_monthly, combined_product_goals_annual').eq('user_id', dataUserId).order('sort_order').order('created_at');
+    // Graceful degradation until location-combined-product-goals-migration.sql
+    // has run on this account — an unknown-column error on this SELECT would
+    // otherwise null out the ENTIRE locations list (every location vanishing
+    // from Account → Sales → Locations), not just the new fields.
+    if (locSelErr) {
+      const retry = await supabase.from('sales_locations').select('id, name, active, sort_order, address, phone, hours, goal_count, goal_premium, goals_enabled, activity_goals, goal_count_annual, goal_premium_annual, goals_visibility, product_goals_monthly, product_goals_annual').eq('user_id', dataUserId).order('sort_order').order('created_at');
+      locationData = (retry.data || []).map(l => ({ ...l, combined_product_goals_monthly: [], combined_product_goals_annual: [] }));
+    }
     const { data: lsRow }        = await supabase.from('accounts').select('lead_sources').eq('user_id', dataUserId).single();
     const { data: agentStructData } = await supabase
       .from('agent_commission_structures')
@@ -370,8 +399,20 @@ export default async function handler(req, res) {
           if (upd.goals_visibility       !== undefined) detailsUpdate.goals_visibility       = Array.isArray(upd.goals_visibility) ? upd.goals_visibility : ['all'];
           if (upd.product_goals_monthly  !== undefined) detailsUpdate.product_goals_monthly  = upd.product_goals_monthly  || {};
           if (upd.product_goals_annual   !== undefined) detailsUpdate.product_goals_annual   = upd.product_goals_annual   || {};
+          if (upd.combined_product_goals_monthly !== undefined) detailsUpdate.combined_product_goals_monthly = sanitizeCombinedProductGoals(upd.combined_product_goals_monthly);
+          if (upd.combined_product_goals_annual  !== undefined) detailsUpdate.combined_product_goals_annual  = sanitizeCombinedProductGoals(upd.combined_product_goals_annual);
           if (upd.activity_goals !== undefined) detailsUpdate.activity_goals = upd.activity_goals || {};
           ({ error: locErr } = await supabase.from('sales_locations').update(detailsUpdate).eq('id', upd.id).eq('user_id', user.id));
+          // Graceful degradation until location-combined-product-goals-migration.sql has
+          // run on this account: a single UPDATE with an unknown jsonb column fails the
+          // WHOLE update, not just that field — every other location edit (address, the
+          // existing flat product goals, etc.) would break too, not just this new one.
+          // Retry once without the two new columns so unrelated saves keep working.
+          if (locErr && (upd.combined_product_goals_monthly !== undefined || upd.combined_product_goals_annual !== undefined)) {
+            delete detailsUpdate.combined_product_goals_monthly;
+            delete detailsUpdate.combined_product_goals_annual;
+            ({ error: locErr } = await supabase.from('sales_locations').update(detailsUpdate).eq('id', upd.id).eq('user_id', user.id));
+          }
         } else if (upd.action === 'update_activity_goals') {
           ({ error: locErr } = await supabase.from('sales_locations').update({ activity_goals: upd.activity_goals || {} })
             .eq('user_id', dataUserId).eq('id', upd.id));

@@ -235,12 +235,34 @@ function _removeCgRow(agentId, idx) {
   [...container.children].forEach((row, i) => { row.id = `gf-cg-${agentId}-${i}`; });
 }
 
-// ── Raise-Eligibility Goal config (annual goals only) ────────────────────────
+// ── Raise-Eligibility Goal config (annual, or recurring monthly, goals only) ─
+const RAISE_ELIGIBLE_PERIOD_TYPES = ['annual', 'monthly'];
+
+// Shown for annual and monthly period types; hidden for quarterly/semi-annual
+// (not supported). Within monthly, the checkbox itself is greyed out and
+// disabled unless Recurring is checked — a one-off monthly goal has no
+// ongoing pace to track a raise against — rather than hiding the whole
+// section, so the requirement is visible instead of silently vanishing.
 function updateRaiseSectionVisibility(agentId) {
   const typeEl  = document.getElementById('gf-type-' + agentId);
+  const recEl   = document.getElementById('gf-recurring-' + agentId);
   const section = document.getElementById('gf-raise-section-' + agentId);
+  const cb      = document.getElementById('gf-raise-enabled-' + agentId);
+  const label   = document.getElementById('gf-raise-label-' + agentId);
   if (!typeEl || !section) return;
-  section.style.display = typeEl.value === 'annual' ? '' : 'none';
+  const periodType   = typeEl.value;
+  const isRecurring  = !!recEl?.checked;
+  const eligible     = periodType === 'annual' || (periodType === 'monthly' && isRecurring);
+  section.style.display = RAISE_ELIGIBLE_PERIOD_TYPES.includes(periodType) ? '' : 'none';
+  if (cb) {
+    cb.disabled = !eligible;
+    if (!eligible && cb.checked) { cb.checked = false; toggleRaiseFieldsVisibility(agentId); }
+  }
+  if (label) {
+    label.style.opacity = eligible ? '1' : '.45';
+    label.style.cursor  = eligible ? 'pointer' : 'not-allowed';
+    label.title = eligible ? '' : 'Must be Recurring to use raise eligibility on a monthly goal.';
+  }
 }
 
 function toggleRaiseFieldsVisibility(agentId) {
@@ -303,9 +325,13 @@ function _removeRaiseTierRow(agentId, idx) {
   [...container.children].forEach((row, i) => { row.id = `gf-raise-tier-${agentId}-${i}`; });
 }
 
+const ALL_LOCATIONS_SENTINEL = '__all_locations__';
+
 function buildRaiseGoalHtml(agentId, existing, periodType) {
   const sid = escHtml(agentId);
-  const enabled  = !!existing?.is_raise_goal;
+  const isRecurring = !!existing?.is_recurring;
+  const eligible = periodType === 'annual' || (periodType === 'monthly' && isRecurring);
+  const enabled  = !!existing?.is_raise_goal && eligible;
   const cfg      = existing?.raise_config || {};
   const prop     = cfg.proportional || {};
   const mode     = cfg.combination_mode || 'individual';
@@ -318,15 +344,16 @@ function buildRaiseGoalHtml(agentId, existing, periodType) {
   const lbl = 'font-size:9px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px;';
   const sel = 'background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:3px 6px;font-size:11px;outline:none;';
   const num = 'background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 5px;font-size:11px;outline:none;';
+  const info = text => `<span title="${escHtml(text)}" style="cursor:help;opacity:.8;">ⓘ</span>`;
 
-  return `<div id="gf-raise-section-${sid}" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border2);display:${periodType === 'annual' ? '' : 'none'};">
-    <label style="font-size:11px;color:var(--gold);display:flex;align-items:center;gap:5px;cursor:pointer;margin-bottom:6px;">
-      <input type="checkbox" id="gf-raise-enabled-${sid}" ${enabled?'checked':''} onchange="toggleRaiseFieldsVisibility('${sid}')"> 🎯 Raise-Eligible Goal
+  return `<div id="gf-raise-section-${sid}" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border2);display:${RAISE_ELIGIBLE_PERIOD_TYPES.includes(periodType) ? '' : 'none'};">
+    <label id="gf-raise-label-${sid}" style="font-size:11px;color:var(--gold);display:flex;align-items:center;gap:5px;cursor:${eligible?'pointer':'not-allowed'};margin-bottom:6px;opacity:${eligible?'1':'.45'};" title="${eligible?'':'Must be Recurring to use raise eligibility on a monthly goal.'}">
+      <input type="checkbox" id="gf-raise-enabled-${sid}" ${enabled?'checked':''} ${eligible?'':'disabled'} onchange="toggleRaiseFieldsVisibility('${sid}')"> 🎯 Raise-Eligible Goal
     </label>
     <div id="gf-raise-fields-${sid}" style="display:${enabled?'':'none'};padding-left:4px;">
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;align-items:flex-end;">
         <div>
-          <label style="${lbl}">Combination Mode</label>
+          <label style="${lbl}">Combination Mode ${info('Individual: only this agent\'s own progress counts. Blended: a weighted mix of this agent\'s progress and an Agency Location\'s (or All Locations\') goal, combined into one score — pulled from each location\'s own Office Goals (Account → Sales → Locations), not the separate "Whole Agency" goal under Team & Agency Goals. Separate: both shown side by side with no combined score — whoever makes the raise call weighs both manually.')}</label>
           <select id="gf-raise-combo-${sid}" onchange="toggleRaiseComboFields('${sid}')" style="${sel}">
             <option value="individual"${mode==='individual'?' selected':''}>Individual</option>
             <option value="blended"${mode==='blended'?' selected':''}>Blended</option>
@@ -334,27 +361,28 @@ function buildRaiseGoalHtml(agentId, existing, periodType) {
           </select>
         </div>
         <div id="gf-raise-loc-wrap-${sid}" style="display:${mode==='individual'?'none':''}">
-          <label style="${lbl}">Agency Location</label>
+          <label style="${lbl}">Agency Location ${info('Pulls the target from that location\'s own Office Goals (Account → Sales → Locations → Edit) — NOT from the "Whole Agency" card under Account → Sales → Team → Team & Agency Goals, which is a separate, independent goal. All Locations: blends against every location with goals enabled, added together, instead of one specific office. Useful when the agent isn\'t tied to a single location, or the raise should reflect overall agency performance.')}</label>
           <select id="gf-raise-loc-${sid}" style="${sel}">
             <option value="">— Select —</option>
+            <option value="${ALL_LOCATIONS_SENTINEL}"${cfg.agency_location_id === ALL_LOCATIONS_SENTINEL ? ' selected' : ''}>All Locations</option>
             ${locOpts}
           </select>
         </div>
         <div id="gf-raise-agmetric-wrap-${sid}" style="display:${mode==='individual'?'none':''}">
-          <label style="${lbl}">Agency Metric</label>
+          <label style="${lbl}">Agency Metric ${info('Whether the Agency Location\'s (or All Locations\') goal is measured by policy count or total written premium.')}</label>
           <select id="gf-raise-agmetric-${sid}" style="${sel}">
             <option value="count"${cfg.agency_metric!=='premium'?' selected':''}>Policy Count</option>
             <option value="premium"${cfg.agency_metric==='premium'?' selected':''}>Premium</option>
           </select>
         </div>
         <div id="gf-raise-blendwt-wrap-${sid}" style="display:${mode==='blended'?'':'none'}">
-          <label style="${lbl}">Individual Weight %</label>
+          <label style="${lbl}">Individual Weight % ${info('How much of the combined score comes from this agent\'s own progress vs. the Agency Location\'s — e.g. 70 means 70% individual + 30% agency.')}</label>
           <input type="number" id="gf-raise-blendwt-${sid}" min="0" max="100" value="${cfg.blend_individual_weight ?? 70}" style="width:60px;${num}">
         </div>
       </div>
 
       <div style="margin-bottom:6px;">
-        <label style="${lbl}">Reward Calculation</label>
+        <label style="${lbl}">Reward Calculation ${info('Proportional: raise % scales continuously with progress, earning the Target Raise % at 100% of goal and keeping the same rate into a stretch zone up to the Max Raise %. Threshold Tiers: fixed raise amounts unlocked at specific progress milestones instead — nothing below the first tier, then a flat jump.')}</label>
         <select id="gf-raise-rewardmode-${sid}" onchange="toggleRaiseRewardFields('${sid}')" style="${sel}">
           <option value="proportional"${rewardMode==='proportional'?' selected':''}>Proportional</option>
           <option value="threshold"${rewardMode==='threshold'?' selected':''}>Threshold Tiers</option>
@@ -364,15 +392,15 @@ function buildRaiseGoalHtml(agentId, existing, periodType) {
       <div id="gf-raise-prop-${sid}" style="display:${rewardMode==='proportional'?'':'none'};margin-bottom:6px;">
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
           <div>
-            <label style="${lbl}">Target Raise %</label>
+            <label style="${lbl}">Target Raise % ${info('The raise earned in full once progress reaches 100% of goal — scales linearly from 0% up to this amount.')}</label>
             <input type="number" id="gf-raise-target-${sid}" min="0" step="0.1" value="${prop.target_pct ?? 3}" style="width:60px;${num}">
           </div>
           <div>
-            <label style="${lbl}">Max Raise %</label>
+            <label style="${lbl}">Max Raise % ${info('The cap on the raise if the agent exceeds 100% of goal — earned via the stretch zone above target, at the Stretch Breakpoint.')}</label>
             <input type="number" id="gf-raise-max-${sid}" min="0" step="0.1" value="${prop.max_pct ?? 4}" style="width:60px;${num}">
           </div>
           <div>
-            <label style="${lbl}">Stretch Breakpoint</label>
+            <label style="${lbl}">Stretch Breakpoint ${info('Where the Max Raise % is fully earned when exceeding goal. Auto derives it from the Target/Max ratio (the same per-point rate continues past 100%). Custom lets you set your own % instead — farther out spreads the same bonus thinner, making full-max harder to reach.')}</label>
             <select id="gf-raise-stretchmode-${sid}" onchange="toggleRaiseStretchFields('${sid}')" style="${sel}">
               <option value="auto"${stretchMode==='auto'?' selected':''}>Auto</option>
               <option value="custom"${stretchMode==='custom'?' selected':''}>Custom</option>
@@ -386,20 +414,19 @@ function buildRaiseGoalHtml(agentId, existing, periodType) {
       </div>
 
       <div id="gf-raise-threshold-${sid}" style="display:${rewardMode==='threshold'?'':'none'};margin-bottom:6px;">
-        <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;">Tiers (% of goal → raise %)</div>
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;">Tiers (% of goal → raise %) ${info('Pays the highest tier whose % is at or below current progress — a step function, not additive. E.g. tiers at 80%→3% and 100%→4% pay 0% below 80, 3% from 80–99%, 4% at 100%+.')}</div>
         <div id="gf-raise-tiers-rows-${sid}">${tiers.map((t,i) => _buildRaiseTierRow(sid,i,t)).join('')}</div>
         <button type="button" onclick="_addRaiseTierRow('${sid}')" style="font-size:11px;background:none;border:1px solid var(--border2);color:var(--muted);border-radius:4px;padding:2px 8px;cursor:pointer;margin-top:2px;">+ Add Tier</button>
       </div>
 
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">
         <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px;cursor:pointer;">
-          <input type="checkbox" id="gf-raise-gate-enabled-${sid}" ${cfg.gate_enabled?'checked':''} onchange="toggleRaiseGateFields('${sid}')"> Individual Gate
+          <input type="checkbox" id="gf-raise-gate-enabled-${sid}" ${cfg.gate_enabled?'checked':''} onchange="toggleRaiseGateFields('${sid}')"> Individual Gate ${info('If enabled, the raise shows as 0% whenever this agent\'s own individual progress falls below the floor — regardless of what the blended or agency score would otherwise earn. Matters most in Blended/Separate mode, where a strong agency number could otherwise paper over personal underperformance.')}
         </label>
         <div id="gf-raise-gate-wrap-${sid}" style="display:${cfg.gate_enabled?'':'none'};font-size:11px;color:var(--muted);">
           <input type="number" id="gf-raise-gate-floor-${sid}" min="0" max="100" value="${cfg.gate_floor_pct ?? 50}" style="width:55px;${num}"> % minimum individual progress
         </div>
       </div>
-      <div style="font-size:10px;color:var(--muted);margin-top:4px;">Matters most for Blended/Separate — zeroes the raise if the agent's own progress falls below the floor, regardless of the combined score.</div>
     </div>
   </div>`;
 }
@@ -430,7 +457,7 @@ function showGoalForm(agentId, existingGoalId) {
         <input type="checkbox" id="gf-public-${escHtml(agentId)}" ${existing?.is_public?'checked':''}> Public
       </label>
       <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px;cursor:pointer;padding-bottom:2px;" title="Auto-apply these targets to each new period — no need to recreate monthly">
-        <input type="checkbox" id="gf-recurring-${escHtml(agentId)}" ${existing?.is_recurring?'checked':''}> ↻ Recurring
+        <input type="checkbox" id="gf-recurring-${escHtml(agentId)}" ${existing?.is_recurring?'checked':''} onchange="updateRaiseSectionVisibility('${escHtml(agentId)}')"> ↻ Recurring
       </label>
     </div>
     <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;">Target Metrics</div>
@@ -506,11 +533,14 @@ async function saveGoalForm(agentId, existingGoalId) {
     return;
   }
 
-  // Raise-goal config only applies to annual goals — sending is_raise_goal:false
-  // when unchecked (or when period type isn't annual) clears any stale config
-  // rather than leaving it lingering from a prior save.
+  // Raise-goal config only applies to annual goals, or recurring monthly ones
+  // (the checkbox itself is disabled otherwise, but re-check here too rather
+  // than trust its checked state alone) — sending is_raise_goal:false when
+  // unchecked/ineligible clears any stale config rather than leaving it
+  // lingering from a prior save.
   const raiseEnabledEl = document.getElementById('gf-raise-enabled-' + agentId);
-  const is_raise_goal  = !!(raiseEnabledEl?.checked && period_type === 'annual');
+  const raiseEligible  = period_type === 'annual' || (period_type === 'monthly' && is_recurring);
+  const is_raise_goal  = !!(raiseEnabledEl?.checked && raiseEligible);
   let raise_config = {};
   if (is_raise_goal) {
     const stretch_mode = document.getElementById('gf-raise-stretchmode-' + agentId)?.value || 'auto';
@@ -884,7 +914,8 @@ function _renderAgencyGoalsSection() {
   const myRole = _isMember ? _memberRole : 'owner';
   const PROD_LABELS = { wl:'WL', ul:'UL', term:'Term', health:'Health', auto:'Auto', fire:'Fire' };
   const hasGoals = l => l.goal_count || l.goal_premium || l.goal_count_annual || l.goal_premium_annual ||
-    Object.keys(l.product_goals_monthly || {}).length || Object.keys(l.product_goals_annual || {}).length;
+    Object.keys(l.product_goals_monthly || {}).length || Object.keys(l.product_goals_annual || {}).length ||
+    (l.combined_product_goals_monthly || []).length || (l.combined_product_goals_annual || []).length;
   const visibleLocs = (_salesLocations || []).filter(l => {
     if (!l.goals_enabled || !hasGoals(l)) return false;
     const vis = l.goals_visibility;
@@ -905,16 +936,26 @@ function _renderAgencyGoalsSection() {
     if (!entries.length) return '';
     return `<div style="font-size:12px;margin-top:3px;"><span style="color:var(--muted);">${period} Product Goals:</span> ${entries.map(([k,v]) => `${PROD_LABELS[k]||k}: <strong>${Number(v).toLocaleString()}</strong>`).join(' · ')}</div>`;
   };
+  const combinedRow = (groups, period) => {
+    if (!Array.isArray(groups) || !groups.length) return '';
+    return `<div style="font-size:12px;margin-top:3px;"><span style="color:var(--muted);">${period} Combined Goals:</span> ${groups.map(g =>
+      `${escHtml(g.label)} (${(g.products||[]).map(p => PROD_LABELS[p]||p).join('+')}): <strong>${Number(g.target).toLocaleString()}</strong>`
+    ).join(' · ')}</div>`;
+  };
   const cards = visibleLocs.map(l => {
     const items = [];
     if (l.goal_count)         items.push(`<div style="font-size:12px;"><span style="color:var(--muted);">Monthly Policy Goal (${monthLabel}):</span> <strong>${Number(l.goal_count).toLocaleString()}</strong></div>`);
     if (l.goal_premium)       items.push(`<div style="font-size:12px;margin-top:3px;"><span style="color:var(--muted);">Monthly Premium Goal (${monthLabel}):</span> <strong>$${Number(l.goal_premium).toLocaleString()}</strong></div>`);
     const moProds = prodRow(l.product_goals_monthly, `Monthly (${monthLabel})`);
     if (moProds) items.push(moProds);
+    const moCombined = combinedRow(l.combined_product_goals_monthly, `Monthly (${monthLabel})`);
+    if (moCombined) items.push(moCombined);
     if (l.goal_count_annual)   items.push(`<div style="font-size:12px;margin-top:3px;"><span style="color:var(--muted);">Annual Policy Goal (${yearLabel}):</span> <strong>${Number(l.goal_count_annual).toLocaleString()}</strong></div>`);
     if (l.goal_premium_annual) items.push(`<div style="font-size:12px;margin-top:3px;"><span style="color:var(--muted);">Annual Premium Goal (${yearLabel}):</span> <strong>$${Number(l.goal_premium_annual).toLocaleString()}</strong></div>`);
     const annProds = prodRow(l.product_goals_annual, `Annual (${yearLabel})`);
     if (annProds) items.push(annProds);
+    const annCombined = combinedRow(l.combined_product_goals_annual, `Annual (${yearLabel})`);
+    if (annCombined) items.push(annCombined);
     if (!items.length) return '';
     return `<div style="background:var(--deep);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;margin-bottom:8px;">
       <div style="font-size:13px;font-weight:600;margin-bottom:6px;">${escHtml(l.name)}</div>
@@ -967,6 +1008,14 @@ function _renderRaiseGoalCard(g) {
   const mode = cfg.combination_mode || 'individual';
   const displayLabel = g.is_recurring ? currentPeriodLabel(g.period_type) : g.period_label;
   const annualized = !!_raiseAnnualizeState[g.id];
+  // "Annualized"/"YTD" only literally means what it says for an annual goal —
+  // for a monthly raise goal the same projection math instead projects pace
+  // to the end of THIS month, so the wording says so rather than claiming a
+  // year-long window that isn't real.
+  const isMonthly = g.period_type === 'monthly';
+  const soFarLabel = isMonthly ? 'MTD' : 'YTD';
+  const projectedLabel = isMonthly ? 'projected (this month)' : 'projected (annualized)';
+  const toggleLabel = isMonthly ? 'Show projected pace for this month' : 'Show annualized projection';
 
   let bodyHtml;
   if (mode === 'separate') {
@@ -994,7 +1043,7 @@ function _renderRaiseGoalCard(g) {
         <div style="height:8px;width:${Math.min(100,pct||0)}%;background:${colorVar};border-radius:5px;"></div>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:6px;">
-        <span style="color:${colorVar};">${Math.round(pct||0)}% ${annualized ? 'projected (annualized)' : (mode==='blended'?'combined (YTD)':'(YTD)')}</span>
+        <span style="color:${colorVar};">${Math.round(pct||0)}% ${annualized ? projectedLabel : (mode==='blended'?`combined (${soFarLabel})`:`(${soFarLabel})`)}</span>
         ${rs.gate_passed && earned != null ? `<span style="color:var(--gold);">${earned.toFixed(2)}% raise ${annualized?'projected':'earned'} so far</span>` : ''}
       </div>`;
     if (mode === 'blended') {
@@ -1013,7 +1062,7 @@ function _renderRaiseGoalCard(g) {
       bodyHtml += `<div style="margin-bottom:6px;">${tierPills}</div>`;
     }
     bodyHtml += `<label style="display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--muted);cursor:pointer;">
-      <input type="checkbox" ${annualized?'checked':''} onchange="toggleRaiseAnnualize('${escHtml(g.id)}')"> Show annualized projection
+      <input type="checkbox" ${annualized?'checked':''} onchange="toggleRaiseAnnualize('${escHtml(g.id)}')"> ${toggleLabel}
     </label>`;
   }
 
@@ -1154,11 +1203,35 @@ function renderGoalsTab() {
     </div>`;
   }).join('');
 
+  // Individual agents' goals are already server-filtered (a non-writer member
+  // is never sent another agent's row at all), so no client-side gate is
+  // needed there. Team/agency sentinel goals are different — the server now
+  // fetches them for every in-scope member regardless of is_public (so a
+  // private one isn't invisible outright), which means the Public/Private
+  // toggle needs to be enforced here instead. Without this, is_public had no
+  // effect on scope goals at all — any member in scope saw full numbers
+  // either way (fixed 2026-09-04).
+  const canPrivate = _isAdmin || !_isMember || ['captain','chief_officer'].includes(_memberRole);
+  const _lockedGoalCard = g => {
+    const PT = { monthly:'Monthly', quarterly:'Quarterly', semi_annual:'Semi-Annual', annual:'Annual' };
+    const displayLabel = g.is_recurring ? currentPeriodLabel(g.period_type) : g.period_label;
+    return `<div style="background:var(--deep);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:13px;font-weight:600;">${escHtml(displayLabel)}</span>
+        <span style="font-size:11px;color:var(--muted);">${PT[g.period_type]||g.period_type}</span>
+        <span style="font-size:10px;color:var(--muted);margin-left:auto;">🔒 Private</span>
+      </div>
+    </div>`;
+  };
+
   const renderAgentBlock = (agentId, indent) => {
     const goals = byAgent[agentId];
     if (!goals?.length) return '';
     const name  = SCOPE_LABELS[agentId] || (_agentRoster.find(x => x.agent_id === agentId)?.name) || agentId;
-    const cards = renderGoalCards(goals);
+    const isScope = !!SCOPE_LABELS[agentId];
+    const cards = isScope && !canPrivate
+      ? goals.map(g => g.is_public ? renderGoalCards([g]) : _lockedGoalCard(g)).join('')
+      : renderGoalCards(goals);
     return `<div style="margin-bottom:1rem;${indent ? 'margin-left:1.5rem;padding-left:.75rem;border-left:2px solid var(--border2);' : ''}">
       <div style="font-size:${indent ? '13' : '14'}px;font-weight:700;margin-bottom:.5rem;padding-bottom:.4rem;border-bottom:1px solid var(--border2);">${escHtml(name)}</div>
       ${cards || ''}

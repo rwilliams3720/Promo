@@ -3081,13 +3081,20 @@ function renderLocationsList() {
                 prods.map(c => `<div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px;">${escHtml(c.label)}</label>
                   <input id="loc-pg-${prefix}-${safeId}-${c.key}" type="number" min="0" value="${goals[c.key]||''}" placeholder="—" style="${_locInputSt()}"></div>`).join('')
               }</div>`;
+              const combinedSection = (period, label, groups) => `<div style="margin-top:.5rem;">
+                <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.3rem;">Combined ${label} Goals <span style="text-transform:none;">(group products into one target)</span></div>
+                <div id="loc-cg-rows-${period}-${safeId}">${(groups||[]).map((g,i) => _buildLocCgRow(safeId, period, i, g, prods)).join('')}</div>
+                <button type="button" onclick="_addLocCgRow('${safeId}','${period}')" style="font-size:11px;background:none;border:1px solid var(--border2);color:var(--muted);border-radius:4px;padding:2px 8px;cursor:pointer;margin-top:2px;">+ Add Combined Goal</button>
+              </div>`;
               return `<div style="padding-top:.4rem;border-top:1px solid var(--border2);margin-bottom:.5rem;">
                 <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.35rem;">Monthly Product Goals</div>
                 ${inputGrid('mo', moGoals)}
+                ${combinedSection('mo', 'Monthly', l.combined_product_goals_monthly)}
               </div>
               <div style="margin-bottom:.5rem;">
                 <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.35rem;">Annual Product Goals</div>
                 ${inputGrid('ann', annGoals)}
+                ${combinedSection('ann', 'Annual', l.combined_product_goals_annual)}
               </div>`;
             })()}
             <div style="margin-bottom:.5rem;">
@@ -3150,6 +3157,44 @@ function onLocVisChange(id) {
   }
 }
 
+// ── Combined product goals (location Monthly/Annual Product Goals) ──────────
+// Same {label, target, products} shape and draft-in-DOM pattern as
+// _buildCgRow/_addCgRow/_removeCgRow (js/goals.js, agent goals) — one set of
+// rows per period ('mo'/'ann'), since a location's monthly and annual product
+// goals are already two independent maps on the same row.
+function _buildLocCgRow(locId, period, idx, grp, prods) {
+  const sel = grp?.products || [];
+  return `<div id="loc-cg-${period}-${locId}-${idx}" style="display:flex;gap:6px;align-items:flex-start;margin-bottom:5px;padding:5px 7px;background:var(--deep);border-radius:5px;border:1px solid var(--border2);">
+    <div style="flex:1;">
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:4px;">
+        <input id="loc-cg-lbl-${period}-${locId}-${idx}" type="text" placeholder="Label (e.g. Auto+Fire)" value="${escHtml(grp?.label||'')}" style="flex:1;min-width:90px;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 5px;font-size:11px;outline:none;">
+        <input id="loc-cg-tgt-${period}-${locId}-${idx}" type="number" min="0" placeholder="target" value="${grp?.target||''}" style="width:55px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 4px;font-size:11px;outline:none;">
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">${
+        prods.map(c => `<label style="font-size:10px;display:flex;align-items:center;gap:3px;cursor:pointer;white-space:nowrap;"><input type="checkbox" id="loc-cg-p-${period}-${locId}-${idx}-${c.key}" ${sel.includes(c.key)?'checked':''}> ${escHtml(c.label||c.key)}</label>`).join('')
+      }</div>
+    </div>
+    <button onclick="_removeLocCgRow('${locId}','${period}',${idx})" style="background:none;border:none;color:var(--muted);font-size:15px;cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0;">×</button>
+  </div>`;
+}
+
+function _addLocCgRow(locId, period) {
+  const PKEYS = ['wl','ul','term','health','auto','fire'];
+  const prods = activeCats().filter(c => PKEYS.includes(c.key));
+  const container = document.getElementById(`loc-cg-rows-${period}-${locId}`);
+  if (!container) return;
+  const idx = container.children.length;
+  container.insertAdjacentHTML('beforeend', _buildLocCgRow(locId, period, idx, null, prods));
+}
+
+function _removeLocCgRow(locId, period, idx) {
+  const el = document.getElementById(`loc-cg-${period}-${locId}-${idx}`);
+  if (el) el.remove();
+  const container = document.getElementById(`loc-cg-rows-${period}-${locId}`);
+  if (!container) return;
+  [...container.children].forEach((row, i) => { row.id = `loc-cg-${period}-${locId}-${i}`; });
+}
+
 async function saveLocationDetails(id, btn) {
   const address    = (document.getElementById('loc-addr-' + id)?.value  || '').trim();
   const phone      = (document.getElementById('loc-phone-' + id)?.value || '').trim();
@@ -3174,15 +3219,27 @@ async function saveLocationDetails(id, btn) {
     const v = document.getElementById(`loc-act-goal-${id}-${at.id}`)?.value;
     if (v && parseFloat(v) > 0) actGoals[at.id] = parseFloat(v);
   });
+  const collectLocCg = period => {
+    const container = document.getElementById(`loc-cg-rows-${period}-${id}`);
+    if (!container) return [];
+    return [...container.children].map((row, i) => {
+      const label   = document.getElementById(`loc-cg-lbl-${period}-${id}-${i}`)?.value?.trim() || '';
+      const target  = parseFloat(document.getElementById(`loc-cg-tgt-${period}-${id}-${i}`)?.value) || 0;
+      const products = policyProds.filter(c => document.getElementById(`loc-cg-p-${period}-${id}-${i}-${c.key}`)?.checked).map(c => c.key);
+      return (products.length >= 2 && target > 0) ? { id: 'lcg' + i, label: label || products.join('+'), products, target } : null;
+    }).filter(Boolean);
+  };
+  const combined_product_goals_monthly = collectLocCg('mo');
+  const combined_product_goals_annual  = collectLocCg('ann');
   btn.disabled = true;
   try {
     const r = await fetch('/api/checklist-config', {
       method: 'PATCH',
       headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ locationUpdates: [{ action: 'update_details', id, address, phone, hours, goal_count, goal_premium, goal_count_annual, goal_premium_annual, goals_visibility, product_goals_monthly, product_goals_annual, activity_goals: actGoals }] }),
+      body: JSON.stringify({ locationUpdates: [{ action: 'update_details', id, address, phone, hours, goal_count, goal_premium, goal_count_annual, goal_premium_annual, goals_visibility, product_goals_monthly, product_goals_annual, combined_product_goals_monthly, combined_product_goals_annual, activity_goals: actGoals }] }),
     });
     const loc = _salesLocations.find(l => l.id === id);
-    if (loc) { loc.address = address; loc.phone = phone; loc.hours = hours; loc.goal_count = goal_count ? parseInt(goal_count) : null; loc.goal_premium = goal_premium ? parseFloat(goal_premium) : null; loc.goal_count_annual = goal_count_annual ? parseInt(goal_count_annual) : null; loc.goal_premium_annual = goal_premium_annual ? parseFloat(goal_premium_annual) : null; loc.goals_visibility = goals_visibility; loc.product_goals_monthly = product_goals_monthly; loc.product_goals_annual = product_goals_annual; loc.activity_goals = actGoals; }
+    if (loc) { loc.address = address; loc.phone = phone; loc.hours = hours; loc.goal_count = goal_count ? parseInt(goal_count) : null; loc.goal_premium = goal_premium ? parseFloat(goal_premium) : null; loc.goal_count_annual = goal_count_annual ? parseInt(goal_count_annual) : null; loc.goal_premium_annual = goal_premium_annual ? parseFloat(goal_premium_annual) : null; loc.goals_visibility = goals_visibility; loc.product_goals_monthly = product_goals_monthly; loc.product_goals_annual = product_goals_annual; loc.combined_product_goals_monthly = combined_product_goals_monthly; loc.combined_product_goals_annual = combined_product_goals_annual; loc.activity_goals = actGoals; }
     const msgEl = document.getElementById('loc-save-msg-' + id);
     if (msgEl) {
       msgEl.textContent = r.ok ? 'Saved' : 'Error saving';

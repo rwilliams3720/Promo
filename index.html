@@ -369,6 +369,31 @@
   .hg-scope-card{background:var(--deep);border:1px solid var(--border2);border-radius:8px;padding:.5rem .6rem;}
   .hg-scope-card .hg-name{font-size:11px;font-weight:700;margin-bottom:.25rem;}
   .hg-scope-card .hg-sub{font-size:9.5px;color:var(--muted);}
+
+  /* Worked-example illustrations (dual comparison bars, formula boxes, tier
+     ladders, danger callouts) — mirrors the raise-eligibility design mockup's
+     visual vocabulary so the in-app guide teaches the same way the original
+     feature design did, not just "click here." */
+  .hg-dualbar{margin-bottom:.5rem;}
+  .hg-dualbar:last-child{margin-bottom:0;}
+  .hg-dualbar-lbl{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:.25rem;}
+  .hg-dualbar-lbl b{color:var(--text);}
+  .hg-dualbar-track{height:7px;border-radius:4px;background:var(--card2);overflow:hidden;}
+  .hg-dualbar-fill{height:100%;border-radius:4px;}
+  .hg-formula{background:var(--deep);border:1px solid var(--border2);border-radius:8px;padding:.55rem .75rem;font-size:11px;color:var(--muted);text-align:center;font-variant-numeric:tabular-nums;line-height:1.6;}
+  .hg-formula b{color:var(--gold);}
+  .hg-danger{background:var(--deep);border:1px solid rgba(255,77,109,.35);border-radius:8px;padding:.55rem .75rem;font-size:11px;color:var(--text);line-height:1.5;}
+  .hg-danger b{color:var(--danger);}
+  .hg-months{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin-bottom:.5rem;}
+  .hg-month{background:var(--deep);border:1px solid var(--border2);border-radius:8px;padding:.5rem;text-align:center;}
+  .hg-month .hg-m{font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:.2rem;}
+  .hg-month .hg-n{font-size:1.05rem;font-weight:700;font-variant-numeric:tabular-nums;}
+  .hg-tierladder{display:flex;gap:.4rem;margin-bottom:.5rem;}
+  .hg-tier{flex:1;background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:.4rem;text-align:center;}
+  .hg-tier.hg-active{background:rgba(255,209,102,.14);border-color:rgba(255,209,102,.35);}
+  .hg-tier .hg-t{font-size:9px;color:var(--muted);margin-bottom:.15rem;}
+  .hg-tier .hg-r{font-family:'Bebas Neue',sans-serif;font-size:1.05rem;color:var(--muted);}
+  .hg-tier.hg-active .hg-r{color:var(--gold);}
 </style>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/themes/dark.min.css">
   <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>

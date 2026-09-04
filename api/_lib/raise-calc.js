@@ -8,6 +8,12 @@ const REWARD_MODES = ['proportional', 'threshold'];
 const STRETCH_MODES = ['auto', 'custom'];
 const AGENCY_METRICS = ['count', 'premium'];
 
+// Sentinel for raise_config.agency_location_id meaning "aggregate every
+// goals-enabled location" instead of one specific office — same non-UUID
+// sentinel-string convention already used for agent_goals.agent_id
+// (__agency__/__team_sales__/__team_service__).
+export const ALL_LOCATIONS_SENTINEL = '__all_locations__';
+
 // Call-metric goal keys — fixed, system-defined metrics, so their direction
 // (higher-is-better vs lower-is-better) is a hardcoded fact, not a per-goal
 // choice, unlike bonus_activity_types.analysis_direction (which IS
@@ -81,17 +87,23 @@ export function computeIndividualProgressPct(goal) {
   return round2((ratios.reduce((s, r) => s + r, 0) / ratios.length) * 100);
 }
 
-// Agency progress % — actual/goal*100 for whichever of goal_count_annual /
-// goal_premium_annual agencyMetric selects. actualCount/actualPremium are the
-// caller's own year-scoped, sale_weight-summed aggregation (not computed here
-// — this file has no DB access).
-export function computeAgencyProgressPct(location, actualCount, actualPremium, agencyMetric) {
+// Agency progress % — actual/goal*100 for whichever of goal_count(_annual) /
+// goal_premium(_annual) agencyMetric selects. actualCount/actualPremium are
+// the caller's own period-scoped, sale_weight-summed aggregation (not
+// computed here — this file has no DB access). periodType selects which pair
+// of location goal columns applies: a monthly raise goal blends against the
+// location's MONTHLY targets (goal_count/goal_premium), not its annual ones
+// — mixing the two would silently compare a month's actual sales against a
+// whole year's target. Defaults to the annual columns when omitted, so every
+// existing annual-only caller is unaffected.
+export function computeAgencyProgressPct(location, actualCount, actualPremium, agencyMetric, periodType) {
   if (!location) return 0;
+  const isMonthly = periodType === 'monthly';
   if (agencyMetric === 'premium') {
-    const goal = Number(location.goal_premium_annual) || 0;
+    const goal = Number(isMonthly ? location.goal_premium : location.goal_premium_annual) || 0;
     return goal > 0 ? round2((Number(actualPremium) || 0) / goal * 100) : 0;
   }
-  const goal = Number(location.goal_count_annual) || 0;
+  const goal = Number(isMonthly ? location.goal_count : location.goal_count_annual) || 0;
   return goal > 0 ? round2((Number(actualCount) || 0) / goal * 100) : 0;
 }
 

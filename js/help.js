@@ -26,10 +26,16 @@ const HELP_GUIDES = [
     description: 'How your annual goal progress translates into a raise, and what the colors mean.',
     visibility: ['all'],
     steps: [
-      { text: 'Open the Goals tab. If your manager has flagged one of your annual goals as raise-eligible, you’ll see a "🎯 Raise Eligibility" card near the top.' },
+      { text: 'Open the Goals tab. If your manager has flagged one of your annual (or recurring monthly) goals as raise-eligible, you’ll see a "🎯 Raise Eligibility" card near the top.' },
       { text: 'The progress bar shows how close you are to your goal. Depending on how this goal is set up, you may be compared against your own numbers only, a blend of your numbers and your agency’s, or both shown side by side.' },
-      { text: 'Toggle "Show annualized projection" to see your pace projected out to the full year instead of just year-to-date — useful early in the year when your raw progress % naturally looks low.' },
-      { text: 'Bar color meaning depends on which view you’re looking at: the year-to-date view turns green at 80%+ progress; the annualized/projected view turns green at 100%+, since it’s already accounting for time remaining in the year.' },
+      {
+        text: 'Toggle "Show annualized projection" (or "projected pace" on a monthly goal) to see your pace projected out to the full period instead of just progress-so-far — useful early on, when your raw progress % naturally looks low simply because the period just started.',
+        html: `<div class="hg-panel">
+          <div class="hg-formula">78% progress ÷ <b>8 months elapsed</b>&nbsp; = &nbsp;<b>9.75%</b>/month&nbsp; × &nbsp;12&nbsp; = &nbsp;<b>117%</b> projected year-end</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:.4rem;">That projected number then runs through the same reward math as your real progress does — it's a pace projection, not a guarantee.</div>
+        </div>`,
+      },
+      { text: 'Bar color meaning depends on which view you’re looking at: the progress-so-far view turns green at 80%+; the projected/annualized view turns green at 100%+, since it’s already accounting for time remaining in the period.' },
       { text: 'If a minimum floor is set on this goal, falling below it zeroes out the raise regardless of any blended score — you’ll see a warning banner on the card if that applies to you.' },
       { text: 'This card is an estimate to help you track your own progress — your actual raise is decided by your manager.' },
     ],
@@ -38,17 +44,28 @@ const HELP_GUIDES = [
     id: 'raise-eligibility-owner',
     category: 'Goals & Growth',
     title: 'Setting Up a Raise-Eligible Goal',
-    description: 'Flag an annual goal to track raise eligibility, choose how it’s scored, and set an optional floor.',
+    description: 'Flag an annual (or recurring monthly) goal to track raise eligibility, choose how it’s scored, and set an optional floor.',
     visibility: ['owner'],
     steps: [
       {
-        text: 'Go to Account → Sales → Team, find the agent (or a Whole Agency / Team card), and create or edit an Annual goal.',
+        text: 'Go to Account → Sales → Team, find the agent (or a Whole Agency / Team card), and create or edit an Annual goal — or a Monthly goal with Recurring checked.',
         html: `<div class="hg-panel">
           <div class="hg-path">Account <b>→</b> Sales <b>→</b> Team <b>→</b> <b>Andy Rose</b> <b>→</b> + Add Goal</div>
           <div class="hg-row">
             <div class="hg-field"><span class="hg-label">Period Type</span><div class="hg-input">Annual</div></div>
             <div class="hg-field"><span class="hg-label">Period</span><div class="hg-input">2026</div></div>
           </div>
+        </div>`,
+      },
+      {
+        text: 'How the number actually accumulates: sales just add up over the period, month over month, with no penalty for a slow month and no special credit for a big one beyond its raw count — an off month is fully forgiven, not held against the total.',
+        html: `<div class="hg-panel">
+          <div class="hg-months">
+            <div class="hg-month"><div class="hg-m">January</div><div class="hg-n">40</div></div>
+            <div class="hg-month"><div class="hg-m">February</div><div class="hg-n">10</div></div>
+            <div class="hg-month"><div class="hg-m">March</div><div class="hg-n">60</div></div>
+          </div>
+          <div class="hg-formula">Summed, no gating, no reset&nbsp; → &nbsp;<b>110 / 360 · 31%</b> through March</div>
         </div>`,
       },
       {
@@ -63,42 +80,81 @@ const HELP_GUIDES = [
         </div>`,
       },
       {
-        text: 'Choose a Combination Mode: Individual (just this agent), Blended (a weighted mix of this agent and an Agency Location’s annual goal), or Separate (both shown side by side with no combined score). If you choose Blended or Separate, pick the Agency Location and whether it’s measured by policy count or premium.',
+        text: 'Choose a Combination Mode: Individual (just this agent), Blended (a weighted mix of this agent and an Agency Location’s goal — pick one specific location or All Locations combined), or Separate (both shown side by side with no combined score, for whoever makes the raise call to weigh manually).',
         html: `<div class="hg-panel">
           <span class="hg-label">Combination Mode</span>
           <div class="hg-row" style="margin-bottom:.6rem;">
             <span class="hg-pill">Individual</span><span class="hg-pill hg-new">Blended</span><span class="hg-pill">Separate</span>
           </div>
           <div class="hg-row">
-            <div class="hg-field"><span class="hg-label">Agency Location</span><div class="hg-input">Happy Valley</div></div>
+            <div class="hg-field"><span class="hg-label">Agency Location</span><div class="hg-input">All Locations</div></div>
             <div class="hg-field"><span class="hg-label">Measured By</span><div class="hg-input">Policy Count</div></div>
           </div>
+          <div class="hg-div"></div>
+          <div class="hg-dualbar">
+            <div class="hg-dualbar-lbl"><span>Individual <span style="opacity:.7;">(70%)</span></span><span>76%</span></div>
+            <div class="hg-dualbar-track"><div class="hg-dualbar-fill" style="width:76%;background:var(--accent);"></div></div>
+          </div>
+          <div class="hg-dualbar">
+            <div class="hg-dualbar-lbl"><span>Agency Goal <span style="opacity:.7;">(30%)</span></span><span>82%</span></div>
+            <div class="hg-dualbar-track"><div class="hg-dualbar-fill" style="width:82%;background:var(--accent2);"></div></div>
+          </div>
+          <div class="hg-dualbar" style="margin-top:.5rem;padding-top:.5rem;border-top:1px dashed var(--border2);">
+            <div class="hg-dualbar-lbl"><b>Combined score</b><b>78%</b></div>
+            <div class="hg-dualbar-track"><div class="hg-dualbar-fill" style="width:78%;background:var(--gold);"></div></div>
+          </div>
         </div>`,
       },
       {
-        text: 'Choose a Reward Calculation: Proportional (a target % earned at 100% of goal, scaling up to a higher max % for exceeding goal) or Threshold Tiers (fixed raise amounts unlocked at specific progress milestones).',
+        text: 'Choose a Reward Calculation: Proportional (a target % earned at 100% of goal, scaling up at the same rate into a stretch zone for exceeding goal, capped at a higher max %) or Threshold Tiers (fixed raise amounts unlocked at specific progress milestones — an all-or-nothing cliff instead of a smooth ramp).',
         html: `<div class="hg-panel">
           <span class="hg-label">Reward Calculation</span>
-          <div class="hg-row">
+          <div class="hg-row" style="margin-bottom:.6rem;">
             <span class="hg-pill hg-new">Proportional</span><span class="hg-pill">Threshold Tiers</span>
           </div>
-          <div class="hg-div"></div>
           <div class="hg-row">
             <div class="hg-field"><span class="hg-label">Target Raise %</span><div class="hg-input">3.00</div></div>
-            <div class="hg-field"><span class="hg-label">Max Raise %</span><div class="hg-input">5.00</div></div>
+            <div class="hg-field"><span class="hg-label">Max Raise %</span><div class="hg-input">4.00</div></div>
           </div>
+          <div class="hg-div"></div>
+          <div class="hg-formula">3.00% target&nbsp; × &nbsp;78% of goal&nbsp; = &nbsp;<b>2.34% earned so far</b></div>
+          <div style="font-size:10px;color:var(--muted);margin-top:.4rem;line-height:1.5;">Same rate continues past 100%: hit 120% of goal and the target's fully earned (3%) plus partway through the stretch zone — 3.6% total, capping at the 4% max around 133%.</div>
         </div>`,
       },
       {
-        text: 'Optionally enable the Individual Gate and set a floor — if the agent’s own progress falls below it, the raise shows as 0% no matter what the rest of the formula would say. Use the Public checkbox as usual to control visibility — the agent it belongs to can always see their own raise progress regardless.',
+        text: 'For comparison, here\'s what Threshold Tiers looks like instead — nothing below the first breakpoint, then a flat amount the instant you cross it. Simpler to explain, but doesn\'t distinguish 80% from 99%.',
+        html: `<div class="hg-panel">
+          <div class="hg-tierladder">
+            <div class="hg-tier"><div class="hg-t">Below 80%</div><div class="hg-r">—</div></div>
+            <div class="hg-tier hg-active"><div class="hg-t">80% to goal (at 78%→82%)</div><div class="hg-r">3%</div></div>
+            <div class="hg-tier"><div class="hg-t">100% to goal</div><div class="hg-r">4%</div></div>
+          </div>
+          <div style="font-size:10px;color:var(--muted);">Someone at 79% earns the same $0 as someone at 0% — Proportional's continuous ramp is usually the better fit unless a hard cutoff is intentional.</div>
+        </div>`,
+      },
+      {
+        text: 'Optionally enable the Individual Gate and set a floor — if the agent’s own progress falls below it, the raise shows as 0% no matter what the rest of the formula would say. Matters most in Blended/Separate mode, where a strong agency number could otherwise paper over personal underperformance.',
         html: `<div class="hg-panel">
           <label class="hg-check" style="margin-bottom:.5rem;"><span class="hg-box hg-checked"></span>Individual Gate</label>
-          <div class="hg-field"><span class="hg-label">Floor %</span><div class="hg-input">50</div></div>
-          <div class="hg-div"></div>
-          <div class="hg-row" style="gap:1rem;">
-            <label class="hg-check"><span class="hg-box hg-off"></span>Public</label>
+          <div class="hg-field" style="margin-bottom:.6rem;"><span class="hg-label">Floor %</span><div class="hg-input">50</div></div>
+          <div class="hg-dualbar">
+            <div class="hg-dualbar-lbl"><span>Individual progress <span style="opacity:.7;">(needs 50%)</span></span><span style="color:var(--danger);">40%</span></div>
+            <div class="hg-dualbar-track"><div class="hg-dualbar-fill" style="width:40%;background:var(--danger);"></div></div>
+          </div>
+          <div class="hg-dualbar">
+            <div class="hg-dualbar-lbl"><span>Agency Goal</span><span>95%</span></div>
+            <div class="hg-dualbar-track"><div class="hg-dualbar-fill" style="width:95%;background:var(--accent2);"></div></div>
           </div>
           <div class="hg-div"></div>
+          <div class="hg-danger">🚫 <b>Gated — $0 raise.</b> Blended score is 56.5% (would normally earn 1.70%), but individual progress (40%) is below the required 50% floor.</div>
+        </div>`,
+      },
+      {
+        text: 'Use the Public checkbox as usual to control visibility — the agent it belongs to can always see their own raise progress regardless — then Save.',
+        html: `<div class="hg-panel">
+          <div class="hg-row" style="gap:1rem;margin-bottom:.6rem;">
+            <label class="hg-check"><span class="hg-box hg-off"></span>Public</label>
+          </div>
           <span class="hg-btn">Save</span>
         </div>`,
       },
