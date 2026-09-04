@@ -120,10 +120,16 @@
 
   function AgentRosterIsland() {
     var roster = _agentRoster || [];
+    var scopePanel = typeof _renderScopeGoalsPanel === 'function'
+      ? html`<div dangerouslySetInnerHTML=${{ __html: _renderScopeGoalsPanel() }}></div>` : null;
     if (!roster.length) {
-      return html`<div style=${{ fontSize: '13px', color: 'var(--muted)', marginBottom: '.5rem' }}>No agents yet — add one below or upload a sales/call file.</div>`;
+      return html`<${React.Fragment}>
+        ${scopePanel}
+        <div style=${{ fontSize: '13px', color: 'var(--muted)', marginBottom: '.5rem' }}>No agents yet — add one below or upload a sales/call file.</div>
+      </${React.Fragment}>`;
     }
     return html`<${React.Fragment}>
+      ${scopePanel}
       ${roster.map(function(a) {
         return html`<div key=${a.id} dangerouslySetInnerHTML=${{ __html: buildAgentCardHtml(a) }}></div>`;
       })}

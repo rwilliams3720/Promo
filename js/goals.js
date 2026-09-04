@@ -117,11 +117,15 @@ function buildGoalMetricsHtml(agentId, existingGoals) {
     <input type="number" id="gf-val-${escHtml(agentId)}-premium" min="0" value="${escHtml(String(premVal))}" placeholder="target" style="width:70px;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 5px;font-size:11px;outline:none;${premVal?'':'display:none;'}">
   </div>`);
   // Call metrics — core data, no addon gate (unlike activity types below).
-  const CALL_METRICS = [
+  // Agency-scope only: voicemail/missed calls carry no agent (or team)
+  // attribution anywhere in call_log by design (a missed/voicemail call never
+  // reached anyone) — only a whole-account pooled total is ever real. See
+  // CLAUDE.md "Call-Metric Goals" for the full explanation (fixed 2026-09-04).
+  const CALL_METRICS = agentId === '__agency__' ? [
     { key: 'handle_rate',     label: 'Handle Rate (%) — higher is better', max: '100' },
     { key: 'voicemail_count', label: 'Voicemail Count — lower is better',  max: '' },
     { key: 'missed_calls',    label: 'Missed Calls — lower is better',     max: '' },
-  ];
+  ] : [];
   for (const cm of CALL_METRICS) {
     const val = existingGoals[cm.key] || '';
     rows.push(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">

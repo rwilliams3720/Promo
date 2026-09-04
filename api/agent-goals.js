@@ -21,6 +21,24 @@ const MONTH_ABBR  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct'
 const KNOWN_SENTINELS = ['__agency__', '__team_sales__', '__team_service__'];
 const TEAM_SENTINEL_RE = /^__team_(sales|service)__$/;
 
+// voicemail/missed calls carry no agent (or team) attribution anywhere in
+// call_log by design — a missed/voicemail call never reached anyone, so
+// there's nothing to attribute it to. Only a whole-account pooled total is
+// ever real (confirmed against api/perf.js's own Call Performance table,
+// which hardcodes per-agent VM/Missed to 0 and only ever shows the true
+// count on a separate account-wide "TEAM TOTAL" row). handle_rate depends on
+// both, so all 3 call metrics are agency-scope-only. Fixed 2026-09-04 after
+// an agency handle_rate goal was found showing 100% regardless of real
+// performance — see CLAUDE.md "Call-Metric Goals" for the full incident.
+const CALL_METRIC_KEYS = ['handle_rate', 'voicemail_count', 'missed_calls'];
+function callMetricScopeError(agentId, goals) {
+  if (agentId === '__agency__') return null;
+  if (CALL_METRIC_KEYS.some(k => goals?.[k] !== undefined)) {
+    return 'Handle Rate, Voicemail Count, and Missed Calls can only be set on a Whole Agency goal — call data has no per-agent or per-team attribution.';
+  }
+  return null;
+}
+
 // Which real agent_ids a goal's agent_id resolves to: individual -> itself,
 // team sentinel -> every roster agent on that team, agency sentinel -> null
 // (no filter — every agent). rosterByTeam is built once per request/batch.
@@ -162,6 +180,8 @@ export default async function handler(req, res) {
     if (!(await validateAgentId(agent_id, dataUserId))) {
       return res.status(400).json({ error: 'Unknown agent_id' });
     }
+    const cmError = callMetricScopeError(agent_id, goals);
+    if (cmError) return res.status(400).json({ error: cmError });
 
     const { is_recurring, is_raise_goal, raise_config } = req.body || {};
     // A raise goal is a flag on an existing ANNUAL goal — a raise doesn't make
@@ -200,6 +220,12 @@ export default async function handler(req, res) {
     if (!canWrite) return res.status(403).json({ error: 'Insufficient role' });
     const { id, goals, is_public, is_recurring, period_start, period_end, is_raise_goal, raise_config } = req.body || {};
     if (!id) return res.status(400).json({ error: 'id required' });
+    if (goals !== undefined && CALL_METRIC_KEYS.some(k => goals?.[k] !== undefined)) {
+      const { data: existingGoal } = await supabase.from('agent_goals')
+        .select('agent_id').eq('id', id).eq('user_id', dataUserId).single();
+      const cmError = callMetricScopeError(existingGoal?.agent_id, goals);
+      if (cmError) return res.status(400).json({ error: cmError });
+    }
     const update = { updated_at: new Date().toISOString() };
     if (goals        !== undefined) update.goals       = goals;
     if (is_public    !== undefined) update.is_public   = !!is_public;
@@ -345,7 +371,7 @@ async function computeActuals(goals, dataUserId, refDateStr, timezone) {
     g.goals?.handle_rate !== undefined || g.goals?.voicemail_count !== undefined || g.goals?.missed_calls !== undefined
   );
   const callMetricsByGoal = needsCallMetrics
-    ? await computeCallMetricActuals(effective, dataUserId, minStart, maxEnd, rosterByTeam)
+    ? await computeCallMetricActuals(effective, dataUserId, minStart, maxEnd)
     : {};
 
   return effective.map(goal => {
@@ -404,32 +430,43 @@ async function computeActuals(goals, dataUserId, refDateStr, timezone) {
   });
 }
 
-// Aggregates answered/missed/voicemail counts per goal for the 3 call-metric
-// keys, merging archived (historical_wins, month-level) and live (call_log,
-// per-call) data — call_log rows are hard-deleted on every Archive & Reset,
-// so an annual goal's period will usually span several already-archived
-// months plus the live one. Same merge strategy as api/perf.js's "Yearly Call
-// Performance archive merge" fix (2026-09-01), applied here for goal actuals
-// instead of the Call Performance tab.
-async function computeCallMetricActuals(goals, dataUserId, minStart, maxEnd, rosterByTeam) {
+// Aggregates whole-account answered/missed/voicemail counts per goal for the
+// 3 call-metric keys, merging archived (historical_months, month-level) and
+// live (call_log) data — call_log rows are hard-deleted on every Archive &
+// Reset, so an annual goal's period will usually span several
+// already-archived months plus the live one. Same merge strategy as
+// api/perf.js's "Yearly Call Performance archive merge" fix (2026-09-01).
+//
+// Pooled account-wide, NOT per-agent — voicemail/missed calls carry no agent
+// (or team) attribution anywhere in call_log by design (see CLAUDE.md
+// "Call-Metric Goals"), so these 3 metrics are enforced agency-scope-only at
+// save time (POST/PATCH, callMetricScopeError). historical_wins is per-agent
+// and its own missed/voicemail columns are always 0 for the same underlying
+// reason — historical_months is the correct source for archived months here,
+// same table api/perf.js's Yearly merge already reads for its account-wide
+// "TEAM TOTAL" row. Fixed 2026-09-04 after an agency handle_rate goal showed
+// 100% regardless of real performance, traced to per-agent bucketing
+// silently dropping every voicemail/missed row (empty agent_id decrypts to
+// falsy and got skipped before ever being counted).
+async function computeCallMetricActuals(goals, dataUserId, minStart, maxEnd) {
   const relevant = goals.filter(g =>
-    g.goals?.handle_rate !== undefined || g.goals?.voicemail_count !== undefined || g.goals?.missed_calls !== undefined
+    g.agent_id === '__agency__' &&
+    (g.goals?.handle_rate !== undefined || g.goals?.voicemail_count !== undefined || g.goals?.missed_calls !== undefined)
   );
   if (!relevant.length) return {};
 
-  // mergedByMonth: "YYYY-MM" -> { agentId -> {answered,missed,voicemail} }
+  // mergedByMonth: "YYYY-MM" -> {answered,missed,voicemail}, pooled account-wide.
   const mergedByMonth = {};
-  const addTo = (monthKey, agentId, v) => {
-    if (!mergedByMonth[monthKey]) mergedByMonth[monthKey] = {};
-    if (!mergedByMonth[monthKey][agentId]) mergedByMonth[monthKey][agentId] = { answered: 0, missed: 0, voicemail: 0 };
-    const t = mergedByMonth[monthKey][agentId];
+  const addTo = (monthKey, v) => {
+    if (!mergedByMonth[monthKey]) mergedByMonth[monthKey] = { answered: 0, missed: 0, voicemail: 0 };
+    const t = mergedByMonth[monthKey];
     t.answered  += v.answered  || 0;
     t.missed    += v.missed    || 0;
     t.voicemail += v.voicemail || 0;
   };
 
-  const { data: histRows } = await supabase.from('historical_wins')
-    .select('agent_id, month, answered, missed, voicemail')
+  const { data: histRows } = await supabase.from('historical_months')
+    .select('month, answered, missed, voicemail')
     .eq('user_id', dataUserId);
   const histMonthsCovered = new Set();
   for (const h of (histRows || [])) {
@@ -440,11 +477,11 @@ async function computeCallMetricActuals(goals, dataUserId, minStart, maxEnd, ros
     const yr = parseInt(parts[1], 10);
     if (mi < 0 || isNaN(yr)) continue;
     const monthKey = `${yr}-${String(mi + 1).padStart(2, '0')}`;
-    addTo(monthKey, h.agent_id, { answered: h.answered, missed: h.missed, voicemail: h.voicemail });
+    addTo(monthKey, { answered: h.answered, missed: h.missed, voicemail: h.voicemail });
     histMonthsCovered.add(monthKey);
   }
 
-  // Only query live call_log for months historical_wins doesn't already cover.
+  // Only query live call_log for months historical_months doesn't already cover.
   const liveMonths = monthsInRange(minStart, maxEnd).filter(mo => !histMonthsCovered.has(mo));
   if (liveMonths.length) {
     const [ly, lm] = liveMonths[0].split('-').map(Number);
@@ -453,11 +490,14 @@ async function computeCallMetricActuals(goals, dataUserId, minStart, maxEnd, ros
     const lastDay  = new Date(hy, hm, 0).getDate();
     const liveTo   = `${hy}-${String(hm).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
+    // Account-wide counts, not per-agent — answered rows have a real agent_id
+    // but it's irrelevant here (agency scope sums everyone regardless), and
+    // missed/voicemail rows never have one to decrypt in the first place.
     const PAGE = 1000;
     let from = 0;
     while (true) {
       const { data, error } = await supabase.from('call_log')
-        .select('agent_id, disposition, call_dt')
+        .select('disposition, call_dt')
         .eq('user_id', dataUserId)
         .in('disposition', ['answered', 'missed', 'voicemail'])
         .gte('call_dt', liveFrom).lte('call_dt', liveTo)
@@ -465,12 +505,10 @@ async function computeCallMetricActuals(goals, dataUserId, minStart, maxEnd, ros
         .range(from, from + PAGE - 1);
       if (error || !data || !data.length) break;
       for (const row of data) {
-        const agentId = decryptField(row.agent_id);
-        if (!agentId || agentId === 'skip') continue;
         const d = String(row.call_dt || '');
         if (d.length < 7) continue;
         const monthKey = d.slice(0, 7);
-        addTo(monthKey, agentId, { [row.disposition]: 1 });
+        addTo(monthKey, { [row.disposition]: 1 });
       }
       if (data.length < PAGE) break;
       from += PAGE;
@@ -481,14 +519,11 @@ async function computeCallMetricActuals(goals, dataUserId, minStart, maxEnd, ros
   for (const goal of relevant) {
     const pStart = goal._eff_start || goal.period_start;
     const pEnd   = goal._eff_end   || goal.period_end;
-    const scopeIds = resolveScopeAgentIds(goal.agent_id, rosterByTeam);
     let answered = 0, missed = 0, voicemail = 0;
     for (const monthKey of monthsInRange(pStart, pEnd)) {
-      const byAgent = mergedByMonth[monthKey] || {};
-      for (const [agentId, v] of Object.entries(byAgent)) {
-        if (scopeIds !== null && !scopeIds.has(agentId)) continue;
-        answered += v.answered; missed += v.missed; voicemail += v.voicemail;
-      }
+      const v = mergedByMonth[monthKey];
+      if (!v) continue;
+      answered += v.answered; missed += v.missed; voicemail += v.voicemail;
     }
     result[goal.id] = { answered, missed, voicemail };
   }
