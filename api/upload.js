@@ -12,6 +12,20 @@ const supabase = createClient(
 const MONTH_NAMES = ['January','February','March','April','May','June',
                      'July','August','September','October','November','December'];
 
+// historical_wins has no unique constraint on (user_id, month) — the frontend's manual
+// Archive & Reset (confirmArchive, js/account.js) always writes the abbreviated "Apr 2026"
+// form, but this file's two auto-archive paths below used to write whatever full-name form
+// detectMonth()/race_config.current_month happened to be in ("April 2026") straight through,
+// unnormalized. Whenever both a manual and an auto archive fired for the same calendar month,
+// that mismatch created two parallel row sets for one real month under two different string
+// keys — invisible until a consumer normalizes month names and sums across them (e.g. the
+// Sales Overview panel, js/sales-log.js loadBasicSalesBreakdown), which then silently doubled
+// that month's real production. Normalizing every historical_wins write to this one format
+// closes the gap. Fixed 2026-09-09 — see CLAUDE.md "Duplicate historical_wins archives".
+function abbrevMonth(month) {
+  return month.slice(0, 3) + ' ' + month.split(' ')[1];
+}
+
 function triggerDailyReport(userId) {
   const host = process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL}`
@@ -548,10 +562,11 @@ async function archiveToHistorical(month, userId) {
     return { ...r, gross, deduct, total: Math.max(0, gross + deduct) };
   }).sort((a, b) => b.total - a.total);
 
-  await supabase.from('historical_wins').delete().eq('user_id', userId).eq('month', month);
+  const histMonth = abbrevMonth(month);
+  await supabase.from('historical_wins').delete().eq('user_id', userId).eq('month', histMonth);
   await supabase.from('historical_wins').insert(scored.map((s, i) => ({
     user_id: userId,
-    month, rank: i+1, agent_id: s.agent_id, name: s.name, team: s.team,
+    month: histMonth, rank: i+1, agent_id: s.agent_id, name: s.name, team: s.team,
     total_score: s.total, gross_score: s.gross, deductions: s.deduct,
     wl: s.wl||0, ul: s.ul||0, term: s.term||0, health: s.health||0,
     auto: s.auto||0, fire: s.fire||0,
@@ -604,10 +619,11 @@ async function archiveCallStatsToHistorical(month, totals, userId) {
   }).sort((a, b) => b.total - a.total);
 
   // Upsert: update existing agents' call stats (preserving sales), insert new agents
-  await supabase.from('historical_wins').delete().eq('user_id', userId).eq('month', month);
+  const histMonth = abbrevMonth(month);
+  await supabase.from('historical_wins').delete().eq('user_id', userId).eq('month', histMonth);
   await supabase.from('historical_wins').insert(scored.map((s, i) => ({
     user_id: userId,
-    month, rank: i+1, agent_id: s.id, name: s.name, team: s.team,
+    month: histMonth, rank: i+1, agent_id: s.id, name: s.name, team: s.team,
     total_score: s.total, gross_score: s.gross, deductions: s.deduct,
     wl: s.wl, ul: s.ul, term: s.term, health: s.health, auto: s.auto, fire: s.fire,
     placed: s.placed, answered: s.answered, missed: 0, voicemail: 0,
@@ -615,9 +631,8 @@ async function archiveCallStatsToHistorical(month, totals, userId) {
     race_wide_missed: rwMissed, race_wide_voicemail: rwVm,
   })));
 
-  // Write team-level totals to historical_months so trend chart and AI analysis include this month.
-  // "January 2026" → "Jan 2026" to match the abbreviated format used everywhere else.
-  const abbrevMonth = month.slice(0, 3) + ' ' + month.split(' ')[1];
+  // Write team-level totals to historical_months so trend chart and AI analysis include this
+  // month — same abbreviated key (histMonth, computed above) already used for historical_wins.
   const placed   = Object.values(totals.agents).reduce((s, a) => s + (a.placed  || 0), 0);
   const answered = Object.values(totals.agents).reduce((s, a) => s + (a.answered|| 0), 0);
   const talkMin  = Object.values(totals.agents).reduce((s, a) => s + (a.talkMin || 0), 0);
@@ -627,7 +642,7 @@ async function archiveCallStatsToHistorical(month, totals, userId) {
     s + (ag.wl||0) + (ag.ul||0) + (ag.term||0) + (ag.health||0) + (ag.auto||0) + (ag.fire||0), 0);
 
   await supabase.from('historical_months').upsert({
-    user_id: userId, month: abbrevMonth,
+    user_id: userId, month: histMonth,
     placed, answered,
     talk_min: Math.round(talkMin),
     voicemail: rwVm, missed: rwMissed,

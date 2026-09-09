@@ -972,7 +972,11 @@ function _renderSlScorecard(rawEntries) {
       const totalPremGoal  = enabledLocs.reduce((s, l) => s + (parseFloat(l.goal_premium) || 0), 0);
 
       if (totalCountGoal > 0) {
-        const actual = entries.length;
+        // Weighted by sale_weight, same as every other pill in this function (and the
+        // Race tab's Sales-by-Agent tile) — entries.length double-counts a split sale's
+        // two 0.5-weight rows as 2 instead of 1. Was the source of a real, confirmed
+        // discrepancy against the Race tab (fixed 2026-09-09).
+        const actual = totalCount;
         const pct    = totalCountGoal > 0 ? actual / totalCountGoal : 0;
         const color  = pct >= 1 ? 'rgba(0,229,180,.4)' : pct >= 0.8 ? 'rgba(255,179,0,.4)' : 'rgba(255,255,255,.15)';
         const textColor = pct >= 1 ? 'var(--accent2)' : pct >= 0.8 ? '#ffb300' : 'var(--muted)';
