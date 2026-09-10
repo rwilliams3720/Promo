@@ -1084,8 +1084,15 @@ async function loadBasicSalesBreakdown(targetId) {
   for (const c of cats) curTotals[c.key] = 0;
   const useSPEntries = Array.isArray(_spEntries) && _spEntries.length > 0;
   if (useSPEntries) {
+    // Weighted by sale_weight and excludes cancelled sales, matching every other
+    // aggregator over sales_log (spGroup, _renderSlScorecard, the Race tab) — this loop
+    // used to do a flat ++ over every fetched row regardless of cancellation or split
+    // status, so a split sale's two 0.5-weight rows counted as 2 full policies instead of
+    // 1, inflating this panel's "current period" total relative to the Race tab (reported
+    // as "Sales Performance shows 94, Race tab shows the correct 87" — fixed 2026-09-10).
     for (const e of _spEntries) {
-      if (e.product && curTotals[e.product] !== undefined) curTotals[e.product]++;
+      if (e.is_cancelled) continue;
+      if (e.product && curTotals[e.product] !== undefined) curTotals[e.product] += (e.sale_weight ?? 1);
     }
   } else {
     for (const ag of (_raceData || [])) {
@@ -1129,6 +1136,7 @@ async function loadBasicSalesBreakdown(targetId) {
     if (useSPEntries) {
       const agMap = {};
       for (const e of _spEntries) {
+        if (e.is_cancelled) continue;
         if (!e.agent_id || !e.product || curTotals[e.product] === undefined) continue;
         if (!agMap[e.agent_id]) {
           const n = _agentRoster.find(a => a.agent_id === e.agent_id)?.name || e.agent_id;
@@ -1136,8 +1144,9 @@ async function loadBasicSalesBreakdown(targetId) {
           for (const c of cats) agMap[e.agent_id].products[c.key] = 0;
         }
         if (agMap[e.agent_id].products[e.product] !== undefined) {
-          agMap[e.agent_id].products[e.product]++;
-          agMap[e.agent_id].total++;
+          const weight = e.sale_weight ?? 1;
+          agMap[e.agent_id].products[e.product] += weight;
+          agMap[e.agent_id].total += weight;
         }
       }
       agentsSorted = Object.values(agMap).filter(ag => ag.total > 0).sort((a, b) => b.total - a.total);
