@@ -420,6 +420,16 @@ async function saveSalesLogRow(h, btn) {
     const r = await fetch('/api/sales', { method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const d = await r.json();
     if (!r.ok) { showInlineMsg('sl-msg-' + h, d.error || 'Save failed', 'err'); return; }
+    if (d.teammateMissing) {
+      // A PATCH can only ever update the row it's given — it can't safely fabricate the
+      // teammate's row (premium split, issued status, etc. are all unknown), so checking
+      // "Split Sale" on a sale that was originally entered as a regular full sale saves
+      // correctly (sale_weight is now auto-halved server-side) but leaves the teammate
+      // with zero credit until a separate entry is made for their half. Give the user a
+      // few seconds to read this before the row list re-renders out from under it.
+      showInlineMsg('sl-msg-' + h, 'Saved — but no entry exists yet for the teammate. Add their half manually from the Sales Log so they get credit too.', 'err');
+      await new Promise(resolve => setTimeout(resolve, 3500));
+    }
     await loadSalesLog(); // re-fetch so edited data reflects in _salesLogEntries
   } catch(err) {
     showInlineMsg('sl-msg-' + h, err.message, 'err');

@@ -311,6 +311,18 @@ export default async function handler(req, res) {
     if (update.written_premium) update.written_premium = parseFloat(update.written_premium);
     if (update.issued_premium != null) update.issued_premium = update.issued_premium ? parseFloat(update.issued_premium) : null;
     if (update.split_ratio != null) update.split_ratio = parseFloat(update.split_ratio) || null;
+    // sale_weight is always exactly 0.5/0.5 for a split sale regardless of split_ratio
+    // (which only divides written_premium, not policy-count credit) — see CLAUDE.md
+    // "Split sales — always TWO independent rows". The Sales Log edit form
+    // (saveSalesLogRow, js/sales-log.js) never sends sale_weight at all, so retroactively
+    // checking "Split Sale" on an already-existing full-weight sale silently left it at
+    // weight 1 — the sale then counted as a full policy for this agent instead of half,
+    // with no credit at all for the teammate. Auto-derive it here whenever split_sale is
+    // explicitly being changed and the caller didn't also explicitly set sale_weight, so
+    // this can't diverge through any current or future PATCH caller. Fixed 2026-09-10.
+    if (fields.sale_weight === undefined && update.split_sale !== undefined) {
+      update.sale_weight = update.split_sale ? 0.5 : 1;
+    }
     if (fields.is_cancelled !== undefined) update.is_cancelled = !!fields.is_cancelled;
     if (fields.chargeback_date !== undefined) update.chargeback_date = fields.chargeback_date || null;
     if (fields.chargeback_exempt !== undefined) update.chargeback_exempt = !!fields.chargeback_exempt;
@@ -336,8 +348,16 @@ export default async function handler(req, res) {
     // subcategory) rather than hash, since a split sale's two rows differ on agent_id and
     // therefore hash (hash is derived per-agent — see sha256Short callers above).
     let siblingHash = null;
+    // Set when this PATCH turns split_sale on (or keeps it on) but no sibling row exists
+    // for the teammate at all — e.g. retroactively checking "Split Sale" on a sale that
+    // was originally entered as a regular full sale. A PATCH can only ever update the one
+    // row it's given; it can't safely fabricate the teammate's row (premium split, issued
+    // status, etc. are all unknown), so this just surfaces the gap to the caller instead of
+    // silently leaving the teammate with zero credit. Fixed 2026-09-10 — see CLAUDE.md.
+    let teammateMissing = false;
     const teammateId = update.teammate !== undefined ? update.teammate : existing?.teammate;
-    if (teammateId && update.issued_date !== undefined) {
+    const isSplitNow  = update.split_sale !== undefined ? update.split_sale : existing?.split_sale;
+    if (teammateId && (update.issued_date !== undefined || isSplitNow)) {
       const { data: sibling } = await supabase
         .from('sales_log')
         .select('hash, issued_date')
@@ -348,7 +368,8 @@ export default async function handler(req, res) {
         .eq('product', update.product ?? existing?.product)
         .eq('subcategory', update.subcategory ?? existing?.subcategory)
         .maybeSingle();
-      if (sibling && sibling.hash !== hash && sibling.issued_date !== update.issued_date) {
+      if (isSplitNow && !sibling) teammateMissing = true;
+      if (sibling && update.issued_date !== undefined && sibling.hash !== hash && sibling.issued_date !== update.issued_date) {
         const { error: sibErr } = await supabase
           .from('sales_log')
           .update({ issued_date: update.issued_date })
@@ -367,7 +388,7 @@ export default async function handler(req, res) {
     ].filter(Boolean))];
     await rebuildRaceData(dataUserId, rebuildIds);
     await logAccess({ actorUserId: ctx.userId, actorEmail: ctx.actorEmail, dataUserId, action: 'edit', recordHash: hash, metadata: { fields: Object.keys(update), siblingHash } });
-    return res.status(200).json({ ok: true, siblingHash });
+    return res.status(200).json({ ok: true, siblingHash, teammateMissing });
   }
 
   // ── DELETE: remove a manual entry ─────────────────────────────────────────
