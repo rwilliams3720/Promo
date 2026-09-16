@@ -485,7 +485,11 @@ function chartImgTag(acct, c, agentId, dateStr) {
   if (c.color)   src += `&color=${encodeURIComponent(c.color)}`;
   if (c.opacity != null) src += `&opacity=${encodeURIComponent(c.opacity)}`;
   if (c.outline) src += `&outline=${encodeURIComponent(c.outline)}`;
-  return `<div style="margin-bottom:12px;"><img src="${src}" width="360" height="170" style="display:block;border-radius:10px;max-width:100%;height:auto;border:1px solid #1e3a5f;" alt="${esc(CHART_DATASETS[c.dataset].label)}"></div>`;
+  // 520×246 nearly fills the 536px-wide content column (600px email − 32px side
+  // padding) — the previous 360×170 left charts too small to read once the title, axis
+  // labels, category labels, and value labels were all packed in. Native SVG canvas in
+  // chart-render.js is 1040×492 (2x this, for retina); keep the two in sync.
+  return `<div style="margin-bottom:12px;"><img src="${src}" width="520" height="246" style="display:block;border-radius:10px;max-width:100%;height:auto;border:1px solid #1e3a5f;" alt="${esc(CHART_DATASETS[c.dataset].label)}"></div>`;
 }
 
 // Sentinel agent id for team-wide charts — signed/verified the same as a real agent id

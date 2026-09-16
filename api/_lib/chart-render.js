@@ -20,8 +20,15 @@ import { Resvg } from '@resvg/resvg-js';
 import { existsSync } from 'fs';
 import path from 'path';
 
-const W = 720, H = 340;
-const PAD_L = 64, PAD_R = 24, PAD_T = 34, PAD_B = 54;
+// Sized so the <img> can display at 520×246 in the email (nearly the full 536px-wide
+// content column) while staying 2x that for retina — up from the original 360×170
+// display size, which was legible on a screen but far too cramped once the title, axis
+// labels, category labels, and per-bar value labels were all packed into it. All
+// pixel-based constants below (padding, font sizes, stroke widths, marker radii) are
+// scaled up ~1.44x from their original values in lockstep with the canvas so the layout
+// stays proportional — see the email-report.js `chartImgTag` companion size (520×246).
+const W = 1040, H = 492;
+const PAD_L = 92, PAD_R = 35, PAD_T = 49, PAD_B = 78;
 const PLOT_W = W - PAD_L - PAD_R;
 const PLOT_H = H - PAD_T - PAD_B;
 const FONT = 'BebasNeue';
@@ -86,7 +93,7 @@ function buildAxes(max, dollar) {
     const v = (max / steps) * i;
     const y = scaleY(v, max);
     out += `<line x1="${PAD_L}" y1="${y}" x2="${W - PAD_R}" y2="${y}" stroke="#1e3a5f" stroke-width="1"/>`;
-    out += `<text x="${PAD_L - 10}" y="${y + 4}" text-anchor="end" font-size="13" fill="#6b8db5" font-family="${FONT}">${fmtVal(v, dollar)}</text>`;
+    out += `<text x="${PAD_L - 14}" y="${y + 6}" text-anchor="end" font-size="19" fill="#6b8db5" font-family="${FONT}">${fmtVal(v, dollar)}</text>`;
   }
   return out;
 }
@@ -105,39 +112,39 @@ export function renderChartSvg({ title, labels, values, color, opacity, outline,
   const showLabel = i => i === 0 || i === n - 1 || i % labelEvery === 0;
 
   const fillOpacity = Number.isFinite(opacity) ? opacity : 1;
-  const outlineAttr = outline ? ` stroke="${outline}" stroke-width="1.5"` : '';
+  const outlineAttr = outline ? ` stroke="${outline}" stroke-width="2"` : '';
 
   let body = '';
   if (type === 'bar') {
     const slot = PLOT_W / n;
-    const bw = Math.min(64, slot * 0.6);
+    const bw = Math.min(92, slot * 0.6);
     body = labels.map((lab, i) => {
       const cx = PAD_L + slot * (i + 0.5);
       const y  = scaleY(values[i] || 0, max);
       const h  = (PAD_T + PLOT_H) - y;
-      return `<rect x="${cx - bw / 2}" y="${y}" width="${bw}" height="${Math.max(0, h)}" rx="3" fill="${color}" fill-opacity="${fillOpacity}"${outlineAttr}/>
-        <text x="${cx}" y="${PAD_T + PLOT_H + 22}" text-anchor="middle" font-size="12" fill="#8fa8c4" font-family="${FONT}">${esc(lab)}</text>
-        <text x="${cx}" y="${y - 8}" text-anchor="middle" font-size="12" fill="#e8f4fd" font-family="${FONT}">${fmtVal(values[i] || 0, dollar)}</text>`;
+      return `<rect x="${cx - bw / 2}" y="${y}" width="${bw}" height="${Math.max(0, h)}" rx="4" fill="${color}" fill-opacity="${fillOpacity}"${outlineAttr}/>
+        <text x="${cx}" y="${PAD_T + PLOT_H + 32}" text-anchor="middle" font-size="17" fill="#8fa8c4" font-family="${FONT}">${esc(lab)}</text>
+        <text x="${cx}" y="${y - 12}" text-anchor="middle" font-size="17" fill="#e8f4fd" font-family="${FONT}">${fmtVal(values[i] || 0, dollar)}</text>`;
     }).join('');
   } else if (type === 'line') {
     const pts = labels.map((lab, i) => ({ cx: xPos(i, n), y: scaleY(values[i] || 0, max), lab }));
     const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.cx},${p.y}`).join(' ');
-    body = `<path d="${path}" fill="none" stroke="${color}" stroke-opacity="${fillOpacity}" stroke-width="3"/>` +
-      pts.map((p, i) => `<circle cx="${p.cx}" cy="${p.y}" r="4" fill="${color}" fill-opacity="${fillOpacity}"${outlineAttr}/>` +
-        (showLabel(i) ? `<text x="${p.cx}" y="${PAD_T + PLOT_H + 22}" text-anchor="middle" font-size="11" fill="#8fa8c4" font-family="${FONT}">${esc(p.lab)}</text>` : '')
+    body = `<path d="${path}" fill="none" stroke="${color}" stroke-opacity="${fillOpacity}" stroke-width="4"/>` +
+      pts.map((p, i) => `<circle cx="${p.cx}" cy="${p.y}" r="6" fill="${color}" fill-opacity="${fillOpacity}"${outlineAttr}/>` +
+        (showLabel(i) ? `<text x="${p.cx}" y="${PAD_T + PLOT_H + 32}" text-anchor="middle" font-size="16" fill="#8fa8c4" font-family="${FONT}">${esc(p.lab)}</text>` : '')
       ).join('');
   } else { // scatter
     body = labels.map((lab, i) => {
       const cx = xPos(i, n);
       const y  = scaleY(values[i] || 0, max);
-      return `<circle cx="${cx}" cy="${y}" r="6" fill="${color}" fill-opacity="${fillOpacity}"${outlineAttr}/>` +
-        (showLabel(i) ? `<text x="${cx}" y="${PAD_T + PLOT_H + 22}" text-anchor="middle" font-size="11" fill="#8fa8c4" font-family="${FONT}">${esc(lab)}</text>` : '');
+      return `<circle cx="${cx}" cy="${y}" r="9" fill="${color}" fill-opacity="${fillOpacity}"${outlineAttr}/>` +
+        (showLabel(i) ? `<text x="${cx}" y="${PAD_T + PLOT_H + 32}" text-anchor="middle" font-size="16" fill="#8fa8c4" font-family="${FONT}">${esc(lab)}</text>` : '');
     }).join('');
   }
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-    <rect width="${W}" height="${H}" rx="12" fill="#060e1c"/>
-    <text x="${PAD_L}" y="24" font-size="15" font-weight="700" fill="#e8f4fd" font-family="${FONT}">${esc(title)}</text>
+    <rect width="${W}" height="${H}" rx="17" fill="#060e1c"/>
+    <text x="${PAD_L}" y="35" font-size="22" font-weight="700" fill="#e8f4fd" font-family="${FONT}">${esc(title)}</text>
     ${axes}
     ${body}
   </svg>`;

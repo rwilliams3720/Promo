@@ -355,6 +355,9 @@ function _filteredSalesEntries() {
   if (_salesLogLocationFilter && _salesLogLocationFilter !== 'all') {
     entries = entries.filter(e => (e.location || '').trim() === _salesLogLocationFilter);
   }
+  if (_salesLogProductFilter && _salesLogProductFilter !== 'all') {
+    entries = entries.filter(e => e.product === _salesLogProductFilter);
+  }
   if (_salesLogIssuedFilter === 'issued') {
     entries = entries.filter(e => !!e.issued_date);
   } else if (_salesLogIssuedFilter === 'unissued') {

@@ -143,6 +143,7 @@ let _salesTileEntries = [];         // sales_log entries for current race period
 let _salesTileLocation = 'all';     // selected location filter on race tile
 let _leadSources       = [];        // user-configured lead source list (falls back to LEAD_SOURCES constant)
 let _salesLogLocationFilter = 'all'; // location filter for sales log
+let _salesLogProductFilter  = 'all'; // product type filter for sales log
 let _selfReportConfig = {};  // { activities_enabled, sales_enabled, requires_approval, req_act_notes, req_sales_fields:{} }
 
 // ── Member Analysis add-on state ─────────────────────────────────────────────

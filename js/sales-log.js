@@ -558,6 +558,11 @@ function onSalesLogLocationChange() {
   filterSalesLog();
 }
 
+function onSalesLogProductChange() {
+  _salesLogProductFilter = document.getElementById('sl-product-filter')?.value || 'all';
+  filterSalesLog();
+}
+
 async function loadSalesLog() {
   initSalesLogControls();
   const list = document.getElementById('checklist-subs-list');
@@ -573,6 +578,7 @@ async function loadSalesLog() {
     const d = await r.json();
     _salesLogEntries = d.entries || [];
     _populateSlLocationFilter();
+    _populateSlProductFilter();
     renderSalesLog();
   } catch(err) { list.innerHTML = `<span style="color:var(--danger);font-size:13px;">Error: ${err.message}</span>`; }
 }
@@ -599,6 +605,20 @@ function _populateSlLocationFilter() {
     + locs.map(l => `<option value="${escHtml(l)}">${escHtml(l)}</option>`).join('');
   if (locs.includes(cur)) { sel.value = cur; _salesLogLocationFilter = cur; }
   else { sel.value = 'all'; _salesLogLocationFilter = 'all'; }
+}
+
+function _populateSlProductFilter() {
+  const sel = document.getElementById('sl-product-filter');
+  if (!sel) return;
+  const keys = [...new Set(_salesLogEntries.map(e => e.product).filter(Boolean))]
+    .sort((a, b) => labelForCat(a).localeCompare(labelForCat(b)));
+  if (!keys.length) { sel.style.display = 'none'; return; }
+  sel.style.display = '';
+  const cur = sel.value;
+  sel.innerHTML = '<option value="all">All Products</option>'
+    + keys.map(k => `<option value="${escHtml(k)}">${escHtml(labelForCat(k))}</option>`).join('');
+  if (keys.includes(cur)) { sel.value = cur; _salesLogProductFilter = cur; }
+  else { sel.value = 'all'; _salesLogProductFilter = 'all'; }
 }
 
 // ── Chargeback Report ──────────────────────────────────────────────────────────
