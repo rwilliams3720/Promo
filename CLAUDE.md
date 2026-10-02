@@ -1462,9 +1462,96 @@ placedPts   = placed   * (service ? SCORING.placed_service  : SCORING.placed_sal
 answeredPts = answered * (service ? SCORING.answered_service : SCORING.answered_sales)
 talkPts     = talkMin*SCORING.talk_per_min + avgMin*SCORING.avg_min
 gross       = round(polPts + placedPts + answeredPts + talkPts)
-deduct      = round(raceWideMissed*SCORING.missed_deduct + raceWideVoicemail*SCORING.voicemail_deduct)
+deduct      = round(raceWideMissed*SCORING.missed_deduct + raceWideVoicemail*SCORING.voicemail_deduct)  // legacy; see below for the opt-in alternative
 total       = max(0, gross + deduct)
 ```
+
+### Handle Rate Penalty (opt-in alternative to flat missed/voicemail deduct, added 2026-10-01)
+
+The legacy `deduct` above is race-wide — the exact same flat number is subtracted from **every** agent's score regardless of team, and it scales with raw missed-call **count**, not with handle-rate quality. Two problems surfaced on a real account: (1) a record-production month also means more total calls, so even a stable handle rate produces a bigger absolute penalty purely from volume, and once that flat deduction exceeds most agents' gross, the whole podium collapses to 0 with no differentiation; (2) the deduction was originally meant to charge the sales team for "ignoring the phone" while crediting service for picking up the slack (already true on the reward side via `answered_service`), but applying it race-wide meant the service team — the one actually alleviating the problem — paid the identical tax as the team causing it.
+
+**New `scoring_config` keys** (all on the existing free-form key-value table — no migration needed):
+```
+handle_rate_enabled:0            // off by default — every other account's scoring is byte-identical to before until this is explicitly turned on
+handle_rate_target:95            // target handle rate %, suggested default
+handle_rate_penalty_per_pt:20    // points deducted per 1-percentage-point shortfall below target, sales team only, suggested default
+handle_rate_penalty_cap_pct:50   // caps the deduction at this % of the agent's own gross score, suggested default
+```
+
+**Formula, when `handle_rate_enabled` is on** (`calcScore` in `js/race.js`, mirrored in `api/member-analysis.js`'s own `calcScore`, and threaded through `confirmArchive()` in `js/account.js`):
+```javascript
+handleRate = teamAnswered / (teamAnswered + raceWideMissed + raceWideVoicemail) * 100   // same definition already used in api/ai-analysis.js
+if (team === 'service') deduct = calcServiceCoverageDeduct(...)   // see below — 0 unless service_coverage_enabled is also on
+else {
+  shortfall = max(0, handle_rate_target - handleRate)
+  if (shortfall <= 0) deduct = 0
+  else {
+    raw   = -round(shortfall * handle_rate_penalty_per_pt)
+    cap   = -round(gross * handle_rate_penalty_cap_pct / 100)
+    deduct = max(raw, cap)   // cap is the less-negative floor — protects low-gross agents from losing more than the capped share
+  }
+}
+```
+`missed_deduct`/`voicemail_deduct` are collapsed into this single handle-rate-based number (handle rate already combines both signals); those two legacy fields are greyed out in the Scoring UI while this mode is on, but their saved values are left untouched so turning the toggle back off restores the exact prior behavior with no re-entry needed.
+
+### Service Coverage Target (sub-feature of Handle Rate Penalty, added 2026-10-01)
+
+Shipping the sales-only redesign above with service fully exempt created a new gap, raised directly by the account owner: full exemption removes **all** team-wide downside for service, so one service agent can carry the real weight of answering overflow calls while a teammate free-rides, with nothing differentiating them except the pre-existing positive `answered_service` credit — no "hive" pressure pushing the whole team to cover evenly. Flagged before full exemption shipped as a known trade-off (see the Option A/B discussion that produced this feature); this closes it without reopening the original problem (service shouldn't be blamed for a shortfall sales caused).
+
+**New `scoring_config` keys** (sub-toggle — only consulted when `handle_rate_enabled` is also on; off by default):
+```
+service_coverage_enabled:0             // off by default
+service_coverage_target_pct:25         // service team's target SHARE OF TOTAL CALL VOLUME (both teams combined) — agency-specific, not a universal benchmark like the 95% handle-rate target
+service_coverage_penalty_per_pt:10     // points deducted per 1-percentage-point an agent falls below their own "fair share"
+service_coverage_penalty_cap_pct:50    // same protective cap as the sales side, applied per agent
+```
+
+**Formula** (`calcServiceCoverageDeduct`, duplicated identically in `js/race.js` and `api/member-analysis.js` — same existing duplication pattern `calcScore` itself already uses, since the server file has no access to the client bundle):
+```javascript
+if (!service_coverage_enabled || serviceCount <= 0) return 0
+teamServicePct = serviceAnswered / totalCalls * 100              // service team's actual share of ALL inbound calls
+teamShortfall  = max(0, service_coverage_target_pct - teamServicePct)
+if (teamShortfall <= 0) return 0                                  // team hit its target — nobody on service owes anything, regardless of how contributions split
+fairSharePct = service_coverage_target_pct / serviceCount          // target divided evenly across active service agents
+myContribPct = myAnswered / totalCalls * 100
+myShortfall  = max(0, fairSharePct - myContribPct)                 // an agent AT OR ABOVE their own fair share owes nothing, even while a teammate drags the team average down
+if (myShortfall <= 0) return 0
+raw = -round(myShortfall * service_coverage_penalty_per_pt)
+cap = -round(gross * service_coverage_penalty_cap_pct / 100)
+return max(raw, cap)
+```
+
+This is deliberately **not** the team-wide shortfall split evenly, and **not** proportional to each agent's relative share of the team's total — it's each agent's own gap against an equal fair share of the target. That specific shape was chosen directly from the account owner's own worked example (2,000 total calls, 90% service target, 3 agents, team actual 80% — one agent at 70% contribution, the other two combined at only 10%): the 70%-contributor is nearly double their 30% fair share and owes nothing, while the two under-contributors (5% each) each owe a penalty sized to their own 25-point personal gap (30% fair share − 5% contributed) — not a flat three-way split of the team's 10-point shortfall, and not scaled down just because a teammate's overperformance happens to cover for them. Verified against this exact example before shipping: team short by 10 pts → contributor pays $0, two under-contributors each pay `-round(25 × 10) = -250` (well under their 50%-of-gross cap in this example); team hitting 95% (above the 90% target) → all three pay $0 regardless of the same lopsided split.
+
+**Team-wide totals needed per caller** (mirrors how `teamAnswered` is already threaded through, restricted to `team === 'service'`):
+- `js/race.js` `renderRace()`: `serviceAnswered`/`serviceCount` summed over `activeData` filtered to service.
+- `js/account.js` `confirmArchive()`: summed over unfiltered `rdRows` filtered to service.
+- `api/member-analysis.js`: `serviceAnsweredLive`/`serviceCountLive` (from unfiltered `raceRes.data`) for the current period; `serviceAnsweredByMonth`/`serviceCountByMonth` (grouped from unfiltered `histWinsRes.data` by normalized month — `serviceCountByMonth` counts **distinct** `agent_id`s seen that month, via a per-month `Set`, not raw row count) for historical trend rows.
+
+**UI**: a second checkbox ("Also hold the service team accountable to a coverage target") nested inside the Handle Rate Penalty section, itself revealing three more fields with the same identifier/description/worked-example/suggested-value pattern as the sales fields, plus the exact 2,000-call worked example spelled out inline so an owner doesn't need this doc open to understand what the numbers mean. The Legend panel's deduct-box gains a second "SERVICE COVERAGE TARGET" block (service share vs. target, team shortfall, and the computed fair-share-per-agent number) directly below the sales block, shown only when this sub-toggle is on.
+
+**`myContribPct`/`teamServicePct` are measured against office-wide `totalCalls` (both teams' answered + missed + voicemail), never against the service team's own answered total.** Confirmed explicitly when asked, since it's the one number in this formula that could plausibly be read either way: `service_coverage_target_pct` is itself defined as a share of total office call volume (not of service's own output), so every percentage in the formula has to share that same denominator for a team's individual contributions to sum back to the team total the way the worked example assumes (70% + 5% + 5% = 80%, not some other combination that only makes sense against a smaller base).
+
+**Real-data finding: a correctly-working deduction can still be overwhelmed by a lopsided *base* scoring weight — checked and confirmed on real September data, not a bug in `calcServiceCoverageDeduct` itself (2026-10-02).** Reported as "one service member answered roughly 50% of the service team's answered calls, the next-best answered half that member's count, and the team member who answered half as many calls ends up with more points." Verified directly against the account's real, saved `scoring_config` (`handle_rate_enabled:1`, `service_coverage_target_pct:90`, `service_coverage_penalty_per_pt:10`, `service_coverage_penalty_cap_pct:60`) and real September `race_data`:
+
+| Agent | Placed | Answered | plPts (×`placed_service`=2) | ansPts (×`answered_service`=0.5) | talkPts | Gross | Contribution % | Deduct | Total |
+|---|---|---|---|---|---|---|---|---|---|
+| Tracy Ankrah | 211 | **800** (50.2% of service's 1,595 total) | 422 | 400 | 323 | 1146 | 20.9% | -91 | **1055** |
+| Jocelyn Hernandez | 191 | 310 | 382 | 155 | 207 | 767 | 8.1% | -219 | 548 |
+| Fiona Rodriguez | **639** | 485 | **1278** | 243 | 363 | **1904** | 12.7% | -173 | **1731** |
+
+The deduction itself is ordered exactly right — Tracy (highest answered-call contributor) loses the least (-91), Jocelyn (lowest contributor) loses the most (-219); none of the three even reach their 60% cap, so the raw shortfall math is the only thing in play. The inversion comes entirely from `gross`: `placed_service` (2 pts/call) is weighted 4x `answered_service` (0.5 pts/call), and Fiona's 639 placed (outbound) calls — three times Tracy's 211 — hand her 1,278 points before any deduction even applies, more than Tracy's entire gross. The percentage-point shortfall gaps this formula operates on are inherently narrow when measured against a large office-wide call-volume denominator (here, 8–13 points apart out of 3,821 total calls), so no reasonable `service_coverage_penalty_per_pt` can claw back a gross gap created by an unrelated, much more heavily-weighted scoring dimension — closing *this specific* gap would require roughly 9x the current per-point rate, which would be punishingly large for the lowest contributor in the process.
+
+**Takeaway, worth checking first on any future "the ranking looks wrong" report involving the service team**: before assuming `calcServiceCoverageDeduct` (or `calcScore`'s sales-side branch) has a bug, break the suspect agents' `gross` down by component (`polPts`/`plPts`/`ansPts`/`talkPts`) — the deduction can only ever subtract from whatever `gross` already is, and a scoring-weight imbalance in the *base* formula (unrelated to this feature) can fully mask a correctly-functioning, correctly-ordered deduction. Not fixed as code here — `placed_service`'s weight relative to `answered_service` is a scoring-policy choice for the account owner, not a bug, and was left unchanged pending that decision.
+
+**`teamAnswered`** — the total answered-call count across the *same* agent population being scored (both teams combined, matching how `raceWideMissed`/`raceWideVoicemail` are already race-wide) — must be computed by the caller and passed in, so the handle rate shown in the UI always matches what was actually deducted:
+- `js/race.js` `renderRace()`: summed over `activeData` (active-roster-filtered), before the per-agent `calcScore` map.
+- `js/account.js` `confirmArchive()`: summed over unfiltered `rdRows`, matching that function's other pre-existing team-wide sums (`placed`/`answered`/`talkMin`).
+- `api/member-analysis.js`: `teamAnsweredLive` (unfiltered `raceRes.data`, for the current period) and `teamAnsweredByMonth` (grouped from the full, unfiltered `histWinsRes.data` by normalized month, for historical trend rows) — each historical month's handle rate is computed from *that month's own* full roster, not just whichever agents are selected into a given analysis run.
+
+**UI** (`buildScoringUI()` in `js/race.js`): a new "Handle Rate Penalty (Sales Team)" section below Call Activity, gated behind a checkbox (`toggleHandleRateFields()` shows/hides the three number inputs and dims the legacy Missed/Voicemail deduct fields). Each of the three fields ships with inline help text (what it means, a worked example, and a suggested starting value) directly under the input — e.g. "Points per % Shortfall... Example: at 20 pts, a 5-point shortfall costs each sales agent 100 points. Suggested: 20" — so an owner can tune the two knobs (penalty size vs. cap) without needing this doc open. The Legend panel's deduct-box (`#deduct-box`) branches the same way, showing live Handle Rate / Shortfall / Penalty-per-agent numbers instead of the legacy Voicemails/Missed/Total breakdown when the mode is on.
+
+**Verified against real production data** (`russel.williams.k0wt@statefarm.com`, September 2026, live — not yet archived): baseline flat deduct of -1397 (243 missed × -4.5, 304 voicemail × -1) wiped 9 of 12 agents to 0. With the new mode at the suggested defaults (target 95, 20 pts/shortfall-pt, 50% cap) against the same real data (handle rate 85.68%, shortfall 9.32 pts): every agent keeps a positive, differentiated score (Ashley 2068 down to Russel 81), service agents keep their full gross (Fiona 1686, Tracy 786, Jocelyn 627, deduct=0), and toggling `handle_rate_enabled` back to 0 reproduces the original flat-deduction numbers exactly (confirmed by extracting and running the actual shipped `calcScore` against live data both ways, not just reasoning about the formula).
 
 ## Agents (hardcoded in upload.js + perf.js)
 ashley, fiona, jocelyn, joseph, peyton, susan, tiffany, tracy, amin, andy, russel

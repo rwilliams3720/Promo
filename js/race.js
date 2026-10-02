@@ -114,7 +114,14 @@ function fmtMins(m) {
   return `${h}h ${String(min).padStart(2,'0')}m`;
 }
 
-function calcScore(ag) {
+// `teamAnswered` is the total answered-call count across every agent being scored in this
+// same pass (both teams combined) — needed only for the handle-rate-based penalty below, to
+// compute the team's actual handle rate. `serviceAnswered`/`serviceCount` are the same-pass
+// totals restricted to service-team agents, needed only when service_coverage_enabled is also
+// on. Callers must pass all three over the exact same agent population being scored (see
+// CLAUDE.md "Handle Rate Penalty") so the displayed numbers always match what's deducted;
+// omit them only when handle_rate_enabled is off.
+function calcScore(ag, teamAnswered, serviceAnswered, serviceCount) {
   const svc = ag.team === 'service';
   const polPts =
     (SCORING.wl_enabled      ? (ag.wl     ||0)*SCORING.wl      : 0) +
@@ -133,8 +140,56 @@ function calcScore(ag) {
   const ansPts = (ag.answered||0) * (svc ? SCORING.answered_service : SCORING.answered_sales);
   const talkPts= (ag.talk_min||0)*SCORING.talk_per_min + (ag.avg_min||0)*SCORING.avg_min;
   const gross  = Math.round(polPts + plPts + ansPts + talkPts);
-  const deduct = Math.round(_raceWideMissed*SCORING.missed_deduct + _raceWideVm*SCORING.voicemail_deduct);
+
+  let deduct;
+  if (SCORING.handle_rate_enabled) {
+    const totalAnswered = teamAnswered || 0;
+    const totalCalls    = totalAnswered + _raceWideMissed + _raceWideVm;
+    if (svc) {
+      deduct = calcServiceCoverageDeduct(ag, gross, totalCalls, serviceAnswered, serviceCount);
+    } else {
+      // Sales-team-only, rate-based penalty. Scales with how far the whole team's handle rate
+      // falls below target, not with raw missed-call volume, and is capped as a % of the
+      // agent's own gross so a bad team month can never wipe out an individual's production.
+      const handleRate = totalCalls > 0 ? (totalAnswered / totalCalls * 100) : 100;
+      const shortfall   = Math.max(0, (SCORING.handle_rate_target || 0) - handleRate);
+      if (shortfall <= 0) {
+        deduct = 0;
+      } else {
+        const raw = -Math.round(shortfall * (SCORING.handle_rate_penalty_per_pt || 0));
+        const cap = -Math.round(gross * (SCORING.handle_rate_penalty_cap_pct || 0) / 100);
+        deduct = Math.max(raw, cap); // cap is the less-negative floor
+      }
+    }
+  } else {
+    deduct = Math.round(_raceWideMissed*SCORING.missed_deduct + _raceWideVm*SCORING.voicemail_deduct);
+  }
   return { gross, deduct, total: Math.max(0, gross + deduct) };
+}
+
+// Service-team deduction — off (0) unless service_coverage_enabled is also on, in which case
+// service is no longer fully exempt from handle_rate_enabled's penalty. The team only owes
+// anything once its collective share of total call volume misses service_coverage_target_pct;
+// once it does, each agent's own slice is driven by how far THEY personally fall below an
+// equal "fair share" of that target (target ÷ active service agents) — an agent who meets or
+// beats their own fair share owes nothing even while a teammate drags the team average down,
+// so the team's shortfall can't be ridden by a low contributor while a high contributor
+// shields them. See CLAUDE.md "Handle Rate Penalty" for the worked example this mirrors.
+function calcServiceCoverageDeduct(ag, gross, totalCalls, serviceAnswered, serviceCount) {
+  if (!SCORING.service_coverage_enabled) return 0;
+  const n = serviceCount || 0;
+  if (n <= 0) return 0;
+  const targetPct      = SCORING.service_coverage_target_pct || 0;
+  const teamServicePct = totalCalls > 0 ? ((serviceAnswered || 0) / totalCalls * 100) : 0;
+  const teamShortfall  = Math.max(0, targetPct - teamServicePct);
+  if (teamShortfall <= 0) return 0;
+  const fairSharePct = targetPct / n;
+  const myContribPct = totalCalls > 0 ? ((ag.answered || 0) / totalCalls * 100) : 0;
+  const myShortfall  = Math.max(0, fairSharePct - myContribPct);
+  if (myShortfall <= 0) return 0;
+  const raw = -Math.round(myShortfall * (SCORING.service_coverage_penalty_per_pt || 0));
+  const cap = -Math.round(gross * (SCORING.service_coverage_penalty_cap_pct || 0) / 100);
+  return Math.max(raw, cap);
 }
 
 function renderRace(data) {
@@ -159,11 +214,20 @@ function renderRace(data) {
   const warnEl = document.getElementById('race-no-calls-warn');
   if (warnEl) warnEl.style.display = hasAnyCalls ? 'none' : '';
 
+  // Team-wide totals across the exact population being scored — only consumed by calcScore's
+  // handle-rate/service-coverage branches, but computed unconditionally since it's cheap and
+  // keeps the deduct-box summary below trivially consistent with what each agent was actually
+  // scored against (same numbers, not a second independent recomputation).
+  const teamAnswered   = activeData.reduce((s, a) => s + (a.answered||0), 0);
+  const serviceAgents  = activeData.filter(a => a.team === 'service');
+  const serviceAnswered = serviceAgents.reduce((s, a) => s + (a.answered||0), 0);
+  const serviceCount    = serviceAgents.length;
+
   const agents = activeData.map((ag, i) => {
     if (!AGENT_COLORS[ag.agent_id]) AGENT_COLORS[ag.agent_id] = COLORS[Object.keys(AGENT_COLORS).length % COLORS.length];
     // Use roster name as source of truth — updates immediately when renamed
     const rosterName = _agentRoster.find(a => a.agent_id === ag.agent_id)?.name;
-    const sc = calcScore(ag);
+    const sc = calcScore(ag, teamAnswered, serviceAnswered, serviceCount);
     return { ...ag, name: rosterName || ag.name, ...sc, color: AGENT_COLORS[ag.agent_id] };
   });
 
@@ -301,13 +365,46 @@ function renderRace(data) {
     <div><div class="key-type">${k.label}</div><div class="key-pts">${SCORING[k.key]} pts each</div></div></div>`
   ).join('');
 
-  document.getElementById('deduct-box').innerHTML = `
-    <div style="font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:600">RACE-WIDE DEDUCTIONS</div>
-    <div style="display:flex;gap:24px;flex-wrap:wrap;">
-      <div><div style="font-size:11px;color:var(--muted)">Voicemails</div><div style="font-family:'DM Mono',monospace;color:var(--danger);font-size:15px">${rwVm} × ${SCORING.voicemail_deduct} = ${Math.round(rwVm*SCORING.voicemail_deduct)}</div></div>
-      <div><div style="font-size:11px;color:var(--muted)">Missed</div><div style="font-family:'DM Mono',monospace;color:var(--danger);font-size:15px">${rwMissed} × ${SCORING.missed_deduct} = ${Math.round(rwMissed*SCORING.missed_deduct)}</div></div>
-      <div><div style="font-size:11px;color:var(--muted)">Total Deduction</div><div style="font-family:'DM Mono',monospace;color:var(--danger);font-size:15px">${Math.round(rwVm*SCORING.voicemail_deduct + rwMissed*SCORING.missed_deduct)}</div></div>
-    </div>`;
+  if (SCORING.handle_rate_enabled) {
+    const totalCalls = teamAnswered + rwMissed + rwVm;
+    const handleRate  = totalCalls > 0 ? (teamAnswered / totalCalls * 100) : 100;
+    const target      = SCORING.handle_rate_target || 0;
+    const shortfall   = Math.max(0, target - handleRate);
+    const rawPenalty  = Math.round(shortfall * (SCORING.handle_rate_penalty_per_pt || 0));
+
+    let serviceBlock = `<div style="font-size:11px;color:var(--muted);margin-top:8px;">Service team is exempt from this penalty.</div>`;
+    if (SCORING.service_coverage_enabled && serviceCount > 0) {
+      const svcTargetPct = SCORING.service_coverage_target_pct || 0;
+      const svcActualPct = totalCalls > 0 ? (serviceAnswered / totalCalls * 100) : 0;
+      const svcShortfall = Math.max(0, svcTargetPct - svcActualPct);
+      const fairShare    = svcTargetPct / serviceCount;
+      serviceBlock = `
+      <div style="font-size:12px;color:var(--muted);margin:12px 0 8px;font-weight:600">SERVICE COVERAGE TARGET</div>
+      <div style="display:flex;gap:24px;flex-wrap:wrap;">
+        <div><div style="font-size:11px;color:var(--muted)">Service Share of Calls</div><div style="font-family:'DM Mono',monospace;color:${svcActualPct >= svcTargetPct ? 'var(--accent2)' : 'var(--danger)'};font-size:15px">${svcActualPct.toFixed(1)}% (target ${svcTargetPct}%)</div></div>
+        <div><div style="font-size:11px;color:var(--muted)">Team Shortfall</div><div style="font-family:'DM Mono',monospace;color:var(--danger);font-size:15px">${svcShortfall.toFixed(1)} pts</div></div>
+        <div><div style="font-size:11px;color:var(--muted)">Fair Share / Agent (${serviceCount})</div><div style="font-family:'DM Mono',monospace;color:var(--text);font-size:15px">${fairShare.toFixed(1)}%</div></div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:8px;">Only an agent whose own contribution falls below ${fairShare.toFixed(1)}% is penalized, scaled to their own gap — meeting or beating your fair share means $0 regardless of teammates.</div>`;
+    }
+
+    document.getElementById('deduct-box').innerHTML = `
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:600">HANDLE RATE PENALTY (SALES TEAM)</div>
+      <div style="display:flex;gap:24px;flex-wrap:wrap;">
+        <div><div style="font-size:11px;color:var(--muted)">Handle Rate</div><div style="font-family:'DM Mono',monospace;color:${handleRate >= target ? 'var(--accent2)' : 'var(--danger)'};font-size:15px">${handleRate.toFixed(1)}% (target ${target}%)</div></div>
+        <div><div style="font-size:11px;color:var(--muted)">Shortfall</div><div style="font-family:'DM Mono',monospace;color:var(--danger);font-size:15px">${shortfall.toFixed(1)} pts</div></div>
+        <div><div style="font-size:11px;color:var(--muted)">Penalty per Sales Agent</div><div style="font-family:'DM Mono',monospace;color:var(--danger);font-size:15px">-${rawPenalty} (capped at ${SCORING.handle_rate_penalty_cap_pct}% of own score)</div></div>
+      </div>
+      ${serviceBlock}`;
+  } else {
+    document.getElementById('deduct-box').innerHTML = `
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:600">RACE-WIDE DEDUCTIONS</div>
+      <div style="display:flex;gap:24px;flex-wrap:wrap;">
+        <div><div style="font-size:11px;color:var(--muted)">Voicemails</div><div style="font-family:'DM Mono',monospace;color:var(--danger);font-size:15px">${rwVm} × ${SCORING.voicemail_deduct} = ${Math.round(rwVm*SCORING.voicemail_deduct)}</div></div>
+        <div><div style="font-size:11px;color:var(--muted)">Missed</div><div style="font-family:'DM Mono',monospace;color:var(--danger);font-size:15px">${rwMissed} × ${SCORING.missed_deduct} = ${Math.round(rwMissed*SCORING.missed_deduct)}</div></div>
+        <div><div style="font-size:11px;color:var(--muted)">Total Deduction</div><div style="font-family:'DM Mono',monospace;color:var(--danger);font-size:15px">${Math.round(rwVm*SCORING.voicemail_deduct + rwMissed*SCORING.missed_deduct)}</div></div>
+      </div>`;
+  }
 }
 
 // ── Sales tile (race tab bottom-right) ───────────────────────────────────────
@@ -499,12 +596,71 @@ function buildScoringUI() {
     `<div class="score-field"><label>${lbl}</label>
      <input type="number" id="sc-${k}" step="0.1" value="${SCORING[k]}"></div>`
   ).join('');
+  const handleRateOn = !!SCORING.handle_rate_enabled;
+  const hrField = (k, lbl, placeholder, hint) => `
+    <div class="score-field">
+      <label>${lbl}</label>
+      <input type="number" id="sc-${k}" step="1" value="${SCORING[k]}" placeholder="${placeholder}">
+      <div style="font-size:11px;color:var(--muted);line-height:1.4;">${hint} Suggested: <b>${placeholder}</b></div>
+    </div>`;
+  const serviceCoverageOn = !!SCORING.service_coverage_enabled;
   document.getElementById('score-grid').innerHTML = `
     <div class="score-section-title">Policy Categories</div>
     ${fixedRows}${flexRows}
     <div class="score-section-title">Call Activity</div>
-    <div class="score-grid-inner">${callRows}</div>`;
+    <div class="score-grid-inner">${callRows}</div>
+    <div class="score-section-title" style="margin-top:14px;">Handle Rate Penalty (Sales Team)</div>
+    <div class="score-cat-row">
+      <label><input type="checkbox" id="sc-handle_rate_enabled" ${handleRateOn ? 'checked' : ''} onchange="toggleHandleRateFields(this.checked)">
+        Enable handle-rate-based penalty — replaces the flat Missed/Voicemail deduct above, sales team only. Leave unchecked to keep the current flat deduction for everyone.</label>
+    </div>
+    <div id="handle-rate-fields" style="display:${handleRateOn ? '' : 'none'};margin-top:6px;">
+      <div class="score-grid-inner">
+        ${hrField('handle_rate_target', 'Target Handle Rate %', '95',
+          'The handle rate (answered ÷ (answered + missed + voicemail)) your team should be hitting. No penalty applies at or above this.')}
+        ${hrField('handle_rate_penalty_per_pt', 'Points per % Shortfall', '20',
+          'How many points each sales agent loses per 1 percentage point the team falls below target. Example: at 20 pts, a 5-point shortfall costs each sales agent 100 points.')}
+        ${hrField('handle_rate_penalty_cap_pct', 'Deduction Cap (% of Own Score)', '50',
+          "Caps how much of one agent's own gross score the penalty can ever take, so a bad team month can't wipe out a strong individual producer. Example: at 50%, an agent never loses more than half of what they personally earned.")}
+      </div>
+      <div class="score-cat-row" style="margin-top:12px;">
+        <label><input type="checkbox" id="sc-service_coverage_enabled" ${serviceCoverageOn ? 'checked' : ''} onchange="toggleServiceCoverageFields(this.checked)">
+          Also hold the service team accountable to a coverage target — without this, service is fully exempt from any deduction above.</label>
+      </div>
+      <div id="service-coverage-fields" style="display:${serviceCoverageOn ? '' : 'none'};margin-top:6px;">
+        <div class="score-grid-inner">
+          ${hrField('service_coverage_target_pct', 'Service Target (% of Total Call Volume)', '25',
+            'The share of ALL inbound calls (both teams combined) your service team should collectively be answering. Set this based on your own staffing/volume, not a universal benchmark.')}
+          ${hrField('service_coverage_penalty_per_pt', 'Points per % Shortfall (Service)', '10',
+            "How many points a service agent loses per 1 percentage point they personally fall below their own fair share (target ÷ number of service agents) — only once the TEAM as a whole misses its target.")}
+          ${hrField('service_coverage_penalty_cap_pct', 'Deduction Cap (% of Own Score, Service)', '50',
+            'Same protection as the sales cap above, applied to each service agent.')}
+        </div>
+        <div style="font-size:11px;color:var(--muted);line-height:1.5;margin-top:4px;">
+          Example: 2,000 total calls, 90% service target (1,800 calls), team actually answers 80% (1,600). With 3 service agents, each has a 30% fair share. An agent who personally answered 70% of total volume owes nothing — they're far above their fair share. Two agents who together only covered 10% (5% each) each owe a penalty on their 25-point personal shortfall (30% fair share − 5% contributed), not an equal split of the team's 10-point gap. Nobody on service is penalized at all if the team hits 90%+, regardless of how contributions split.
+        </div>
+      </div>
+    </div>`;
+  toggleHandleRateFields(handleRateOn);
+  toggleServiceCoverageFields(serviceCoverageOn);
   buildTeamToggleUI();
+}
+
+// Greys out the legacy flat Missed/Voicemail deduct fields while the handle-rate mode is
+// enabled (they're not read by calcScore in that mode, but their saved values are left
+// alone so switching back off restores the prior flat-deduction behavior unchanged).
+function toggleHandleRateFields(enabled) {
+  const box = document.getElementById('handle-rate-fields');
+  if (box) box.style.display = enabled ? '' : 'none';
+  ['missed_deduct', 'voicemail_deduct'].forEach(k => {
+    const inp = document.getElementById('sc-' + k);
+    if (inp) { inp.disabled = enabled; inp.style.opacity = enabled ? 0.4 : 1; }
+  });
+}
+
+function toggleServiceCoverageFields(enabled) {
+  const box = document.getElementById('service-coverage-fields');
+  if (box) box.style.display = enabled ? '' : 'none';
 }
 
 function buildTeamToggleUI() {

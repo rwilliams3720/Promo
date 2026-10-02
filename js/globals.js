@@ -105,6 +105,19 @@ const DEFAULT_SCORING = {
   wl:5, ul:4, term:3, health:3, auto:2, fire:2, deposit:0, other:0, other2:0, other3:0, other4:0, other5:0,
   placed_sales:8, placed_service:6, answered_sales:4, answered_service:3,
   talk_per_min:0.5, avg_min:1, missed_deduct:-2, voicemail_deduct:-1,
+  // Opt-in alternative to the flat missed_deduct/voicemail_deduct race-wide penalty above —
+  // see CLAUDE.md "Handle Rate Penalty (opt-in alternative to flat missed/voicemail deduct)".
+  // Off by default: calcScore() falls back to the original flat formula for every account
+  // that never touches this section, so this is a zero-risk addition for other tenants.
+  handle_rate_enabled:0, handle_rate_target:95, handle_rate_penalty_per_pt:20, handle_rate_penalty_cap_pct:50,
+  // Sub-feature of the above (only meaningful when handle_rate_enabled is on) — without this,
+  // service is fully exempt from any deduction. When on, service agents share a deduction only
+  // once their TEAM's share of total call volume misses service_coverage_target_pct, and each
+  // agent's own slice of that deduction scales with how far below their own "fair share" (the
+  // target divided evenly across active service agents) they personally contributed — so an
+  // agent who meets/beats their fair share owes nothing even if teammates are dragging the team
+  // average down. See CLAUDE.md "Handle Rate Penalty" for the worked example.
+  service_coverage_enabled:0, service_coverage_target_pct:25, service_coverage_penalty_per_pt:10, service_coverage_penalty_cap_pct:50,
   wl_enabled:1, ul_enabled:1, term_enabled:1, health_enabled:1, auto_enabled:1, fire_enabled:1,
   deposit_enabled:0, other_enabled:0, other2_enabled:0, other3_enabled:0, other4_enabled:0, other5_enabled:0,
 };

@@ -11,6 +11,10 @@ const DEFAULT_SCORING = {
   wl:5, ul:4, term:3, health:3, auto:2, fire:2,
   placed_sales:8, placed_service:6, answered_sales:4, answered_service:3,
   talk_per_min:0.5, avg_min:1, missed_deduct:-2, voicemail_deduct:-1,
+  // Mirrors js/globals.js DEFAULT_SCORING — see CLAUDE.md "Handle Rate Penalty". Off by
+  // default; calcScore() below falls back to the flat deduction when unset.
+  handle_rate_enabled:0, handle_rate_target:95, handle_rate_penalty_per_pt:20, handle_rate_penalty_cap_pct:50,
+  service_coverage_enabled:0, service_coverage_target_pct:25, service_coverage_penalty_per_pt:10, service_coverage_penalty_cap_pct:50,
 };
 
 const FULL_TO_ABBR = {
@@ -85,7 +89,11 @@ async function fetchScoringConfig(userId) {
   return scoring;
 }
 
-function calcScore(row, scoring, raceWideMissed, raceWideVoicemail) {
+// `teamAnswered`/`serviceAnswered`/`serviceCount` mirror js/race.js's calcScore — totals across
+// every agent for the same period (service-restricted for the latter two), needed only for the
+// handle-rate/service-coverage branches. See CLAUDE.md "Handle Rate Penalty". Callers must pass
+// these over the same population raceWideMissed/raceWideVoicemail already describe.
+function calcScore(row, scoring, raceWideMissed, raceWideVoicemail, teamAnswered, serviceAnswered, serviceCount) {
   const isService = (row.team || 'sales') === 'service';
   const talkMin   = row.talk_min || 0;
   const placed    = row.placed   || 0;
@@ -99,12 +107,52 @@ function calcScore(row, scoring, raceWideMissed, raceWideVoicemail) {
   const answeredPts = answered * (isService ? scoring.answered_service : scoring.answered_sales);
   const talkPts     = talkMin  * scoring.talk_per_min + avgMin * scoring.avg_min;
 
-  const gross  = Math.round(polPts + placedPts + answeredPts + talkPts);
-  const deduct = Math.round(
-    (raceWideMissed    || 0) * (scoring.missed_deduct    || 0) +
-    (raceWideVoicemail || 0) * (scoring.voicemail_deduct || 0)
-  );
+  const gross = Math.round(polPts + placedPts + answeredPts + talkPts);
+
+  let deduct;
+  if (scoring.handle_rate_enabled) {
+    const totalAnswered = teamAnswered || 0;
+    const totalCalls    = totalAnswered + (raceWideMissed||0) + (raceWideVoicemail||0);
+    if (isService) {
+      deduct = calcServiceCoverageDeduct(row, scoring, gross, totalCalls, serviceAnswered, serviceCount);
+    } else {
+      const handleRate = totalCalls > 0 ? (totalAnswered / totalCalls * 100) : 100;
+      const shortfall   = Math.max(0, (scoring.handle_rate_target || 0) - handleRate);
+      if (shortfall <= 0) {
+        deduct = 0;
+      } else {
+        const raw = -Math.round(shortfall * (scoring.handle_rate_penalty_per_pt || 0));
+        const cap = -Math.round(gross * (scoring.handle_rate_penalty_cap_pct || 0) / 100);
+        deduct = Math.max(raw, cap);
+      }
+    }
+  } else {
+    deduct = Math.round(
+      (raceWideMissed    || 0) * (scoring.missed_deduct    || 0) +
+      (raceWideVoicemail || 0) * (scoring.voicemail_deduct || 0)
+    );
+  }
   return Math.max(0, gross + deduct);
+}
+
+// Mirrors js/race.js's calcServiceCoverageDeduct exactly — see CLAUDE.md "Handle Rate Penalty"
+// for the worked example. Kept as a duplicate here rather than a shared import since this file
+// has no access to the client bundle (same existing duplication pattern calcScore itself uses).
+function calcServiceCoverageDeduct(row, scoring, gross, totalCalls, serviceAnswered, serviceCount) {
+  if (!scoring.service_coverage_enabled) return 0;
+  const n = serviceCount || 0;
+  if (n <= 0) return 0;
+  const targetPct      = scoring.service_coverage_target_pct || 0;
+  const teamServicePct = totalCalls > 0 ? ((serviceAnswered || 0) / totalCalls * 100) : 0;
+  const teamShortfall  = Math.max(0, targetPct - teamServicePct);
+  if (teamShortfall <= 0) return 0;
+  const fairSharePct = targetPct / n;
+  const myContribPct = totalCalls > 0 ? ((row.answered || 0) / totalCalls * 100) : 0;
+  const myShortfall  = Math.max(0, fairSharePct - myContribPct);
+  if (myShortfall <= 0) return 0;
+  const raw = -Math.round(myShortfall * (scoring.service_coverage_penalty_per_pt || 0));
+  const cap = -Math.round(gross * (scoring.service_coverage_penalty_cap_pct || 0) / 100);
+  return Math.max(raw, cap);
 }
 
 function rankBy(ids, scoreFn) {
@@ -442,6 +490,30 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
   const raceWideMissed = missedRes.count || 0;
   const raceWideVm     = vmRes.count     || 0;
 
+  // Team-wide answered totals for calcScore's handle-rate/service-coverage branches — see
+  // CLAUDE.md "Handle Rate Penalty". Live totals span every current roster agent (raceRes.data,
+  // unfiltered — same population raceWideMissed/raceWideVm already describe); the historical
+  // maps sum every agent's historical_wins row per month so a past month's numbers are computed
+  // from that month's own full roster, not just whichever agents are selected for this run.
+  const teamAnsweredLive    = (raceRes.data || []).reduce((s, r) => s + (r.answered || 0), 0);
+  const serviceLive         = (raceRes.data || []).filter(r => r.team === 'service');
+  const serviceAnsweredLive = serviceLive.reduce((s, r) => s + (r.answered || 0), 0);
+  const serviceCountLive    = serviceLive.length;
+  const teamAnsweredByMonth = {};
+  const serviceAnsweredByMonth = {};
+  const serviceCountByMonth    = {};
+  const serviceAgentsSeenByMonth = {}; // month -> Set(agent_id), so each service agent counts once per month
+  for (const r of (histWinsRes.data || [])) {
+    const m = normMonth(r.month);
+    teamAnsweredByMonth[m] = (teamAnsweredByMonth[m] || 0) + (r.answered || 0);
+    if (r.team === 'service') {
+      serviceAnsweredByMonth[m] = (serviceAnsweredByMonth[m] || 0) + (r.answered || 0);
+      if (!serviceAgentsSeenByMonth[m]) serviceAgentsSeenByMonth[m] = new Set();
+      if (r.agent_id) serviceAgentsSeenByMonth[m].add(r.agent_id);
+    }
+  }
+  for (const m of Object.keys(serviceAgentsSeenByMonth)) serviceCountByMonth[m] = serviceAgentsSeenByMonth[m].size;
+
   // Fetch premium data from sales_log if has_sales_addon
   let premByAgentMonth = {}; // agent_id → { monthKey → total }
   let premByAgentMtd   = {}; // agent_id → mtd total
@@ -567,7 +639,7 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
 
     const months = histRows.map(r => {
       const policies     = (r.wl||0)+(r.ul||0)+(r.term||0)+(r.health||0)+(r.auto||0)+(r.fire||0);
-      const score        = calcScore(r, scoring, r.missed||0, r.voicemail||0);
+      const score        = calcScore(r, scoring, r.missed||0, r.voicemail||0, teamAnsweredByMonth[r.normMonth] || 0, serviceAnsweredByMonth[r.normMonth] || 0, serviceCountByMonth[r.normMonth] || 0);
       const premium      = premByAgentMonth[agentId]?.[r.normMonth] ?? null;
       const hours        = agHours[r.normMonth] ?? null;
       const compensation = agComp[r.normMonth]  ?? null;
@@ -602,7 +674,7 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
     let current = null;
     if (rd) {
       const curPol   = (rd.wl||0)+(rd.ul||0)+(rd.term||0)+(rd.health||0)+(rd.auto||0)+(rd.fire||0);
-      const curScore = calcScore({ ...rd }, scoring, raceWideMissed, raceWideVm);
+      const curScore = calcScore({ ...rd }, scoring, raceWideMissed, raceWideVm, teamAnsweredLive, serviceAnsweredLive, serviceCountLive);
       current = {
         placed:       rd.placed   || 0,
         answered:     rd.answered || 0,

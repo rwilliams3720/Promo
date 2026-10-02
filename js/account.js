@@ -807,8 +807,16 @@ async function confirmArchive() {
               : rawMonth;
 
   if (rdRows?.length) {
+    // Same population calcScore's handle-rate/service-coverage branches need to match the live
+    // board's math — see CLAUDE.md "Handle Rate Penalty". Unfiltered rdRows, matching this
+    // function's other team-wide sums (placed/answered/talkMin below) rather than an
+    // active-roster-only filter.
+    const teamAnswered    = rdRows.reduce((s, ag) => s + (ag.answered||0), 0);
+    const serviceRows     = rdRows.filter(ag => ag.team === 'service');
+    const serviceAnswered = serviceRows.reduce((s, ag) => s + (ag.answered||0), 0);
+    const serviceCount    = serviceRows.length;
     const agents = rdRows.map((ag) => {
-      const sc = calcScore(ag);
+      const sc = calcScore(ag, teamAnswered, serviceAnswered, serviceCount);
       return { ...ag, ...sc };
     }).sort((a,b) => b.total - a.total);
 
