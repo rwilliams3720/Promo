@@ -254,8 +254,14 @@ async function checkAccountAndShow(session) {
       } catch(_) { /* managed_by column may not exist yet */ }
     }
 
-    // Load add-on config for owners, captain/chief_officer members, and self-reporting members
-    if (!_isMember || ['captain', 'chief_officer'].includes(_memberRole) || _selfReportConfig.activities_enabled || _selfReportConfig.sales_enabled) {
+    // Load add-on config for owners, captain/chief_officer members, self-reporting
+    // members, and commissions members — a bosun/custom member with commissions access
+    // but no self-reporting enabled still needs _agentRoster/_commissionStructures
+    // populated for their own Commissions tab's What-If Calculator to find their
+    // assigned structure(s); without _hasCommissionsAddon here this fetch never even
+    // ran for them (fixed 2026-10-07, see matching server-side gate in
+    // api/checklist-config.js).
+    if (!_isMember || ['captain', 'chief_officer'].includes(_memberRole) || _selfReportConfig.activities_enabled || _selfReportConfig.sales_enabled || _hasCommissionsAddon) {
       await loadAddonConfig().catch(e => console.error('loadAddonConfig:', e));
     }
     // Goals load for every user — bosun/custom members need to see public goals on race tab

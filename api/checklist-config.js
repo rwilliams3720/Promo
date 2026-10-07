@@ -144,11 +144,18 @@ export default async function handler(req, res) {
     const isCapOrCO   = ['captain', 'chief_officer'].includes(member.role);
     const selfReport  = ownerAcct.self_report_config || {};
     // Bosun/custom members get read-only access when the owner has enabled self-reporting
-    // for them — loadAddonConfig() (js/addons.js) needs this GET to populate
-    // _selfReportConfig, _activityTypes, and _agentRoster for the Manage tab self-report
-    // forms. Without this, activities_enabled/sales_enabled bosuns see the self-report
-    // panel but it has no activity types or agents to submit against.
-    if (!isCapOrCO && !selfReport.activities_enabled && !selfReport.sales_enabled) {
+    // for them, OR when the account has the commissions add-on — loadAddonConfig()
+    // (js/addons.js) needs this GET to populate _selfReportConfig, _activityTypes, and
+    // _agentRoster/_commissionStructures. Without the commissions-addon branch, a bosun/
+    // custom member with commissions access but no self-reporting enabled got a 403 here
+    // (loadAddonConfig()'s fetch fails silently, `if (!r.ok) return;`), leaving
+    // _agentRoster/_commissionStructures empty — so their own Commissions tab's What-If
+    // Calculator could never find their assigned structure(s) and always showed "No
+    // commission structure assigned yet," even though api/commissions.js itself already
+    // grants them access to their own commission data via the addon flag alone (fixed
+    // 2026-10-07, reported as "what-if calculator doesn't give access to assigned
+    // compensation scenarios").
+    if (!isCapOrCO && !selfReport.activities_enabled && !selfReport.sales_enabled && !ownerAcct.has_commissions_addon) {
       return res.status(403).json({ error: 'Owner access required' });
     }
     acct = ownerAcct;

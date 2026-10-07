@@ -990,6 +990,7 @@ async function setRaceMonth() {
     msg.style.color = updateFailures.length ? 'var(--danger)' : 'var(--accent)';
   }
   await loadRaceData();
+  loadAgentGoals().catch(() => {});
 }
 
 // Rebuilds race_data sales totals from sales_log for the current race month.
@@ -1058,6 +1059,7 @@ async function recalcSales(btn) {
       msg.style.color = updateFailures.length ? 'var(--danger)' : 'var(--accent)';
     }
     await loadRaceData();
+    loadAgentGoals().catch(() => {});
   } catch(e) {
     if (msg) { msg.textContent = e.message; msg.style.color = 'var(--danger)'; }
   } finally {

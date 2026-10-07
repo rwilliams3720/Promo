@@ -226,7 +226,12 @@ async function manualSubmitAll(btn) {
     msg.style.color = 'var(--danger)';
     msg.textContent += ` Teammate entry failed to save for: ${teammateFailures.join(', ')} — add their half manually from the Sales Log.`;
   }
-  if (saved)   { loadRaceData().catch(() => {}); manualAddRow(); }
+  // Refresh goal actuals too, not just race_data — _agentGoals (Race tab quick-view pill,
+  // Agent Roster card goal pill) otherwise stays frozen at whatever it was at login until
+  // the Goals tab happens to be reloaded on the current calendar month, making a just-added
+  // sale look like it "isn't updating" a longer-period (quarterly/semi-annual/annual) goal
+  // that isn't checked via the Goals tab itself (fixed 2026-10-07).
+  if (saved)   { loadRaceData().catch(() => {}); loadAgentGoals().catch(() => {}); manualAddRow(); }
 }
 
 // ── Manual entry helpers ──────────────────────────────────────────────────────
@@ -431,6 +436,9 @@ async function saveSalesLogRow(h, btn) {
       await new Promise(resolve => setTimeout(resolve, 3500));
     }
     await loadSalesLog(); // re-fetch so edited data reflects in _salesLogEntries
+    // Refresh goal actuals too — see the matching note in manualSubmitAll for why this
+    // otherwise leaves a longer-period goal's pill looking frozen after an edit.
+    loadAgentGoals().catch(() => {});
   } catch(err) {
     showInlineMsg('sl-msg-' + h, err.message, 'err');
   } finally { btn.disabled = false; btn.textContent = 'Save'; }
@@ -444,7 +452,7 @@ async function deleteSalesLogRow(h, btn) {
   btn.disabled = true;
   try {
     const r = await fetch('/api/sales?hash=' + encodeURIComponent(h), { method: 'DELETE', headers: authHeaders() });
-    if (r.ok) { await loadSalesLog(); loadRaceData().catch(() => {}); }
+    if (r.ok) { await loadSalesLog(); loadRaceData().catch(() => {}); loadAgentGoals().catch(() => {}); }
     else { const d = await r.json(); showInlineMsg('sl-msg-' + h, d.error || 'Delete failed', 'err'); btn.disabled = false; }
   } catch(err) { btn.disabled = false; }
 }

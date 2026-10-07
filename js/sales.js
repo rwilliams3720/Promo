@@ -2896,15 +2896,25 @@ function calcWhatIf() {
   const resultEl = document.getElementById('wi-result');
   if (!resultEl) return;
 
-  let structure = null;
-  if (_commissionStructures.length > 0) structure = _commissionStructures[0];
+  // Must use the viewing member's OWN assigned compensation structure(s) — not just
+  // whatever happens to be first in the account-wide list. Mirrors getStructureList()
+  // in api/_lib/commission-calc.js: the junction table (multi-structure) takes
+  // priority, falling back to the legacy single commission_structure_id field only
+  // when the agent has no junction rows at all.
+  const agent = _agentRoster.find(a => a.agent_id === _memberAgentId);
+  const assignedIds = agent?.commission_structure_ids?.length
+    ? agent.commission_structure_ids
+    : (agent?.commission_structure_id ? [agent.commission_structure_id] : []);
+  const structures = assignedIds.map(id => _commissionStructures.find(s => s.id === id)).filter(Boolean);
 
-  if (!structure) {
+  if (!structures.length) {
     resultEl.style.display = '';
     resultEl.style.color = 'var(--muted)';
     resultEl.innerHTML = 'No commission structure assigned yet.';
     return;
   }
+
+  const overrides = agent?.commission_product_overrides || {};
 
   const rows = document.querySelectorAll('.wi-product-row');
   if (!rows.length) {
@@ -2930,14 +2940,24 @@ function calcWhatIf() {
   const fmt = n => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   let grandTotal = 0;
   const breakdown = [];
+  const usedStructureNames = new Set();
 
   for (const [product, totalPrem] of Object.entries(premByProduct)) {
-    const share      = totalPrem * ratio;
-    const rateConfig = structure.rates?.[product];
-    let commission   = 0;
-    if (rateConfig && rateConfig.type && rateConfig.type !== 'none') {
-      if (rateConfig.type === 'percent') commission = share * (rateConfig.rate / 100);
-      else commission = (rateConfig.rate || 0) * (qtyByProduct[product] || 1);
+    const share = totalPrem * ratio;
+    // A product override restricts this product to one specific assigned structure;
+    // unset sums every assigned structure that rates it — same default-sum behavior
+    // as the real earned/chargeback calculation.
+    const overrideId  = overrides[product];
+    const applicable  = (overrideId && overrideId !== 'both')
+      ? structures.filter(s => s.id === overrideId)
+      : structures;
+    let commission = 0;
+    for (const structure of applicable) {
+      const rateConfig = structure.rates?.[product];
+      if (!rateConfig || !rateConfig.type || rateConfig.type === 'none') continue;
+      if (rateConfig.type === 'percent') commission += share * (rateConfig.rate / 100);
+      else commission += (rateConfig.rate || 0) * (qtyByProduct[product] || 1);
+      usedStructureNames.add(structure.name);
     }
     grandTotal += commission;
     breakdown.push({ product, totalPrem, share, commission });
@@ -2951,12 +2971,13 @@ function calcWhatIf() {
       ${escHtml(productLabel)}: $${fmt(b.totalPrem)} prem${shareStr} → <span style="color:var(--accent2);">$${fmt(b.commission)}</span></div>`;
   }).join('');
 
+  const structureLabel = [...usedStructureNames].join(', ') || structures.map(s => s.name).join(', ');
   resultEl.style.display = '';
   resultEl.style.color   = 'var(--accent2)';
   resultEl.innerHTML = `Estimated: <strong>$${fmt(grandTotal)}</strong>${splitNote}
     <div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border2);">
       ${breakdownHtml}
-      <div style="font-size:11px;color:var(--muted);margin-top:5px;">Based on "${escHtml(structure.name)}"</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:5px;">Based on "${escHtml(structureLabel)}"</div>
     </div>`;
 }
 
