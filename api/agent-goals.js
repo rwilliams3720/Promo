@@ -111,6 +111,32 @@ function monthsInRange(pStart, pEnd) {
   return months;
 }
 
+// Paginates around Supabase's default 1000-row cap, ordering by a primary-key column so
+// page boundaries are stable (an unordered multi-page fetch can otherwise return a
+// duplicate row on two pages or skip one entirely — see CLAUDE.md "Pagination bug"). Same
+// loop shape as computeCallMetricActuals's own call_log pagination below, generalized for
+// any (table, date column) pair this file queries. `extra`, when given, adds further
+// filters (e.g. a status check) to each page's query.
+async function fetchAllRows(table, columns, userId, dateCol, fromDate, toDate, extra) {
+  const PAGE = 1000;
+  const orderCol = table === 'sales_log' ? 'hash' : 'id';
+  const rows = [];
+  let from = 0;
+  while (true) {
+    let q = supabase.from(table).select(columns).eq('user_id', userId)
+      .gte(dateCol, fromDate).lte(dateCol, toDate)
+      .order(orderCol, { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (extra) q = extra(q);
+    const { data, error } = await q;
+    if (error || !data || !data.length) break;
+    rows.push(...data);
+    if (data.length < PAGE) break;
+    from += PAGE;
+  }
+  return rows;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
@@ -409,22 +435,25 @@ async function computeActuals(goals, dataUserId, refDateStr, timezone) {
     }
   }
 
-  const [salesRes, actRes] = await Promise.all([
-    supabase.from('sales_log')
-      .select('agent_id, product, written_premium, sale_date, is_cancelled, sale_weight')
-      .eq('user_id', dataUserId)
-      .gte('sale_date', minStart)
-      .lte('sale_date', maxEnd),
-    supabase.from('bonus_activities')
-      .select('agent_id, activity_type_id, count, activity_date')
-      .eq('user_id', dataUserId)
-      .eq('status', 'approved')
-      .gte('activity_date', minStart)
-      .lte('activity_date', maxEnd),
+  // Supabase silently caps an unpaginated .select() at 1000 rows — minStart/maxEnd is the
+  // UNION of every goal's period in this batch (typically "every goal on the account," not
+  // just the one being viewed), so a single annual or whole-year goal anywhere in the list
+  // widens the window enough that an active account's true row count can exceed 1000 even
+  // when the goal actually being checked only covers a few months. Without an explicit
+  // order, which 1000 rows come back is also non-deterministic, so the truncation can drop
+  // a recent sale for one goal while leaving an older one in. Same bug class already fixed
+  // for call_log/sales_log pagination elsewhere in this app (see CLAUDE.md "Pagination bug")
+  // — this exact function had never gotten the same treatment. Reported as "semi-annual
+  // goals assigned are not updating new production" (fixed 2026-10-07): a real semi-annual
+  // combined-product goal truncated from a true 3.5 down to 2 once the account's
+  // whole-year sales_log row count (1188, driven by an unrelated annual goal in the same
+  // batch) crossed the 1000-row cap.
+  const [salesRowsAll, actRows] = await Promise.all([
+    fetchAllRows('sales_log', 'agent_id, product, written_premium, sale_date, is_cancelled, sale_weight', dataUserId, 'sale_date', minStart, maxEnd),
+    fetchAllRows('bonus_activities', 'agent_id, activity_type_id, count, activity_date', dataUserId, 'activity_date', minStart, maxEnd, q => q.eq('status', 'approved')),
   ]);
 
-  const salesRows = (salesRes.data || []).filter(s => !s.is_cancelled);
-  const actRows   = actRes.data || [];
+  const salesRows = salesRowsAll.filter(s => !s.is_cancelled);
 
   // Call-metric actuals (handle_rate/voicemail_count/missed_calls) need a
   // separate, potentially-expensive data source — only computed when at
@@ -725,14 +754,12 @@ async function attachRaiseStatus(goals, dataUserId, timezone) {
       const [locId, start, end] = key.split('|');
       const loc = locationById[locId];
       if (!loc) continue;
-      const { data: rows } = await supabase.from('sales_log')
-        .select('written_premium, sale_weight')
-        .eq('user_id', dataUserId)
-        .eq('location', loc.name)
-        .eq('is_cancelled', false)
-        .gte('sale_date', start).lte('sale_date', end);
+      // Paginated — an annual raise goal's window can span enough of a busy account's
+      // sales_log to exceed Supabase's 1000-row cap (see fetchAllRows comment above).
+      const rows = await fetchAllRows('sales_log', 'written_premium, sale_weight', dataUserId, 'sale_date', start, end,
+        q => q.eq('location', loc.name).eq('is_cancelled', false));
       let count = 0, premium = 0;
-      for (const r of (rows || [])) {
+      for (const r of rows) {
         count   += r.sale_weight ?? 1;
         premium += parseFloat(r.written_premium) || 0;
       }
@@ -764,13 +791,12 @@ async function attachRaiseStatus(goals, dataUserId, timezone) {
     const uniquePeriods = [...new Set(allLocGoals.map(g => { const p = periodOf(g); return `${p.start}|${p.end}`; }))];
     for (const key of uniquePeriods) {
       const [start, end] = key.split('|');
-      const { data: rows } = await supabase.from('sales_log')
-        .select('written_premium, sale_weight')
-        .eq('user_id', dataUserId)
-        .eq('is_cancelled', false)
-        .gte('sale_date', start).lte('sale_date', end);
+      // Paginated — "All Locations" has no per-location filter, so this is the query
+      // most likely of all of them to cross the 1000-row cap on a busy account's year.
+      const rows = await fetchAllRows('sales_log', 'written_premium, sale_weight', dataUserId, 'sale_date', start, end,
+        q => q.eq('is_cancelled', false));
       let count = 0, premium = 0;
-      for (const r of (rows || [])) {
+      for (const r of rows) {
         count   += r.sale_weight ?? 1;
         premium += parseFloat(r.written_premium) || 0;
       }
