@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
 import { verifyChartParams } from './_lib/chart-sign.js';
 import { renderChartPng, CHART_DATASETS } from './_lib/chart-render.js';
+import { fetchAllRows } from './_lib/paginate.js';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -165,13 +166,16 @@ export default async function handler(req, res) {
         ? `${dt.getUTCFullYear()}-01-01`
         : `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-01`;
 
-      const { data: rows } = await supabase
-        .from('sales_log')
+      // Paginated, not `.limit(5000)` — a higher .limit() doesn't raise Supabase's hard
+      // 1000-row default cap (the exact reason the trend query above this one already
+      // switched to real pagination); .limit(5000) here was equally ineffective, just never
+      // actually hit for a single agent's YTD sales until now (fixed 2026-10-15, see
+      // CLAUDE.md "Pagination bug").
+      const rows = await fetchAllRows(supabase, 'sales_log', 'hash', q => q
         .select('product, written_premium, sale_weight')
         .eq('user_id', u).eq('agent_id', a)
         .gte('sale_date', periodStart).lte('sale_date', date)
-        .eq('is_cancelled', false)
-        .limit(5000);
+        .eq('is_cancelled', false));
 
       const totals = {};
       for (const p of SALES_PRODUCTS) totals[p] = 0;

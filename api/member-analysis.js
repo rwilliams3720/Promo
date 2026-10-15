@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@supabase/supabase-js';
+import { fetchAllRows } from './_lib/paginate.js';
 
 const supabase  = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -411,15 +412,17 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
   let customMetricsByAgent = {};        // agentId -> [{ name, description, direction, count }] — every selected agent (0 if none), for the AI prompt so Claude can compare across the team
   let customMetricsVisibleByAgent = {}; // agentId -> [{ name, count }] — only agents this type is actually assigned to, for the stats-line display (an agent never given the counter shouldn't show a "0" for it)
   if (customTypes.length) {
-    const { data: customActs } = await supabase
-      .from('bonus_activities')
+    // Paginated — quick-count rows insert one per agent per day (see CLAUDE.md "Quick-Count
+    // button"), which can accumulate past Supabase's 1000-row cap for a busy account even
+    // within a single month (fixed 2026-10-15, see "Pagination bug").
+    const customActs = await fetchAllRows(supabase, 'bonus_activities', 'id', q => q
       .select('agent_id,activity_type_id,count')
       .eq('user_id', dataUserId)
       .eq('status', 'approved')
       .in('agent_id', selectedIds)
       .in('activity_type_id', customTypes.map(t => t.id))
       .gte('activity_date', mtdStart)
-      .lte('activity_date', today);
+      .lte('activity_date', today));
     for (const t of customTypes) {
       const total = {};
       for (const row of (customActs || [])) {
@@ -456,12 +459,14 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
     if (ranges.length) {
       const minStart = ranges.reduce((mn, r) => (r.start < mn ? r.start : mn), ranges[0].start);
       const maxEnd   = ranges.reduce((mx, r) => (r.end   > mx ? r.end   : mx), ranges[0].end);
-      const { data: histActs } = await supabase
-        .from('bonus_activities')
+      // Paginated — this spans every archived month in historical_wins, easily enough
+      // volume (especially with daily quick-count rows) to cross the 1000-row cap (fixed
+      // 2026-10-15, see CLAUDE.md "Pagination bug").
+      const histActs = await fetchAllRows(supabase, 'bonus_activities', 'id', q => q
         .select('agent_id,activity_type_id,count,activity_date')
         .eq('user_id', dataUserId).eq('status', 'approved')
         .in('agent_id', selectedIds).in('activity_type_id', customTypes.map(t => t.id))
-        .gte('activity_date', minStart).lte('activity_date', maxEnd);
+        .gte('activity_date', minStart).lte('activity_date', maxEnd));
       const typeById = {};
       for (const t of customTypes) typeById[t.id] = t;
       for (const row of (histActs || [])) {
@@ -518,15 +523,17 @@ async function generateAnalysis(dataUserId, acct, selectedIds, selectedAgentsRaw
   let premByAgentMonth = {}; // agent_id → { monthKey → total }
   let premByAgentMtd   = {}; // agent_id → mtd total
   if (acct.has_sales_addon) {
-    const { data: premRows } = await supabase
-      .from('sales_log')
+    // Paginated — spans from ytdStart to "now" with no upper bound, the same shape already
+    // confirmed to exceed 1000 rows for a busy account's year (fixed 2026-10-15, see
+    // CLAUDE.md "Pagination bug").
+    const premRows = await fetchAllRows(supabase, 'sales_log', 'hash', q => q
       .select('agent_id,written_premium,sale_date')
       .eq('user_id', dataUserId)
       .in('agent_id', selectedIds)
       .gte('sale_date', ytdStart)
-      .not('written_premium', 'is', null);
+      .not('written_premium', 'is', null));
 
-    for (const row of (premRows || [])) {
+    for (const row of premRows) {
       if (!row.agent_id) continue;
       const amt    = parseFloat(row.written_premium) || 0;
       if (!amt) continue;

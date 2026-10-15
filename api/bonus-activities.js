@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { fetchAllRows } from './_lib/paginate.js';
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
@@ -121,14 +122,17 @@ export default async function handler(req, res) {
 
     if (req.query.resource === 'pending') {
       if (!ctx.canApprove) return res.status(403).json({ error: 'Approver access required' });
-      const { data, error } = await supabase
-        .from('bonus_activities')
-        .select('id, activity_type_id, agent_id, activity_date, count, notes, status, approval_note, submitted_by')
-        .eq('user_id', dataUserId)
-        .eq('status', 'pending')
-        .order('created_at', { ascending: true });
-      if (error) return res.status(500).json({ error: error.message });
-      return res.status(200).json(data || []);
+      let data;
+      try {
+        data = await fetchAllRows(supabase, 'bonus_activities', 'id', q => q
+          .select('id, activity_type_id, agent_id, activity_date, count, notes, status, approval_note, submitted_by, created_at')
+          .eq('user_id', dataUserId)
+          .eq('status', 'pending'));
+      } catch (error) {
+        return res.status(500).json({ error: error.message });
+      }
+      data.sort((a, b) => (a.created_at > b.created_at ? 1 : -1));
+      return res.status(200).json(data.map(({ created_at, ...rest }) => rest));
     }
 
     const month   = parseInt(req.query.month) || new Date().getMonth() + 1;
@@ -137,21 +141,24 @@ export default async function handler(req, res) {
     const lastDay = new Date(year, month, 0).getDate();
     const to      = `${year}-${String(month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
 
-    let q = supabase.from('bonus_activities')
-      .select('id, activity_type_id, agent_id, activity_date, count, notes, status')
-      .eq('user_id', dataUserId)
-      .gte('activity_date', from)
-      .lte('activity_date', to)
-      .order('activity_date', { ascending: false });
-    // Gated on role (canApprove), not on whether roster_agent_id happens to be set — used
-    // to fail OPEN: a bosun/custom member not yet linked to a roster agent skipped this
-    // filter entirely and got every agent's bonus activities. Fail closed instead (fixed
-    // 2026-08-05, same root cause as api/commissions.js and api/agent-goals.js).
-    if (ctx.isMember && !ctx.canApprove) {
-      q = q.eq('agent_id', ctx.memberAgentId || '__unlinked_member__');
+    let entries;
+    try {
+      entries = await fetchAllRows(supabase, 'bonus_activities', 'id', q => {
+        let qq = q.select('id, activity_type_id, agent_id, activity_date, count, notes, status')
+          .eq('user_id', dataUserId)
+          .gte('activity_date', from)
+          .lte('activity_date', to);
+        // Gated on role (canApprove), not on whether roster_agent_id happens to be set —
+        // used to fail OPEN: a bosun/custom member not yet linked to a roster agent skipped
+        // this filter entirely and got every agent's bonus activities. Fail closed instead
+        // (fixed 2026-08-05, same root cause as api/commissions.js and api/agent-goals.js).
+        if (ctx.isMember && !ctx.canApprove) qq = qq.eq('agent_id', ctx.memberAgentId || '__unlinked_member__');
+        return qq;
+      });
+    } catch (eErr) {
+      return res.status(500).json({ error: eErr.message });
     }
-    const { data: entries, error: eErr } = await q;
-    if (eErr) return res.status(500).json({ error: eErr.message });
+    entries.sort((a, b) => (a.activity_date < b.activity_date ? 1 : -1));
 
     // Auto-aggregate call-type activities from call_log
     const { data: callTypes } = await supabase
@@ -163,12 +170,11 @@ export default async function handler(req, res) {
 
     const callTotals = [];
     if (callTypes?.length) {
-      const { data: calls } = await supabase
-        .from('call_log')
+      const calls = await fetchAllRows(supabase, 'call_log', 'hash', q => q
         .select('agent_id, disposition')
         .eq('user_id', dataUserId)
         .gte('call_dt', from)
-        .lte('call_dt', to);
+        .lte('call_dt', to));
 
       for (const ct of callTypes) {
         const byAgent = {};

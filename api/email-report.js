@@ -3,6 +3,7 @@ import { Resend } from 'resend';
 import crypto from 'crypto';
 import { signChartParams } from './_lib/chart-sign.js';
 import { CHART_DATASETS } from './_lib/chart-render.js';
+import { fetchAllRows } from './_lib/paginate.js';
 
 const BASE_URL = 'https://the-boat-race.com';
 
@@ -202,13 +203,21 @@ async function buildReport(userId, dateStr, dateLabel, acct) {
     supabase.from('sales_log')
       .select('agent_id,product,sale_weight')
       .eq('user_id', userId).eq('sale_date', dateStr).eq('is_cancelled', false),
+    // Paginated — MTD is low-risk but YTD can span a full year, and this exact account
+    // already hit 1255 sales_log rows in one year, well past Supabase's 1000-row default
+    // cap (see CLAUDE.md "Pagination bug", fixed 2026-10-15). Falls back to an empty array
+    // on error, same as the original query's unchecked `.data` access did.
     isPremium
-      ? supabase.from('sales_log').select('agent_id,product,written_premium,sale_weight')
-          .eq('user_id', userId).gte('sale_date', mtdStart).lte('sale_date', dateStr).eq('is_cancelled', false)
+      ? fetchAllRows(supabase, 'sales_log', 'hash', q => q
+          .select('agent_id,product,written_premium,sale_weight')
+          .eq('user_id', userId).gte('sale_date', mtdStart).lte('sale_date', dateStr).eq('is_cancelled', false))
+          .then(data => ({ data })).catch(() => ({ data: [] }))
       : Promise.resolve({ data: null }),
     isPremium
-      ? supabase.from('sales_log').select('agent_id,product,written_premium,sale_weight')
-          .eq('user_id', userId).gte('sale_date', ytdStart).lte('sale_date', dateStr).eq('is_cancelled', false)
+      ? fetchAllRows(supabase, 'sales_log', 'hash', q => q
+          .select('agent_id,product,written_premium,sale_weight')
+          .eq('user_id', userId).gte('sale_date', ytdStart).lte('sale_date', dateStr).eq('is_cancelled', false))
+          .then(data => ({ data })).catch(() => ({ data: [] }))
       : Promise.resolve({ data: null }),
     supabase.from('race_data').select('agent_id,name,team').eq('user_id', userId),
     supabase.from('agent_roster').select('agent_id,name').eq('user_id', userId).eq('active', true),

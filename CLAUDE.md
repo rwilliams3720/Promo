@@ -1459,6 +1459,28 @@ This is the **4th** independently-discovered instance of the exact same Supabase
 
 **Takeaway, reinforcing the one already logged above**: four separate files have now independently hit this same unpaginated-`sales_log`/`call_log`/`bonus_activities`-query mistake, each caught only because that file's specific symptom was being actively chased. Before trusting any "this file doesn't have the bug" assumption, grep the actual file in question for `.from('sales_log')` / `.from('call_log')` / `.from('bonus_activities')` with no accompanying `.range()` — don't rely on this list of four being exhaustive either.
 
+### Full-codebase pagination sweep — 13 more unpaginated call sites across 6 files, all fixed (2026-10-15, same day)
+
+The 4th-instance finding above prompted a proactive audit (not a user report) of every remaining `sales_log`/`call_log`/`bonus_activities` query in `api/*.js` for the same missing-`.range()` pattern. Found 13 more, across `api/commissions.js` (3), `api/bonus-activities.js` (3), `api/email-report.js` (1), `api/ai-analysis.js` (2), `api/chart.js` (1), and `api/member-analysis.js` (3) — meaning this bug class existed in **10 separate files** by the time the sweep finished, not the 4 already documented above.
+
+**New shared helper**: `api/_lib/paginate.js` exports `fetchAllRows(supabase, table, orderCol, buildQuery)` — the same loop shape every prior fix hand-rolled separately, finally factored out so a future query doesn't have to copy it again. `orderCol` is `'hash'` for `sales_log`/`call_log`, `'id'` for `bonus_activities`. Already-fixed files (`upload.js`, `api/sales.js`, `api/agent-goals.js`, `api/ai-analysis.js`'s pre-existing `fetchAllCallRows`) were **not** refactored to use it — only the 13 newly-fixed call sites do, to avoid touching already-verified code.
+
+**Verified against real production data before considering this done** — not just code review:
+- `call_log` for October 2026 alone: **3,136 rows** on the account this was tested against — over 3x the 1000-row cap. This means `api/commissions.js`'s and `api/bonus-activities.js`'s call-log-sourced bonus activity types (any `bonus_activity_types` row with `source: 'call_log'`) were **silently and non-deterministically undercounting real commission bonuses this exact month**, not a theoretical risk.
+- `sales_log` YTD: 1,256 rows (confirms the same scale already found fixing the Sales Log bug above).
+- `bonus_activities` for October 2026: 67 rows (within range today, but the same gap existed).
+- All three confirmed to return the exact true count (verified against an independent `count: 'exact'` query) once routed through `fetchAllRows`.
+
+**Where each fix landed** (all following the same pattern: pull the query out of whatever `Promise.all`/ternary it was embedded in, route it through `fetchAllRows`, preserve the original consumer-facing variable shape so no downstream code needed to change):
+- `api/commissions.js` — the main monthly `sales_log` fetch every agent's earned/bonus/chargeback figure is computed from (highest-stakes of the 13), the monthly `bonus_activities` fetch, and the monthly `call_log` fetch for call-log-sourced activity types.
+- `api/bonus-activities.js` — the monthly `bonus_activities` list (mirrors commissions.js's identical query), its paired `call_log` auto-aggregation fetch, and the `resource=pending` approvals list (no date bound at all — lowest risk of the 13, fixed anyway for consistency; needed `created_at` added to the select purely to preserve its original oldest-first sort, then stripped back out before returning so the response shape is unchanged).
+- `api/email-report.js` — the YTD sales query feeding the daily report's dollar/count tables (the MTD query alongside it was also switched over even though it was never flagged high-risk, since it's the identical shape at a smaller scale).
+- `api/ai-analysis.js` — the `checkOnly` live-chart-rebuild sales query (medium risk, scoped to one race month) and the main full-analysis path's 90-day sales query (high risk, no upper date bound).
+- `api/chart.js` — the per-agent MTD/YTD sales query, which used `.limit(5000)` under the mistaken assumption a higher limit raises Supabase's cap — it doesn't (the exact same misconception the *trend* query earlier in this same file had already been corrected for, i.e. this one got missed in that pass).
+- `api/member-analysis.js` — the MTD and full-history custom-activity `bonus_activities` queries (the history one spans every archived month, so quick-count's one-row-per-agent-per-day accumulation makes it the likeliest of the three to actually cross the cap), and the YTD `sales_log` premium query.
+
+**Takeaway, extending the "4th instance" note above**: this sweep is what "grep before declaring done" actually looks like in practice — the 4-file list was never exhaustive, and absent a shared helper nothing stopped a 14th instance from showing up the same way the first 10 did. New code touching any of these three tables should use `fetchAllRows` from the start rather than adding another one-off copy.
+
 ## Call Classification Rules (upload.js `classifyCalls`)
 
 | Condition | Category | Effect |

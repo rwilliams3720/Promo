@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
 import { calcStructurePayout, computeChargebackAmount, commissionPremiumOf, monthLabel, monthKey, computeThresholdBonus } from './_lib/commission-calc.js';
+import { fetchAllRows } from './_lib/paginate.js';
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
@@ -95,12 +96,22 @@ export default async function handler(req, res) {
     const label    = monthLabel(monthParam);
 
     // Fetch all needed data in parallel
-    // Sales: broad OR filter — sale_date OR issued_date within the month (for pay_on_issue support)
-    const [salesRes, rosterRes, structuresRes, subcatsRes, agentStructsRes, bankLedgerRes, allPaymentsRes] = await Promise.all([
-      supabase.from('sales_log')
+    // Sales: broad OR filter — sale_date OR issued_date within the month (for pay_on_issue support).
+    // Paginated — this is the single query every agent's earned/bonus/chargeback figure is
+    // computed from; an unpaginated .select() here silently truncates at Supabase's 1000-row
+    // cap for a busy multi-agent month, undercounting commissions with no error at all (see
+    // CLAUDE.md "Pagination bug", fixed 2026-10-15).
+    let sales;
+    try {
+      sales = await fetchAllRows(supabase, 'sales_log', 'hash', q => q
         .select('hash, agent_id, product, subcategory, written_premium, issued_premium, split_sale, split_ratio, sale_weight, teammate, sale_date, issued_date, is_cancelled, chargeback_date, chargeback_exempt, customer_name')
         .eq('user_id', dataUserId)
-        .or(`and(sale_date.gte.${fromDate},sale_date.lte.${toDate}),and(issued_date.gte.${fromDate},issued_date.lte.${toDate}),and(is_cancelled.eq.true,chargeback_date.gte.${fromDate},chargeback_date.lte.${toDate})`),
+        .or(`and(sale_date.gte.${fromDate},sale_date.lte.${toDate}),and(issued_date.gte.${fromDate},issued_date.lte.${toDate}),and(is_cancelled.eq.true,chargeback_date.gte.${fromDate},chargeback_date.lte.${toDate})`));
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+
+    const [rosterRes, structuresRes, subcatsRes, agentStructsRes, bankLedgerRes, allPaymentsRes] = await Promise.all([
       supabase.from('agent_roster')
         .select('agent_id, name, commission_structure_id, commission_all_must_qualify, commission_cap_total, commission_product_overrides')
         .eq('user_id', dataUserId),
@@ -126,11 +137,9 @@ export default async function handler(req, res) {
         .eq('user_id', dataUserId),
     ]);
 
-    if (salesRes.error)      return res.status(500).json({ error: salesRes.error.message });
     if (rosterRes.error)     return res.status(500).json({ error: rosterRes.error.message });
     if (structuresRes.error) return res.status(500).json({ error: structuresRes.error.message });
 
-    const sales      = salesRes.data      || [];
     const roster     = rosterRes.data     || [];
     const structures = structuresRes.data || [];
     const subcats    = subcatsRes.data    || [];
@@ -138,17 +147,22 @@ export default async function handler(req, res) {
     // Fetch bonus activity counts for the period (graceful — tables may not exist)
     const actCounts = {}; // { agentId: { typeId: count } }
     try {
-      const [actTypesRes, actEntriesRes] = await Promise.all([
+      const [actTypesRes, actEntries] = await Promise.all([
         supabase.from('bonus_activity_types').select('id, source, call_disposition').eq('user_id', dataUserId).eq('active', true),
-        supabase.from('bonus_activities').select('activity_type_id, agent_id, count').eq('user_id', dataUserId).eq('status', 'approved').gte('activity_date', fromDate).lte('activity_date', toDate),
+        fetchAllRows(supabase, 'bonus_activities', 'id', q => q
+          .select('activity_type_id, agent_id, count')
+          .eq('user_id', dataUserId).eq('status', 'approved')
+          .gte('activity_date', fromDate).lte('activity_date', toDate)),
       ]);
-      for (const e of (actEntriesRes.data || [])) {
+      for (const e of actEntries) {
         if (!actCounts[e.agent_id]) actCounts[e.agent_id] = {};
         actCounts[e.agent_id][e.activity_type_id] = (actCounts[e.agent_id][e.activity_type_id] || 0) + e.count;
       }
       const callTypes = (actTypesRes.data || []).filter(t => t.source === 'call_log');
       if (callTypes.length) {
-        const { data: calls } = await supabase.from('call_log').select('agent_id, disposition').eq('user_id', dataUserId).gte('call_dt', fromDate).lte('call_dt', toDate);
+        const calls = await fetchAllRows(supabase, 'call_log', 'hash', q => q
+          .select('agent_id, disposition').eq('user_id', dataUserId)
+          .gte('call_dt', fromDate).lte('call_dt', toDate));
         for (const ct of callTypes) {
           for (const c of (calls || [])) {
             if (!c.agent_id) continue;

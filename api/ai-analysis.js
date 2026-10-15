@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+import { fetchAllRows } from './_lib/paginate.js';
 
 const supabase  = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -107,14 +108,16 @@ async function buildFreshChartData(supabase, dataUserId) {
     return rows;
   }
 
-  let salesQuery = supabase.from('sales_log')
+  // Paginated — same reasoning as fetchAllCallRows above, just for sales_log instead of
+  // call_log (fixed 2026-10-15, see CLAUDE.md "Pagination bug").
+  const salesQuery = fetchAllRows(supabase, 'sales_log', 'hash', q => q
     .select('product')
     .eq('user_id', dataUserId)
     .gte('sale_date', fromDate)
     .lt('sale_date', toDate)
-    .eq('is_cancelled', false);
+    .eq('is_cancelled', false));
 
-  const [{ data: histMonths }, curCalls, { data: curSales }] = await Promise.all([
+  const [{ data: histMonths }, curCalls, curSales] = await Promise.all([
     supabase.from('historical_months')
       .select('month,placed,answered,talk_min,voicemail,missed,policies')
       .eq('user_id', dataUserId),
@@ -274,11 +277,20 @@ export default async function handler(req, res) {
       from += PAGE;
     }
 
-    const [{ data: sales }, { data: raceRows }, { data: histMonths }, { data: histWins }, { data: raceCfgRow }] = await Promise.all([
-      supabase.from('sales_log')
+    // Paginated — this window has no upper bound (90 days forward from cutoffStr to "now"),
+    // so a busy account can exceed Supabase's 1000-row cap here too (fixed 2026-10-15, see
+    // CLAUDE.md "Pagination bug").
+    let sales;
+    try {
+      sales = await fetchAllRows(supabase, 'sales_log', 'hash', q => q
         .select('agent_id,product,sale_date,is_cancelled')
         .eq('user_id', dataUserId)
-        .gte('sale_date', cutoffStr),
+        .gte('sale_date', cutoffStr));
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+
+    const [{ data: raceRows }, { data: histMonths }, { data: histWins }, { data: raceCfgRow }] = await Promise.all([
       supabase.from('race_data')
         .select('agent_id,name,team')
         .eq('user_id', dataUserId),
