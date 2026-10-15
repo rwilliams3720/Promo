@@ -64,6 +64,14 @@ const DEFAULT_SUBCATEGORIES = [
   { scoring_category: 'health',  label: 'Long Term Disability Income',        is_financial_service: true,  sort_order: 2, is_default: true },
   { scoring_category: 'health',  label: 'Short Term Disability Income',       is_financial_service: true,  sort_order: 3, is_default: true },
   { scoring_category: 'health',  label: 'Supplemental Health',                is_financial_service: true,  sort_order: 4, is_default: true },
+  // Was seeded under 'other' — Medicare Supplement is a health product, same as BCBS/
+  // Supplemental Health above. Any sale tagged with this subcategory silently counted as
+  // 'other', not health, on the scoreboard (fixed 2026-10-15, reported as "Medicare
+  // Supplement policies submitted that should've been counted as health... are not
+  // counted at all"). This only fixes the default for brand-new accounts seeding this
+  // list for the first time — see CLAUDE.md for the one-time correction applied to
+  // every existing account's already-seeded row and any sales_log rows already using it.
+  { scoring_category: 'health',  label: 'Medicare Supplement',                is_financial_service: false, sort_order: 5, is_default: true },
   { scoring_category: 'wl',      label: 'Whole Life',                         is_financial_service: true,  sort_order: 0, is_default: true },
   { scoring_category: 'wl',      label: '10 Pay',                             is_financial_service: true,  sort_order: 1, is_default: true },
   { scoring_category: 'wl',      label: '15 Pay',                             is_financial_service: true,  sort_order: 2, is_default: true },
@@ -86,7 +94,6 @@ const DEFAULT_SUBCATEGORIES = [
   { scoring_category: 'deposit', label: 'Mortgage Referrals Closed',          is_financial_service: true,  sort_order: 6, is_default: true },
   { scoring_category: 'deposit', label: 'Vehicle Loans',                      is_financial_service: true,  sort_order: 7, is_default: true },
   { scoring_category: 'other',   label: 'Pet Insurance',                      is_financial_service: false, sort_order: 0, is_default: true },
-  { scoring_category: 'other',   label: 'Medicare Supplement',                is_financial_service: false, sort_order: 1, is_default: true },
   { scoring_category: 'other',   label: 'Life Increase Term/Limited',         is_financial_service: true,  sort_order: 2, is_default: true },
   { scoring_category: 'other',   label: 'Life Increase Whole/UL',             is_financial_service: true,  sort_order: 3, is_default: true },
 ];
