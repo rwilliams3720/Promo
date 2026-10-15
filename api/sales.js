@@ -27,6 +27,34 @@ function encryptField(text) {
   return iv.toString('base64') + ':' + encrypted.toString('base64') + ':' + tag.toString('base64');
 }
 
+// Paginates around Supabase's default 1000-row cap, ordered by `hash` (part of the
+// (user_id, hash) primary key — stable, always present, doesn't need to be in the
+// caller's own filter chain). `applyFilters` receives a fresh `supabase.from('sales_log')`
+// builder per page and must return it with `.select()`/`.eq()`/etc. already applied — this
+// helper appends the order/range itself. Needed because GET's "All Year" sales query and
+// the chargeback-mode query both had no pagination at all: an account with more than 1000
+// sales_log rows in the requested range silently got only the newest 1000 back (reported
+// as "when searching for sales the report only goes as far back as the end of May with
+// the all year box checked" — a real account's 2026 total was 1255 rows, and the
+// unpaginated query's 1000-row cutoff landed almost exactly on May 29). Same bug class
+// already fixed in upload.js, api/ai-analysis.js, and api/agent-goals.js — see CLAUDE.md
+// "Pagination bug" (fixed 2026-10-15, this file's instance).
+async function fetchAllSalesRows(applyFilters) {
+  const PAGE = 1000;
+  const rows = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await applyFilters(supabase.from('sales_log'))
+      .order('hash', { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    if (data?.length) rows.push(...data);
+    if (!data || data.length < PAGE) break;
+    from += PAGE;
+  }
+  return rows;
+}
+
 function decryptField(ciphertext) {
   if (!ciphertext) return null;
   if (!ENCRYPTION_KEY || !ciphertext.includes(':')) return ciphertext;
@@ -143,15 +171,21 @@ export default async function handler(req, res) {
 
     // Chargeback mode: return only cancelled sales where chargeback_date is in the requested range
     if (req.query.chargebackMode === '1') {
-      let cbQ = supabase.from('sales_log').select(COLS)
-        .eq('user_id', dataUserId)
-        .eq('is_cancelled', true)
-        .gte('chargeback_date', fromDate)
-        .lte('chargeback_date', toDate)
-        .order('chargeback_date', { ascending: false });
-      if (ctx.isMember && !ctx.isCapOrCO && ctx.memberAgentId) cbQ = cbQ.eq('agent_id', ctx.memberAgentId);
-      const { data: cbData, error: cbErr } = await cbQ;
-      if (cbErr) return res.status(500).json({ error: cbErr.message });
+      let cbData;
+      try {
+        cbData = await fetchAllSalesRows(q => {
+          let qq = q.select(COLS)
+            .eq('user_id', dataUserId)
+            .eq('is_cancelled', true)
+            .gte('chargeback_date', fromDate)
+            .lte('chargeback_date', toDate);
+          if (ctx.isMember && !ctx.isCapOrCO && ctx.memberAgentId) qq = qq.eq('agent_id', ctx.memberAgentId);
+          return qq;
+        });
+      } catch (cbErr) {
+        return res.status(500).json({ error: cbErr.message });
+      }
+      cbData.sort((a, b) => (a.chargeback_date < b.chargeback_date ? 1 : a.chargeback_date > b.chargeback_date ? -1 : 0));
 
       // Compute the commission each chargeback deducts — same math (marginal contribution
       // to the earned month, not a flat rate) and per-agent structure overrides as
@@ -194,17 +228,22 @@ export default async function handler(req, res) {
     // query below had this same filter removed for the identical reason back on
     // 2026-07-02 ("Fix chargeback report missing uploaded policies") — this path was
     // just never updated to match at the time. See CLAUDE.md "Cross-report consistency".
-    let q1 = supabase.from('sales_log').select(COLS)
-      .eq('user_id', dataUserId)
-      .gte('sale_date', fromDate)
-      .lte('sale_date', toDate)
-      .order('sale_date', { ascending: false });
-    // Non-captain/CO members see only their own agent's entries
-    if (ctx.isMember && !ctx.isCapOrCO && ctx.memberAgentId) q1 = q1.eq('agent_id', ctx.memberAgentId);
-    if (includeHidden !== '1') q1 = q1.or('hidden.is.null,hidden.eq.false');
-
-    const { data: monthData, error } = await q1;
-    if (error) return res.status(500).json({ error: error.message });
+    let monthData;
+    try {
+      monthData = await fetchAllSalesRows(q => {
+        let qq = q.select(COLS)
+          .eq('user_id', dataUserId)
+          .gte('sale_date', fromDate)
+          .lte('sale_date', toDate);
+        // Non-captain/CO members see only their own agent's entries
+        if (ctx.isMember && !ctx.isCapOrCO && ctx.memberAgentId) qq = qq.eq('agent_id', ctx.memberAgentId);
+        if (includeHidden !== '1') qq = qq.or('hidden.is.null,hidden.eq.false');
+        return qq;
+      });
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+    monthData.sort((a, b) => (a.sale_date < b.sale_date ? 1 : a.sale_date > b.sale_date ? -1 : 0));
 
     // Cross-month unissued (if requested)
     let unissuedData = [];
