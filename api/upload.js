@@ -838,11 +838,26 @@ function classifySales(data, headerIdx, colIdx, knownHashes, typeMap) {
     const category = mapPolicyCategory(product, polType, typeMap);
 
     if (category === 'other') {
-      if (product.toLowerCase().includes('life')) {
-        const typeKey = product + '|' + polType;
-        if (!ambiguousTypes[typeKey]) ambiguousTypes[typeKey] = { product, polType, count: 0 };
-        ambiguousTypes[typeKey].count++;
-      }
+      // Flag ANY unrecognized product/type for the owner to map explicitly — not just
+      // life-sounding ones. mapPolicyCategory()'s keyword rules only catch product/type
+      // strings containing "whole"/"universal"/"term"/"health"/"med"/"auto"/"vehicle"/
+      // "car"/"fire"/"home"/"property"/"deposit"; this used to only raise the type-mapper
+      // prompt when the raw string also contained "life" (built for the original WL-vs-
+      // UL-vs-Term ambiguity), so anything else that didn't match — most notably health-
+      // adjacent products with no literal "health"/"med" in their name, e.g. "BCBS" or
+      // "Individual/Long Term/Short Term Disability Income" (this app's own default health
+      // subcategories, confirmed against checklist-form.js's DEFAULT_SUBCATEGORIES) —
+      // silently fell through to 'other' with zero visibility: no prompt, and the row is
+      // stored as `['other', ...]` with the original product string discarded, so there's
+      // no way to tell afterward which 'other' rows were actually misclassified policies.
+      // Reported as "scoreboards are not showing all health policies under health count"
+      // (fixed 2026-10-15) — the account's configured health subcategories are exactly the
+      // ones this gap would silently drop on a file upload (manual/checklist entry was
+      // never affected, since those already store the subcategory's pre-configured
+      // scoring_category directly rather than keyword-guessing from raw text).
+      const typeKey = product + '|' + polType;
+      if (!ambiguousTypes[typeKey]) ambiguousTypes[typeKey] = { product, polType, count: 0 };
+      ambiguousTypes[typeKey].count++;
       const agentId = slugify(agent);
       newLogRows.push([hash, agentId || null, 'other', dateOnly(date), null]);
       continue;
@@ -935,15 +950,25 @@ function mapPolicyCategory(product, policyType, typeMap) {
   const t = String(policyType || '').toLowerCase().trim();
   if (p.includes('whole') || p === 'wl')                                        return 'wl';
   if (p.includes('universal') || p === 'ul')                                    return 'ul';
+  // Health check must run BEFORE the term check — this app's own default health
+  // subcategories include "Long Term Disability Income" and "Short Term Disability
+  // Income" (see checklist-form.js DEFAULT_SUBCATEGORIES), both of which contain the
+  // substring "term" and would otherwise match the term-life rule below first, silently
+  // miscounting a real health policy as a term life sale on every upload-sourced report
+  // (reported as "scoreboards are not showing all health policies under health count",
+  // fixed 2026-10-15 — this wasn't a visibility gap like the ambiguousTypes fix above,
+  // it was an active miscategorization with no error or prompt of any kind, since the
+  // result was never 'other' to begin with). "disability" and "bcbs" added as explicit
+  // health keywords too, since neither contains "health" or "med" on its own.
+  if (p.includes('health') || p.includes('med') || p.includes('disability') || p.includes('bcbs')) return 'health';
   if (p.includes('term'))                                                        return 'term';
-  if (p.includes('health') || p.includes('med'))                                return 'health';
   if (p.includes('auto') || p.includes('vehicle') || p.includes('car'))        return 'auto';
   if (p.includes('fire') || p.includes('home') || p.includes('property'))      return 'fire';
   if (p.includes('deposit'))                                                     return 'deposit';
   if (t.includes('whole') || t === 'wl')                                        return 'wl';
   if (t.includes('universal') || t === 'ul')                                    return 'ul';
+  if (t.includes('health') || t.includes('med') || t.includes('disability') || t.includes('bcbs')) return 'health';
   if (t.includes('term'))                                                        return 'term';
-  if (t.includes('health') || t.includes('med'))                                return 'health';
   if (t.includes('auto') || t.includes('vehicle'))                              return 'auto';
   if (t.includes('fire') || t.includes('home') || t.includes('property'))      return 'fire';
   return 'other';
