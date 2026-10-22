@@ -175,6 +175,7 @@ export default async function handler(req, res) {
     const {
       token, subDate, apptDate, apptTime, meetingType, customerName,
       salespersonId, formCompletions, sales = [], location, apptLocation, wfolderApplied,
+      editingSubmissionId,
     } = req.body || {};
 
     if (!token)        return res.status(400).json({ error: 'Missing token' });
@@ -230,26 +231,90 @@ export default async function handler(req, res) {
       _wfolderApplied: wfolderApplied || false,
     };
 
-    // Write checklist submission
-    const { data: submission, error: subErr } = await supabase
-      .from('checklist_submissions')
-      .insert({
-        user_id:          userId,
-        sub_date:         subDate,
-        appt_date:        apptDate || null,
-        customer_name:    encryptedName,
-        salesperson_id:   salespersonId || null,
-        form_completions: extendedCompletions,
-      })
-      .select('id')
-      .single();
+    // "Close & Edit" (js/checklist.js, the post-submit modal) lets an agent go back to the
+    // still-filled-in form after submitting and correct a mistake — but the form has no real
+    // edit mechanism of its own, it just re-submits. Without this branch, that re-submission
+    // was a second, completely independent INSERT: a new checklist_submissions row and a new
+    // set of sales_log rows (hash salted with Date.now()+Math.random(), guaranteed never to
+    // collide with the original), leaving the first, uncorrected entry sitting in sales_log
+    // forever with no way to tell the two apart afterward. Reported as "if the user clicks to
+    // close and edit the sale, it logs the sale and then duplicates the edit" (fixed
+    // 2026-10-22). `editingSubmissionId` — the just-created checklist_submissions.id, tracked
+    // client-side across a Close & Edit cycle — turns a re-submission into a genuine replace:
+    // update the same submission row in place and delete-then-reinsert its sales_log rows,
+    // instead of inserting a brand new parallel set. `clNewSubmission()` clears this client
+    // state so an agent explicitly starting a different appointment still gets a real new row.
+    let submissionId = null;
+    let priorSaleAgentIds = [];
+    if (editingSubmissionId) {
+      // Never trust a client-supplied id blindly — it drives a delete below. Confirm it's a
+      // real, same-account submission before treating it as editable.
+      const { data: existingSub } = await supabase
+        .from('checklist_submissions')
+        .select('id')
+        .eq('id', editingSubmissionId)
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (existingSub) {
+        const { data: priorSales } = await supabase
+          .from('sales_log')
+          .select('agent_id, teammate')
+          .eq('user_id', userId)
+          .eq('checklist_id', editingSubmissionId);
+        priorSaleAgentIds = [...new Set((priorSales || []).flatMap(r => [r.agent_id, r.teammate]).filter(Boolean))];
 
-    if (subErr) {
-      console.error('checklist_submissions insert error:', subErr);
-      return res.status(500).json({ error: 'Failed to save submission' });
+        const { error: updErr } = await supabase
+          .from('checklist_submissions')
+          .update({
+            sub_date:         subDate,
+            appt_date:        apptDate || null,
+            customer_name:    encryptedName,
+            salesperson_id:   salespersonId || null,
+            form_completions: extendedCompletions,
+          })
+          .eq('id', editingSubmissionId);
+        if (updErr) {
+          console.error('checklist_submissions update error:', updErr);
+          return res.status(500).json({ error: 'Failed to save submission' });
+        }
+        // Replace, not merge — the edited sale list is the full corrected set for this
+        // appointment, so any row removed on the edit must disappear too, not just the
+        // ones still present get updated.
+        const { error: delErr } = await supabase
+          .from('sales_log')
+          .delete()
+          .eq('user_id', userId)
+          .eq('checklist_id', editingSubmissionId);
+        if (delErr) {
+          console.error('sales_log delete (edit replace) error:', delErr);
+          return res.status(500).json({ error: 'Failed to save submission' });
+        }
+        submissionId = editingSubmissionId;
+      }
     }
 
-    const submissionId = submission.id;
+    if (!submissionId) {
+      // Write checklist submission
+      const { data: submission, error: subErr } = await supabase
+        .from('checklist_submissions')
+        .insert({
+          user_id:          userId,
+          sub_date:         subDate,
+          appt_date:        apptDate || null,
+          customer_name:    encryptedName,
+          salesperson_id:   salespersonId || null,
+          form_completions: extendedCompletions,
+        })
+        .select('id')
+        .single();
+
+      if (subErr) {
+        console.error('checklist_submissions insert error:', subErr);
+        return res.status(500).json({ error: 'Failed to save submission' });
+      }
+
+      submissionId = submission.id;
+    }
 
     // Write sales_log rows. A split sale becomes TWO independent rows (one per agent,
     // each with its own agent_id, half the premium, and sale_weight 0.5) — matching the
@@ -322,9 +387,17 @@ export default async function handler(req, res) {
         });
       }
 
-      // Rebuild race_data so checklist sales appear on the Race tab immediately
-      const agentIds = [...new Set([salespersonId, ...sales.map(s => s.teammate)].filter(Boolean))];
+      // Rebuild race_data so checklist sales appear on the Race tab immediately — includes
+      // any agent from the PRIOR version of an edited submission too (e.g. the salesperson
+      // or split teammate was changed), so their totals correctly drop the now-removed sale
+      // instead of keeping stale credit for it.
+      const agentIds = [...new Set([salespersonId, ...sales.map(s => s.teammate), ...priorSaleAgentIds].filter(Boolean))];
       await rebuildRaceData(userId, agentIds).catch(e => console.error('rebuildRaceData:', e));
+    } else if (priorSaleAgentIds.length) {
+      // An edit removed every sale row that used to exist on this submission — those
+      // agents' race_data still needs a rebuild so their totals drop the now-deleted sale,
+      // even though there's nothing new to insert this time.
+      await rebuildRaceData(userId, priorSaleAgentIds).catch(e => console.error('rebuildRaceData:', e));
     }
 
     const emailCfg = acct.checklist_email_config || defaultEmailConfig(acct.company_name);

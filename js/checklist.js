@@ -14,6 +14,13 @@ let _clInternalEmail  = '';
 let _clLocationName   = '';
 let _clPenaltyAcknowledged = false;
 let _clPendingFormData = null;
+// Set to the just-created checklist_submissions.id after a successful submit, and sent
+// back as editingSubmissionId on the next submit. "Close & Edit" (the post-submit modal)
+// only hides the modal — the form stays filled in — so without this, clicking Submit again
+// to fix a mistake silently created a second, independent submission instead of correcting
+// the first (fixed 2026-10-22, see api/checklist-form.js for the full explanation). Cleared
+// by clNewSubmission() when the agent explicitly starts a different appointment.
+let _clEditingSubmissionId = null;
 
 function clOnMeetingType(val) {
   const wrap = document.getElementById('cl-appt-location-wrap');
@@ -450,10 +457,12 @@ async function clSubmit() {
         wfolderApplied,
         formCompletions,
         sales,
+        editingSubmissionId: _clEditingSubmissionId,
       }),
     });
     const d = await r.json();
     if (!r.ok) { errEl.textContent = d.error || 'Submission failed.'; errEl.style.display='block'; return; }
+    _clEditingSubmissionId = d.submissionId || null;
     _clEmailPayload = d.emailPayload;
     showChecklistEmailModal({ ...d.emailPayload, agentDisplayName });
   } catch(e) {
@@ -863,6 +872,7 @@ function clPenaltyContinue() {
 }
 
 function clNewSubmission() {
+  _clEditingSubmissionId = null; // this is a genuinely new appointment, not a correction
   clClearErrors();
   document.getElementById('cl-email-modal').style.display = 'none';
   document.getElementById('cl-cust-name').value  = '';
