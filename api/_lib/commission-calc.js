@@ -20,7 +20,16 @@ export function commissionPremiumOf(sale) {
 // as premiumShare for every caller today (a split sale's share IS the whole basis, already
 // halved at insert time), kept as a separate param in case a future caller ever needs them
 // to diverge.
-export function applyRate(structure, product, subcategory, premiumShare, premium, isFS) {
+// `weight` is the sale's sale_weight (0.5 for either side of a split sale, 1 otherwise — the
+// same "counts as half a policy" convention used for race_data, goal actuals, and every
+// percent-based rate everywhere else in this app). Only the FLAT branches below are scaled
+// by it — a percent rate already lands on half automatically, because `premiumShare` itself
+// is already each agent's own halved share of the premium (halved once, at insert time); a
+// flat dollar amount has no premium to halve, so without this it paid the FULL flat rate on
+// BOTH sides of a split sale instead of half each (fixed 2026-10-30, reported directly
+// against a real flat-rate structure: 43 raw sale rows, 2 of them split-sale halves, policy
+// count correctly weighted to 42, but commission earned was 43 × the flat rate, not 42×).
+export function applyRate(structure, product, subcategory, premiumShare, premium, isFS, weight = 1) {
   const productCfg = structure?.rates?.[product];
   if (!productCfg) return 0;
 
@@ -33,7 +42,7 @@ export function applyRate(structure, product, subcategory, premiumShare, premium
     if (!sub.type || sub.type === 'none') return 0;
     let subComm = 0;
     if (sub.type === 'percent') subComm = premiumShare * ((sub.rate || 0) / 100);
-    else if (sub.type === 'flat') subComm = sub.rate || 0;
+    else if (sub.type === 'flat') subComm = (sub.rate || 0) * weight;
     if (structure.cap_per_policy != null && subComm > structure.cap_per_policy) subComm = structure.cap_per_policy;
     return subComm;
   }
@@ -45,7 +54,7 @@ export function applyRate(structure, product, subcategory, premiumShare, premium
   const rate = (isFS && productCfg.fs_rate != null) ? productCfg.fs_rate : (productCfg.rate || 0);
   let comm = 0;
   if (productCfg.type === 'percent') comm = premiumShare * (rate / 100);
-  else if (productCfg.type === 'flat') comm = rate;
+  else if (productCfg.type === 'flat') comm = rate * weight;
   if (structure.cap_per_policy != null && comm > structure.cap_per_policy) comm = structure.cap_per_policy;
   return comm;
 }
@@ -147,7 +156,7 @@ export function calcStructurePayout(agentId, struct, sales, roster, isFinancialS
         // to a quarter of the real premium instead of half (fixed 2026-07-31 — see
         // CLAUDE.md). share is simply this agent's own premium; no ratio math needed.
         const share = premium;
-        const commission = applyRate(struct, product, sale.subcategory || null, share, premium, isFS);
+        const commission = applyRate(struct, product, sale.subcategory || null, share, premium, isFS, weight);
         breakdown.push({ hash: sale.hash, product, premium, share, commission, weight, split: isSplit, role: 'primary', customer_name: decrypt(sale.customer_name), sale_date: sale.sale_date || null, subcategory: sale.subcategory || null });
       }
     }
