@@ -167,21 +167,32 @@ export default async function handler(req, res) {
       toDate = req.query.toDate;
     }
 
-    const COLS = 'hash, agent_id, product, subcategory, sale_date, issued_date, written_premium, issued_premium, source, customer_name, lead_source, period, auto_issued, split_sale, split_ratio, sale_weight, teammate, checklist_id, hidden, location, is_cancelled, chargeback_date, chargeback_exempt';
+    const CORE_COLS = 'hash, agent_id, product, subcategory, sale_date, issued_date, written_premium, issued_premium, source, customer_name, lead_source, period, auto_issued, split_sale, split_ratio, sale_weight, teammate, checklist_id, hidden, location, is_cancelled, chargeback_date, chargeback_exempt';
+    const COLS = CORE_COLS + ', is_primary';
+    // Graceful degradation until split-sale-primary-migration.sql has run on a given
+    // account — an unknown is_primary column would otherwise fail the whole GET, not
+    // just drop the one new field.
+    async function trySelectCols(fn) {
+      try { return await fn(COLS); }
+      catch (e) {
+        if (!/is_primary/i.test(e.message || '')) throw e;
+        return await fn(CORE_COLS);
+      }
+    }
 
     // Chargeback mode: return only cancelled sales where chargeback_date is in the requested range
     if (req.query.chargebackMode === '1') {
       let cbData;
       try {
-        cbData = await fetchAllSalesRows(q => {
-          let qq = q.select(COLS)
+        cbData = await trySelectCols(cols => fetchAllSalesRows(q => {
+          let qq = q.select(cols)
             .eq('user_id', dataUserId)
             .eq('is_cancelled', true)
             .gte('chargeback_date', fromDate)
             .lte('chargeback_date', toDate);
           if (ctx.isMember && !ctx.isCapOrCO && ctx.memberAgentId) qq = qq.eq('agent_id', ctx.memberAgentId);
           return qq;
-        });
+        }));
       } catch (cbErr) {
         return res.status(500).json({ error: cbErr.message });
       }
@@ -230,8 +241,8 @@ export default async function handler(req, res) {
     // just never updated to match at the time. See CLAUDE.md "Cross-report consistency".
     let monthData;
     try {
-      monthData = await fetchAllSalesRows(q => {
-        let qq = q.select(COLS)
+      monthData = await trySelectCols(cols => fetchAllSalesRows(q => {
+        let qq = q.select(cols)
           .eq('user_id', dataUserId)
           .gte('sale_date', fromDate)
           .lte('sale_date', toDate);
@@ -239,7 +250,7 @@ export default async function handler(req, res) {
         if (ctx.isMember && !ctx.isCapOrCO && ctx.memberAgentId) qq = qq.eq('agent_id', ctx.memberAgentId);
         if (includeHidden !== '1') qq = qq.or('hidden.is.null,hidden.eq.false');
         return qq;
-      });
+      }));
     } catch (error) {
       return res.status(500).json({ error: error.message });
     }
@@ -248,15 +259,19 @@ export default async function handler(req, res) {
     // Cross-month unissued (if requested)
     let unissuedData = [];
     if (includeUnissued === '1') {
-      let q2 = supabase.from('sales_log').select(COLS)
-        .eq('user_id', dataUserId)
-        .is('issued_date', null)
-        .or(`sale_date.lt.${fromDate},sale_date.gt.${toDate}`)
-        .order('sale_date', { ascending: false })
-        .limit(100);
-      if (ctx.isMember && !ctx.isCapOrCO && ctx.memberAgentId) q2 = q2.eq('agent_id', ctx.memberAgentId);
-      if (includeHidden !== '1') q2 = q2.or('hidden.is.null,hidden.eq.false');
-      const { data: d2 } = await q2;
+      const buildQ2 = cols => {
+        let q2 = supabase.from('sales_log').select(cols)
+          .eq('user_id', dataUserId)
+          .is('issued_date', null)
+          .or(`sale_date.lt.${fromDate},sale_date.gt.${toDate}`)
+          .order('sale_date', { ascending: false })
+          .limit(100);
+        if (ctx.isMember && !ctx.isCapOrCO && ctx.memberAgentId) q2 = q2.eq('agent_id', ctx.memberAgentId);
+        if (includeHidden !== '1') q2 = q2.or('hidden.is.null,hidden.eq.false');
+        return q2;
+      };
+      let { data: d2, error: q2Err } = await buildQ2(COLS);
+      if (q2Err) ({ data: d2 } = await buildQ2(CORE_COLS));
       unissuedData = d2 || [];
     }
 
