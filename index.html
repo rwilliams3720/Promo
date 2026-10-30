@@ -940,6 +940,7 @@
       <button class="acct-stab"        id="perf-stab-commissions" onclick="showPerfSubTab('commissions',this)" style="font-size:13px;">Commissions</button>
       <button class="acct-stab"        id="perf-stab-goals"       onclick="showPerfSubTab('goals',this)"       style="font-size:13px;">Goals</button>
       <button class="acct-stab"        id="perf-stab-chargebacks" onclick="showPerfSubTab('chargebacks',this)" style="font-size:13px;">Chargeback Report</button>
+      <button class="acct-stab"        id="perf-stab-myproduction" onclick="showPerfSubTab('myproduction',this)" style="font-size:13px;">My Production</button>
     </div>
 
     <!-- Call Performance sub-pane -->
@@ -1337,6 +1338,22 @@
         </div>
       </div>
     </div><!-- /perf-sub-chargebacks -->
+
+    <!-- My Production sub-pane -->
+    <div id="perf-sub-myproduction" style="display:none">
+      <div class="panel">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.2rem;">
+          <div class="panel-title" style="margin:0">My Production</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <select id="myprod-agent-sel" onchange="loadMyProduction()" style="display:none;background:var(--card2);border:1px solid var(--border2);color:var(--text);border-radius:4px;padding:3px 7px;font-size:11px;outline:none;cursor:pointer;"></select>
+            <select id="myprod-year-sel" onchange="loadMyProduction()" style="background:var(--card2);border:1px solid var(--border2);color:var(--text);border-radius:4px;padding:3px 7px;font-size:11px;outline:none;cursor:pointer;"></select>
+          </div>
+        </div>
+        <div id="myprod-content">
+          <div style="color:var(--muted);font-size:13px;text-align:center;padding:2rem;">Loading…</div>
+        </div>
+      </div>
+    </div><!-- /perf-sub-myproduction -->
 
   </div>
 

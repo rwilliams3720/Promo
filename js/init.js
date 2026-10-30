@@ -552,7 +552,7 @@ function showManageSubTab(name, btn) {
 }
 
 function showPerfSubTab(name, btn) {
-  ['callperf','saleslog','salesperf','commissions','goals','chargebacks'].forEach(n => {
+  ['callperf','saleslog','salesperf','commissions','goals','chargebacks','myproduction'].forEach(n => {
     const p = document.getElementById('perf-sub-' + n);
     if (p) p.style.display = n === name ? '' : 'none';
   });
@@ -611,6 +611,10 @@ function showPerfSubTab(name, btn) {
     if (content) content.style.display = hasSales ? '' : 'none';
     if (hasSales) loadChargebackReport();
   }
+
+  // Members always get their own production (scoped server-side, same as the Sales
+  // Log) even without the sales add-on on the owner's account being relevant to them.
+  if (name === 'myproduction') loadMyProduction();
 }
 
 function goToAccountTab(pane, targetId) {

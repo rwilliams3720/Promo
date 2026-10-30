@@ -83,6 +83,13 @@ function manualAddRow(opts = {}) {
           <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">PRIMARY %</label>
           <input class="msr-split-ratio" type="number" min="1" max="99" value="50" placeholder="%" style="${msrInputStyle()}; max-width:90px;">
         </div>
+        <div>
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;" title="Which agent gets full credit for this policy on the My Production report (Perf tab). Doesn't affect the Race tab, Goals, or Commissions — those still split 50/50 either way.">PRIMARY FOR COUNT</label>
+          <select class="msr-primary-count" style="${msrSelectStyle()}; max-width:150px;">
+            <option value="agent" selected>This Agent</option>
+            <option value="teammate">Teammate</option>
+          </select>
+        </div>
       </div>
     </div>
   </div>`;
@@ -163,6 +170,10 @@ async function manualSubmitAll(btn) {
     const issPremFloat = issPremRaw ? parseFloat(issPremRaw) : null;
     const teammateId= isSplit ? (row.querySelector('.msr-teammate-sel')?.value || null) : null;
     const primaryAgent = row.querySelector('.msr-agent')?.value || null;
+    // "Primary for count" only drives the My Production report (js/sales-perf.js
+    // buildMyProductionReport) — a split sale still splits sale_weight 0.5/0.5 for the
+    // Race tab, Goals, and Commissions exactly as before. Irrelevant for a non-split sale.
+    const primaryForCount = isSplit ? (row.querySelector('.msr-primary-count')?.value || 'agent') : null;
     const baseBody = {
       product,
       subcategory:   subcategory    || null,
@@ -183,6 +194,7 @@ async function manualSubmitAll(btn) {
       splitRatio:     isSplit ? ratio : null,
       teammate:       teammateId,
       saleWeight:     isSplit ? 0.5 : 1,
+      isPrimary:      isSplit ? (primaryForCount === 'agent') : null,
     };
     const force = row.dataset.dupForce === '1';
     const r = await fetch('/api/sales', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, force }) });
@@ -205,6 +217,7 @@ async function manualSubmitAll(btn) {
         splitRatio:     1 - ratio,
         teammate:       primaryAgent,
         saleWeight:     0.5,
+        isPrimary:      primaryForCount === 'teammate',
         force,
       };
       let r2 = await fetch('/api/sales', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body2) });
@@ -346,6 +359,13 @@ function _buildSlEditForm(e) {
           <span style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">PRIMARY %</span>
           <input id="sl-split-ratio-${h}" type="number" min="1" max="99" value="${e.split_ratio != null ? Math.round(e.split_ratio * 100) : 50}" placeholder="Primary %" style="${si};max-width:90px;">
         </div>
+        <div>
+          <span style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;" title="Which agent gets full credit for this policy on the My Production report. Doesn't affect the Race tab, Goals, or Commissions.">PRIMARY FOR COUNT</span>
+          <select id="sl-primary-count-${h}" style="${ss};max-width:150px;">
+            <option value="agent"${e.is_primary !== false ? ' selected' : ''}>This Agent</option>
+            <option value="teammate"${e.is_primary === false ? ' selected' : ''}>Teammate</option>
+          </select>
+        </div>
       </div>
       <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
         <div id="sl-msg-${h}" style="font-size:12px;display:none;"></div>
@@ -417,6 +437,9 @@ async function saveSalesLogRow(h, btn) {
                        ? parseFloat(document.getElementById('sl-split-ratio-' + h).value) / 100 || null
                        : null,
       teammate:      document.getElementById('sl-teammate-' + h)?.value     || null,
+      is_primary:    document.getElementById('sl-split-' + h)?.checked
+                       ? (document.getElementById('sl-primary-count-' + h)?.value === 'agent')
+                       : null,
       location:      document.getElementById('sl-location-' + h)?.value     || null,
       is_cancelled:  document.getElementById('sl-cancelled-' + h)?.checked  ?? false,
       chargeback_date: document.getElementById('sl-cancelled-' + h)?.checked

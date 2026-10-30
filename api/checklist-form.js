@@ -362,6 +362,11 @@ export default async function handler(req, res) {
             written_premium:  half,
             split_ratio:      0.5,
             sale_weight:      0.5,
+            // The checklist form has no "primary for count" choice of its own (only the
+            // Sales Log edit form does) — defaults to the submitting salesperson being
+            // primary. Only affects the My Production report; can be changed afterward
+            // via the Sales Log if the agency wants the teammate credited instead.
+            is_primary:       true,
           },
           {
             ...base,
@@ -372,10 +377,16 @@ export default async function handler(req, res) {
             written_premium:  half,
             split_ratio:      0.5,
             sale_weight:      0.5,
+            is_primary:       false,
           },
         ];
       });
-      const { error: salesErr } = await supabase.from('sales_log').insert(logInserts);
+      let { error: salesErr } = await supabase.from('sales_log').insert(logInserts);
+      // Graceful degradation until split-sale-primary-migration.sql has run.
+      if (salesErr) {
+        const stripped = logInserts.map(({ is_primary, ...rest }) => rest);
+        ({ error: salesErr } = await supabase.from('sales_log').insert(stripped));
+      }
       if (salesErr) {
         // Do NOT return 200 here — the checklist_submissions row above already saved,
         // but the caller must be told the sale itself did not, or the agent believes

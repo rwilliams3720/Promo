@@ -270,7 +270,7 @@ export default async function handler(req, res) {
   // ── POST: create manual entry ─────────────────────────────────────────────
   if (req.method === 'POST') {
     let { agentId, product, subcategory, saleDate, issuedDate, writtenPremium, issuedPremium, customerName, force,
-          leadSource, period, autoIssued, splitSale, splitRatio, teammate, location, saleWeight } = req.body || {};
+          leadSource, period, autoIssued, splitSale, splitRatio, teammate, location, saleWeight, isPrimary } = req.body || {};
 
     // Non-captain/CO members can only submit for themselves
     if (ctx.isMember && !ctx.isCapOrCO) {
@@ -294,7 +294,7 @@ export default async function handler(req, res) {
     // When forcing a confirmed duplicate, mint a unique hash so it inserts as a new row
     const hash = (force && baseHash) ? sha256Short([agentId || '', product, subcategory || '', saleDate, writtenPremium || '', normalizedName, Date.now().toString()].join('|')) : baseHash;
 
-    const { error } = await supabase.from('sales_log').upsert({
+    const upsertRow = {
       user_id:         dataUserId,
       hash,
       agent_id:        agentId        || null,
@@ -312,13 +312,22 @@ export default async function handler(req, res) {
       split_sale:      splitSale      ?? null,
       split_ratio:     splitRatio != null ? parseFloat(splitRatio) || null : null,
       teammate:        teammate       || null,
+      // Which side of a split sale counts as the full policy on the My Production report
+      // only — Race tab/Goals/Commissions are unaffected, they still use sale_weight.
+      is_primary:      isPrimary ?? null,
       checklist_id:    null,
       location:        (location || '').trim() || null,
       is_cancelled:    false,
       chargeback_date: null,
       sale_weight:     saleWeight != null ? parseFloat(saleWeight) : 1,
-    }, { onConflict: 'user_id,hash', ignoreDuplicates: false });
-
+    };
+    let { error } = await supabase.from('sales_log').upsert(upsertRow, { onConflict: 'user_id,hash', ignoreDuplicates: false });
+    // Graceful degradation until split-sale-primary-migration.sql has run — an unknown
+    // column would otherwise fail the WHOLE insert, not just this one new field.
+    if (error) {
+      const { is_primary: _drop, ...retryRow } = upsertRow;
+      ({ error } = await supabase.from('sales_log').upsert(retryRow, { onConflict: 'user_id,hash', ignoreDuplicates: false }));
+    }
     if (error) return res.status(500).json({ error: error.message });
     const agentIds = [agentId, teammate].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i);
     await rebuildRaceData(dataUserId, agentIds);
@@ -341,7 +350,7 @@ export default async function handler(req, res) {
 
     const allowed = ['agent_id','product','subcategory','sale_date','issued_date','written_premium','issued_premium',
                      'customer_name','lead_source','period','auto_issued','split_sale','split_ratio','teammate','hidden','location',
-                     'is_cancelled','chargeback_date','sale_weight','chargeback_exempt'];
+                     'is_cancelled','chargeback_date','sale_weight','chargeback_exempt','is_primary'];
     const update = {};
     for (const k of allowed) {
       if (fields[k] !== undefined) update[k] = fields[k];
@@ -371,12 +380,17 @@ export default async function handler(req, res) {
       if (cur?.sale_date) update.issued_date = cur.sale_date;
     }
 
-    const { error } = await supabase
+    let { error } = await supabase
       .from('sales_log')
       .update(update)
       .eq('user_id', dataUserId)
       .eq('hash', hash);
-
+    // Graceful degradation until split-sale-primary-migration.sql has run — an unknown
+    // is_primary column would otherwise fail the whole edit, not just this one field.
+    if (error && update.is_primary !== undefined) {
+      const { is_primary: _drop, ...retryUpdate } = update;
+      ({ error } = await supabase.from('sales_log').update(retryUpdate).eq('user_id', dataUserId).eq('hash', hash));
+    }
     if (error) return res.status(500).json({ error: error.message });
 
     // A split sale's two rows always represent the same real-world sale — there is no
@@ -396,10 +410,10 @@ export default async function handler(req, res) {
     let teammateMissing = false;
     const teammateId = update.teammate !== undefined ? update.teammate : existing?.teammate;
     const isSplitNow  = update.split_sale !== undefined ? update.split_sale : existing?.split_sale;
-    if (teammateId && (update.issued_date !== undefined || isSplitNow)) {
+    if (teammateId && (update.issued_date !== undefined || isSplitNow || update.is_primary !== undefined)) {
       const { data: sibling } = await supabase
         .from('sales_log')
-        .select('hash, issued_date')
+        .select('hash, issued_date, is_primary')
         .eq('user_id', dataUserId)
         .eq('agent_id', teammateId)
         .eq('teammate', existing?.agent_id ?? update.agent_id)
@@ -416,6 +430,17 @@ export default async function handler(req, res) {
           .eq('hash', sibling.hash);
         if (!sibErr) siblingHash = sibling.hash;
         else console.error('split-sale sibling issued_date propagation failed:', sibErr);
+      }
+      // "Primary for count" is a two-sided choice — marking this row primary must mark
+      // the sibling NOT primary, same as every other split-sale field that has to stay
+      // consistent across both rows (issued_date above, sale_weight elsewhere).
+      if (sibling && update.is_primary !== undefined && sibling.hash !== hash && sibling.is_primary !== !update.is_primary) {
+        const { error: sibErr } = await supabase
+          .from('sales_log')
+          .update({ is_primary: !update.is_primary })
+          .eq('user_id', dataUserId)
+          .eq('hash', sibling.hash);
+        if (sibErr) console.error('split-sale sibling is_primary propagation failed:', sibErr);
       }
     }
 

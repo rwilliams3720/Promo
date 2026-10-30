@@ -532,3 +532,112 @@ async function toggleSalesLogHidden(hash, makeHidden, btn) {
 }
 function loadChecklistSubmissions() { return loadSalesLog(); }
 
+// ── MY PRODUCTION REPORT ───────────────────────────────────────────────────────
+// A plain year-to-date "what has this agent written" summary — distinct from the
+// interactive Sales Performance pie charts. Every agent (owner, captain/CO, and
+// bosun/custom self-view) can see their own; owner/captain/CO can also pick any
+// other agent from the dropdown. Non-captain/CO members are scoped to their own
+// agent server-side by GET /api/sales itself, same as the Sales Log.
+
+// A split sale's two rows are each independently evaluated — no cross-row lookup
+// needed, since each row already knows its own teammate. Only affects the COUNT on
+// this report; the Race tab, Goals, and Commissions all keep splitting sale_weight
+// 0.5/0.5 regardless of this flag (see CLAUDE.md "Primary for count").
+function _myProdIsPrimary(e) {
+  if (!e.split_sale) return true;
+  if (e.is_primary === true)  return true;
+  if (e.is_primary === false) return false;
+  // Legacy split sale with no explicit primary set on either side (predates this
+  // feature, or the migration hasn't run yet) — deterministic tie-break so exactly
+  // one side counts: the alphabetically-earlier agent_id is primary.
+  return e.agent_id < (e.teammate || '');
+}
+
+async function loadMyProduction() {
+  const content = document.getElementById('myprod-content');
+  if (!content) return;
+  const isCapOrCO = !_isMember || ['captain', 'chief_officer'].includes(_memberRole);
+
+  const agentSel = document.getElementById('myprod-agent-sel');
+  if (agentSel) {
+    agentSel.style.display = isCapOrCO ? '' : 'none';
+    if (isCapOrCO && !agentSel.options.length) {
+      agentSel.innerHTML = _agentRoster.filter(a => a.active !== false)
+        .map(a => `<option value="${escHtml(a.agent_id)}">${escHtml(a.name)}</option>`).join('');
+    }
+  }
+  const yearSel = document.getElementById('myprod-year-sel');
+  if (yearSel && !yearSel.options.length) {
+    const curYear = new Date().getFullYear();
+    let opts = '';
+    for (let y = curYear; y >= curYear - 3; y--) opts += `<option value="${y}">${y}</option>`;
+    yearSel.innerHTML = opts;
+  }
+  const year     = parseInt(yearSel?.value) || new Date().getFullYear();
+  const fromDate = `${year}-01-01`;
+  const toDate   = `${year}-12-31`;
+
+  content.innerHTML = '<div style="color:var(--muted);font-size:13px;text-align:center;padding:2rem;">Loading…</div>';
+  try {
+    const r = await fetch(`/api/sales?fromDate=${fromDate}&toDate=${toDate}`, { headers: authHeaders() });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Load failed');
+    let entries = d.entries || [];
+    // Non-captain/CO members are already scoped server-side to their own agent.
+    // Owner/captain/CO see every agent in the response and filter down to whichever
+    // one is selected (defaulting to the first active agent on first load).
+    if (isCapOrCO) {
+      const agentId = agentSel?.value || _agentRoster.find(a => a.active !== false)?.agent_id;
+      entries = entries.filter(e => e.agent_id === agentId);
+    }
+    _renderMyProduction(entries, year);
+  } catch (e) {
+    content.innerHTML = `<div style="color:var(--danger);font-size:13px;text-align:center;padding:2rem;">${escHtml(e.message)}</div>`;
+  }
+}
+
+function _renderMyProduction(entries, year) {
+  const content = document.getElementById('myprod-content');
+  if (!content) return;
+  const active = entries.filter(e => !e.is_cancelled);
+
+  const byProduct = {};
+  for (const e of active) {
+    const key = e.product || 'other';
+    if (!byProduct[key]) byProduct[key] = { count: 0, premium: 0 };
+    if (_myProdIsPrimary(e)) byProduct[key].count += 1;
+    byProduct[key].premium += parseFloat(e.written_premium) || 0;
+  }
+
+  if (!Object.keys(byProduct).length) {
+    content.innerHTML = `<div style="color:var(--muted);font-size:13px;text-align:center;padding:2rem;">No policies written in ${year}.</div>`;
+    return;
+  }
+
+  const fmtMoney = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const rows = Object.entries(byProduct)
+    .sort((a, b) => b[1].premium - a[1].premium)
+    .map(([key, v]) => `<tr style="border-bottom:1px solid var(--border2);">
+      <td style="padding:7px 10px;">${escHtml(labelForCat(key))}</td>
+      <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace;">${v.count}</td>
+      <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace;">${fmtMoney(v.premium)}</td>
+    </tr>`).join('');
+  const totalCount = Object.values(byProduct).reduce((s, v) => s + v.count, 0);
+  const totalPrem  = Object.values(byProduct).reduce((s, v) => s + v.premium, 0);
+
+  content.innerHTML = `<table style="width:100%;border-collapse:collapse;">
+    <thead><tr style="border-bottom:1px solid var(--border2);">
+      <th style="text-align:left;padding:7px 10px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;">Product</th>
+      <th style="text-align:right;padding:7px 10px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;">Count</th>
+      <th style="text-align:right;padding:7px 10px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;">Premium</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot><tr style="border-top:2px solid var(--border2);font-weight:700;">
+      <td style="padding:9px 10px;">Total</td>
+      <td style="padding:9px 10px;text-align:right;font-family:'DM Mono',monospace;">${totalCount}</td>
+      <td style="padding:9px 10px;text-align:right;font-family:'DM Mono',monospace;">${fmtMoney(totalPrem)}</td>
+    </tr></tfoot>
+  </table>
+  <div style="font-size:11px;color:var(--muted);margin-top:10px;">A split sale counts once, under whichever agent is marked "Primary for Count" when the sale is entered or edited in the Sales Log — this doesn't affect the Race tab, Goals, or Commissions, which still split every split sale 50/50.</div>`;
+}
+
