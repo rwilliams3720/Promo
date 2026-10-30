@@ -253,9 +253,16 @@ export default async function handler(req, res) {
     // Fetch commission structures if commissions add-on is active (or admin)
     let commStructures = [];
     if (acct.has_commissions_addon || acct.is_admin) {
+      // cap_per_policy/cap_per_structure must be selected — without them, the account
+      // owner's own Commission Structures list never shows the "⬆ Cap" badge even when a
+      // cap IS saved (js/sales.js checks `s.cap_per_policy || s.cap_per_structure`, always
+      // false when these columns are missing from this response), and the What-If
+      // Calculator (js/sales.js calcWhatIf) silently can't honor a cap either, since it
+      // only has whatever _commissionStructures this endpoint hands it (fixed 2026-10-30,
+      // same root cause as api/commissions.js's missing select — see CLAUDE.md).
       const { data: csData } = await supabase
         .from('commission_structures')
-        .select('id, name, default_split_ratio, pay_on_issue, thresholds, rates')
+        .select('id, name, default_split_ratio, pay_on_issue, thresholds, rates, cap_per_policy, cap_per_structure')
         .eq('user_id', dataUserId)
         .order('name');
       commStructures = csData || [];

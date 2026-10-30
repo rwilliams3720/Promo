@@ -115,8 +115,16 @@ export default async function handler(req, res) {
       supabase.from('agent_roster')
         .select('agent_id, name, commission_structure_id, commission_all_must_qualify, commission_cap_total, commission_product_overrides')
         .eq('user_id', dataUserId),
+      // cap_per_policy/cap_per_structure must be selected here — calcStructurePayout()
+      // checks `struct.cap_per_structure != null`, and a column simply absent from the
+      // select comes back as `undefined`, which is `!= null` false in JS (undefined ==
+      // null), so the cap silently never applied regardless of what's actually saved in
+      // the database. api/sales.js's chargebackMode query already selected these two
+      // columns correctly — this, the main commission calculation, was the one still
+      // missing them (fixed 2026-10-30, reported as "cap per period is set to $600... but
+      // the payout is showing $645").
       supabase.from('commission_structures')
-        .select('id, name, default_split_ratio, pay_on_issue, thresholds, rates')
+        .select('id, name, default_split_ratio, pay_on_issue, thresholds, rates, cap_per_policy, cap_per_structure')
         .eq('user_id', dataUserId),
       supabase.from('sales_subcategories')
         .select('label, is_financial_service')
