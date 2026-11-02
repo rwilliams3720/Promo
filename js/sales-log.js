@@ -487,6 +487,8 @@ let _salesLogIssuedFilter = 'all';
 let _salesLogCustomFrom   = null; // YYYY-MM-DD when quarterly mode active
 let _salesLogCustomTo     = null;
 let _salesLogSort         = 'date'; // 'date' | 'agent' | 'product'
+let _salesLogPageSize     = 50;     // number, or 'all'
+let _salesLogPage         = 1;      // 1-indexed; clamped/reset in renderSalesLog()
 let _spEntries        = [];
 let _spMetric         = 'count';
 let _spDateMode       = 'month';
@@ -598,6 +600,7 @@ async function loadSalesLog() {
   initSalesLogControls();
   const list = document.getElementById('checklist-subs-list');
   if (!list) return;
+  _salesLogPage = 1; // new fetch → new result set, start back at page 1
   list.innerHTML = '<span style="color:var(--muted);font-size:13px;">Loading…</span>';
   try {
     const showUnissued = document.getElementById('sl-show-unissued')?.checked ? '1' : '0';
@@ -613,15 +616,30 @@ async function loadSalesLog() {
     renderSalesLog();
   } catch(err) { list.innerHTML = `<span style="color:var(--danger);font-size:13px;">Error: ${err.message}</span>`; }
 }
-function filterSalesLog() { renderSalesLog(); }
+function filterSalesLog() { _salesLogPage = 1; renderSalesLog(); }
 
 function onSalesLogIssuedFilterChange() {
   _salesLogIssuedFilter = document.getElementById('sl-issued-filter')?.value || 'all';
+  _salesLogPage = 1;
   renderSalesLog();
+}
+
+function onSalesLogPageSizeChange() {
+  const raw = document.getElementById('sl-pagesize-sel')?.value || '50';
+  _salesLogPageSize = raw === 'all' ? 'all' : (parseInt(raw) || 50);
+  _salesLogPage = 1;
+  renderSalesLog();
+}
+
+function onSalesLogPageChange(page) {
+  _salesLogPage = page;
+  renderSalesLog();
+  document.getElementById('checklist-subs-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function onSalesLogSortChange() {
   _salesLogSort = document.getElementById('sl-sort-sel')?.value || 'date';
+  _salesLogPage = 1;
   renderSalesLog();
 }
 

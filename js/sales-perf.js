@@ -378,6 +378,7 @@ function _filteredSalesEntries() {
 
 function renderSalesLog() {
   const list = document.getElementById('checklist-subs-list');
+  const pagerEl = document.getElementById('sl-pagination');
   if (!list) return;
   const entries = _filteredSalesEntries();
   const q = (document.getElementById('sales-log-search')?.value || '').trim();
@@ -412,12 +413,29 @@ function renderSalesLog() {
   scopeEntries.sort(sortFn);
   crossEntries.sort(sortFn);
 
+  // Scorecard/totals always reflect the FULL in-scope set — pagination below only limits
+  // how many individual rows get built as DOM nodes, never what's counted/summed.
   _renderSlScorecard(scopeEntries);
 
   if (!scopeEntries.length && !crossEntries.length) {
     list.innerHTML = `<span style="color:var(--muted);font-size:13px;">${q ? 'No matches.' : _salesLogAllYear ? 'No entries for this year.' : 'No entries for this month.'}</span>`;
+    if (pagerEl) pagerEl.style.display = 'none';
     return;
   }
+
+  // Paginate the in-scope list only — each row also builds a hidden edit form
+  // (several <select> elements apiece), so rendering hundreds/thousands of rows at once
+  // (e.g. "All Year" on an active account) was the actual cause of a slow-feeling Sales
+  // Log: not the fetch itself (already paginated server-side), but building and inserting
+  // that much DOM in one shot. The small "Unissued · Other Months" callout below stays
+  // unpaginated — it's already capped at 100 rows server-side and is meant to always be
+  // fully visible as a call-to-action, not paged through.
+  const pageSize = _salesLogPageSize === 'all' ? scopeEntries.length || 1 : _salesLogPageSize;
+  const totalPages = Math.max(1, Math.ceil(scopeEntries.length / pageSize));
+  if (_salesLogPage > totalPages) _salesLogPage = totalPages;
+  if (_salesLogPage < 1) _salesLogPage = 1;
+  const pageStart = (_salesLogPage - 1) * pageSize;
+  const pageEntries = scopeEntries.slice(pageStart, pageStart + pageSize);
 
   const canEdit = _isAdmin || !_isMember || ['captain', 'chief_officer'].includes(_memberRole) || !!_selfReportConfig?.sales_log_edit_enabled;
 
@@ -466,7 +484,7 @@ function renderSalesLog() {
   };
 
   let html = scopeEntries.length
-    ? scopeEntries.map(renderRow).join('')
+    ? pageEntries.map(renderRow).join('')
     : `<div style="font-size:13px;color:var(--muted);padding:4px 0 8px;">No entries for the selected ${_salesLogAllYear ? 'year' : 'month'}.</div>`;
 
   if (crossEntries.length) {
@@ -475,6 +493,22 @@ function renderSalesLog() {
     html += crossEntries.map(renderRow).join('');
   }
   list.innerHTML = html;
+
+  if (pagerEl) {
+    if (scopeEntries.length <= pageSize && totalPages <= 1) {
+      pagerEl.style.display = 'none';
+    } else {
+      const rangeStart = scopeEntries.length ? pageStart + 1 : 0;
+      const rangeEnd   = Math.min(pageStart + pageSize, scopeEntries.length);
+      pagerEl.style.display = 'flex';
+      pagerEl.innerHTML = `
+        <button onclick="onSalesLogPageChange(1)" ${_salesLogPage <= 1 ? 'disabled' : ''} style="background:none;border:1px solid var(--border);color:${_salesLogPage <= 1 ? 'var(--muted)' : 'var(--text)'};font-size:12px;padding:4px 9px;border-radius:5px;cursor:${_salesLogPage <= 1 ? 'default' : 'pointer'};">« First</button>
+        <button onclick="onSalesLogPageChange(${_salesLogPage - 1})" ${_salesLogPage <= 1 ? 'disabled' : ''} style="background:none;border:1px solid var(--border);color:${_salesLogPage <= 1 ? 'var(--muted)' : 'var(--text)'};font-size:12px;padding:4px 9px;border-radius:5px;cursor:${_salesLogPage <= 1 ? 'default' : 'pointer'};">‹ Prev</button>
+        <span style="font-size:12px;color:var(--muted);white-space:nowrap;">Showing ${rangeStart}–${rangeEnd} of ${scopeEntries.length} · Page ${_salesLogPage} of ${totalPages}</span>
+        <button onclick="onSalesLogPageChange(${_salesLogPage + 1})" ${_salesLogPage >= totalPages ? 'disabled' : ''} style="background:none;border:1px solid var(--border);color:${_salesLogPage >= totalPages ? 'var(--muted)' : 'var(--text)'};font-size:12px;padding:4px 9px;border-radius:5px;cursor:${_salesLogPage >= totalPages ? 'default' : 'pointer'};">Next ›</button>
+        <button onclick="onSalesLogPageChange(${totalPages})" ${_salesLogPage >= totalPages ? 'disabled' : ''} style="background:none;border:1px solid var(--border);color:${_salesLogPage >= totalPages ? 'var(--muted)' : 'var(--text)'};font-size:12px;padding:4px 9px;border-radius:5px;cursor:${_salesLogPage >= totalPages ? 'default' : 'pointer'};">Last »</button>`;
+    }
+  }
 }
 
 function downloadSalesLogXlsx() {

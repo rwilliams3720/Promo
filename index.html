@@ -1062,12 +1062,21 @@
             <option value="agent">Sort: Team Member</option>
             <option value="product">Sort: Policy Type</option>
           </select>
+          <select id="sl-pagesize-sel" onchange="onSalesLogPageSizeChange()" style="background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px;outline:none;" title="Rows per page">
+            <option value="25">25 / page</option>
+            <option value="50" selected>50 / page</option>
+            <option value="100">100 / page</option>
+            <option value="200">200 / page</option>
+            <option value="500">500 / page</option>
+            <option value="all">Show all</option>
+          </select>
           <label style="font-size:12px;color:var(--text);display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;user-select:none;"><input type="checkbox" id="sl-show-unissued" onchange="onSalesLogFilterChange()"> Show unissued from other months</label>
           <label style="font-size:12px;color:var(--text);display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;user-select:none;"><input type="checkbox" id="sl-show-hidden" onchange="onSalesLogFilterChange()"> Show hidden</label>
           <button class="btn btn-secondary" style="margin-left:auto;padding:4px 12px;font-size:12px;white-space:nowrap;" onclick="downloadSalesLogXlsx()">↓ Download .xlsx</button>
         </div>
         <input id="sales-log-search" type="text" placeholder="Search customer, agent, product, subcategory, date (YYYY-MM-DD)…" oninput="filterSalesLog()" style="width:100%;background:var(--deep);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;box-sizing:border-box;margin-bottom:.75rem;">
         <div id="checklist-subs-list" style="font-size:13px;color:var(--muted);">Loading…</div>
+        <div id="sl-pagination" style="display:none;align-items:center;justify-content:center;gap:10px;margin-top:12px;padding-top:10px;border-top:1px solid var(--border2);"></div>
       </div>
       </div><!-- /perf-saleslog-content -->
     </div>
