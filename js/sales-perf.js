@@ -596,32 +596,71 @@ async function loadMyProduction() {
   }
 }
 
+function _toggleMyProdDetail(rid) {
+  const detail = document.getElementById(rid);
+  const arrow  = document.getElementById(rid + '-arrow');
+  if (!detail) return;
+  const show = detail.style.display === 'none';
+  detail.style.display = show ? '' : 'none';
+  if (arrow) arrow.textContent = show ? '▴' : '▾';
+}
+
 function _renderMyProduction(entries, year) {
   const content = document.getElementById('myprod-content');
   if (!content) return;
   const active = entries.filter(e => !e.is_cancelled);
 
   const byProduct = {};
+  // Seed every active product type (from account config, falling back to the platform
+  // defaults) so a category with zero activity this year — e.g. Univ. Life, if this agent
+  // hasn't written one — still shows a real $0 / 0 row instead of silently vanishing from
+  // the table. Reported as "production reports aren't showing the universal life sale
+  // type" — a full data audit found zero sales_log rows with product='ul' anywhere on the
+  // platform, so there's no hidden/misclassified data to recover here; the table simply
+  // never rendered a row for a product with no sales at all. See CLAUDE.md for the audit.
+  activeCats().forEach(c => { byProduct[c.key] = { count: 0, premium: 0, sales: [] }; });
+
   for (const e of active) {
     const key = e.product || 'other';
-    if (!byProduct[key]) byProduct[key] = { count: 0, premium: 0 };
-    if (_myProdIsPrimary(e)) byProduct[key].count += 1;
+    if (!byProduct[key]) byProduct[key] = { count: 0, premium: 0, sales: [] };
+    const counted = _myProdIsPrimary(e);
+    if (counted) byProduct[key].count += 1;
     byProduct[key].premium += parseFloat(e.written_premium) || 0;
+    byProduct[key].sales.push({ e, counted });
   }
 
-  if (!Object.keys(byProduct).length) {
+  const hasAnyActivity = Object.values(byProduct).some(v => v.sales.length > 0);
+  if (!hasAnyActivity) {
     content.innerHTML = `<div style="color:var(--muted);font-size:13px;text-align:center;padding:2rem;">No policies written in ${year}.</div>`;
     return;
   }
 
   const fmtMoney = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const rows = Object.entries(byProduct)
-    .sort((a, b) => b[1].premium - a[1].premium)
-    .map(([key, v]) => `<tr style="border-bottom:1px solid var(--border2);">
-      <td style="padding:7px 10px;">${escHtml(labelForCat(key))}</td>
+
+  const sortedProducts = Object.entries(byProduct).sort((a, b) =>
+    (b[1].premium - a[1].premium) || (b[1].sales.length - a[1].sales.length)
+    || labelForCat(a[0]).localeCompare(labelForCat(b[0])));
+
+  const rows = sortedProducts.map(([key, v], i) => {
+    const rid = 'myprod-detail-' + i;
+    const hasSales = v.sales.length > 0;
+    const sortedSales = [...v.sales].sort((a, b) => (b.e.sale_date || '').localeCompare(a.e.sale_date || ''));
+    // Expandable detail rows, one per underlying sale — names the "not counted" half of a
+    // split sale explicitly, so the count/premium split for this product is self-explanatory
+    // without cross-referencing the Sales Log.
+    const detailRows = sortedSales.map(({ e, counted }) => `
+      <tr style="border-bottom:1px solid var(--border2);">
+        <td style="padding:5px 10px 5px 28px;font-size:12px;color:var(--muted);white-space:nowrap;">${escHtml(_fmtCommDate(e.sale_date))}</td>
+        <td style="padding:5px 10px;font-size:12px;">${escHtml(e.customer_name || '(no name)')}${e.split_sale ? ` <span style="color:var(--muted);">· split${counted ? '' : ', not counted'}</span>` : ''}</td>
+        <td style="padding:5px 10px;text-align:right;font-size:12px;font-family:'DM Mono',monospace;">${fmtMoney(parseFloat(e.written_premium) || 0)}</td>
+      </tr>`).join('');
+    return `<tr style="border-bottom:1px solid var(--border2);${hasSales ? 'cursor:pointer;' : ''}" ${hasSales ? `onclick="_toggleMyProdDetail('${rid}')"` : ''}>
+      <td style="padding:7px 10px;">${hasSales ? `<span id="${rid}-arrow" style="display:inline-block;width:14px;color:var(--muted);">▾</span>` : `<span style="display:inline-block;width:14px;"></span>`}${escHtml(labelForCat(key))}</td>
       <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace;">${v.count}</td>
       <td style="padding:7px 10px;text-align:right;font-family:'DM Mono',monospace;">${fmtMoney(v.premium)}</td>
-    </tr>`).join('');
+    </tr>${hasSales ? `<tr id="${rid}" style="display:none;"><td colspan="3" style="padding:0;"><table style="width:100%;border-collapse:collapse;background:rgba(255,255,255,.02);"><tbody>${detailRows}</tbody></table></td></tr>` : ''}`;
+  }).join('');
+
   const totalCount = Object.values(byProduct).reduce((s, v) => s + v.count, 0);
   const totalPrem  = Object.values(byProduct).reduce((s, v) => s + v.premium, 0);
 
@@ -638,6 +677,6 @@ function _renderMyProduction(entries, year) {
       <td style="padding:9px 10px;text-align:right;font-family:'DM Mono',monospace;">${fmtMoney(totalPrem)}</td>
     </tr></tfoot>
   </table>
-  <div style="font-size:11px;color:var(--muted);margin-top:10px;">A split sale counts once, under whichever agent is marked "Primary for Count" when the sale is entered or edited in the Sales Log — this doesn't affect the Race tab, Goals, or Commissions, which still split every split sale 50/50.</div>`;
+  <div style="font-size:11px;color:var(--muted);margin-top:10px;">Click a product row to see the individual sales behind it. A split sale counts once, under whichever agent is marked "Primary for Count" when the sale is entered or edited in the Sales Log — this is why this report's counts can differ from Sales Performance, which still splits every split sale 50/50 between both agents (0.5 count each) the same way the Race tab, Goals, and Commissions do. Premium is never affected — each agent's own written premium share is always shown in full here and everywhere else.</div>`;
 }
 
