@@ -1000,46 +1000,73 @@ function _renderSlScorecard(rawEntries) {
   }
 
   // Goal progress pills (only when a location is selected and it has goals enabled)
+  // A location only stores a MONTHLY target (goal_count/goal_premium) and a separate
+  // ANNUAL target (goal_count_annual/goal_premium_annual) — nothing for a quarter or an
+  // arbitrary custom range. Comparing an "All Year" total against the MONTHLY target (or
+  // a quarter's total against either) silently produced a nonsense progress number —
+  // e.g. checking "All Year" made every goal look blown way past 100% immediately, since
+  // a full year's volume was being measured against one month's target. Reported directly:
+  // "when the 'all year' box is checked the goals still reflected the monthly while
+  // showing the annual numbers." Fixed by picking the field that actually matches the
+  // selected scope, and greying out (with an explanatory note) whenever neither stored
+  // target is a valid comparison for the current view, rather than silently comparing
+  // against the wrong number.
+  const goalScope = _salesLogCustomFrom ? 'other' : (_salesLogAllYear ? 'year' : 'month');
+  const scopeNote = (label) => `<span style="font-size:11px;color:var(--muted);font-style:italic;">${escHtml(label)}</span>`;
+
   if (_salesLogLocationFilter && _salesLogLocationFilter !== 'all') {
     const loc = _salesLocations.find(l => l.name === _salesLogLocationFilter);
     if (loc?.goals_enabled) {
-      if (loc.goal_count) {
-        const met  = totalCount >= loc.goal_count;
-        const pct  = totalCount / loc.goal_count;
-        const col  = met ? 'var(--accent2)' : pct >= 0.8 ? '#ffa94d' : 'var(--text)';
-        const bord = met ? 'border-color:var(--accent2);' : pct >= 0.8 ? 'border-color:#ffa94d;' : '';
-        const txt  = met ? '✓ Policy Goal!' : `${loc.goal_count - totalCount} to policy goal`;
-        parts.push(pill(`<span style="color:${col};">${escHtml(txt)}</span> <strong style="color:${col};">${totalCount} / ${fmtN(loc.goal_count)}</strong>`, bord));
-      }
-      if (loc.goal_premium) {
-        const met  = totalPrem >= loc.goal_premium;
-        const pct  = totalPrem / loc.goal_premium;
-        const col  = met ? 'var(--accent2)' : pct >= 0.8 ? '#ffa94d' : 'var(--text)';
-        const bord = met ? 'border-color:var(--accent2);' : pct >= 0.8 ? 'border-color:#ffa94d;' : '';
-        const rem  = Math.ceil(loc.goal_premium - totalPrem);
-        const txt  = met ? '✓ Premium Goal!' : `$${fmtN(rem)} to premium goal`;
-        parts.push(pill(`<span style="color:${col};">${escHtml(txt)}</span> <strong style="color:${col};">$${fmtN(totalPrem)} / $${fmtN(loc.goal_premium)}</strong>`, bord));
-      }
-      // Activity goal pills — only when bonus log data is available
-      if (loc.activity_goals && (Object.keys(loc.activity_goals).length > 0) && (_bonusLogEntries.length || _bonusLogCallTotals.length)) {
-        for (const [typeId, goalVal] of Object.entries(loc.activity_goals)) {
-          const actType = _activityTypes.find(a => a.id === typeId);
-          if (!actType) continue;
-          // Calculate total count for this activity type
-          let actCount = 0;
-          if (actType.source === 'call_log') {
-            actCount = _bonusLogCallTotals.filter(x => x.activity_type_id === typeId).reduce((s, x) => s + x.count, 0);
-          } else {
-            actCount = _bonusLogEntries.filter(x => x.activity_type_id === typeId).reduce((s, x) => s + x.count, 0);
-          }
-          const goal = parseFloat(goalVal);
-          if (!goal) continue;
-          const met  = actCount >= goal;
-          const pct  = actCount / goal;
+      if (goalScope === 'other') {
+        parts.push(scopeNote('Goal progress isn’t shown for quarterly/custom date ranges — switch to a single month or "All Year" to see it.'));
+      } else {
+        const goalCount = goalScope === 'year' ? loc.goal_count_annual : loc.goal_count;
+        const goalPrem  = goalScope === 'year' ? loc.goal_premium_annual : loc.goal_premium;
+        const scopeLabel = goalScope === 'year' ? ' (annual)' : '';
+        if (goalCount) {
+          const met  = totalCount >= goalCount;
+          const pct  = totalCount / goalCount;
           const col  = met ? 'var(--accent2)' : pct >= 0.8 ? '#ffa94d' : 'var(--text)';
           const bord = met ? 'border-color:var(--accent2);' : pct >= 0.8 ? 'border-color:#ffa94d;' : '';
-          const txt  = met ? `✓ ${actType.name}!` : `${actType.name}`;
-          parts.push(pill(`<span style="color:${col};">${escHtml(txt)}</span> <strong style="color:${col};">${actCount} / ${fmtN(goal)}</strong>`, bord));
+          const txt  = met ? `✓ Policy Goal${scopeLabel}!` : `${goalCount - totalCount} to policy goal${scopeLabel}`;
+          parts.push(pill(`<span style="color:${col};">${escHtml(txt)}</span> <strong style="color:${col};">${totalCount} / ${fmtN(goalCount)}</strong>`, bord));
+        }
+        if (goalPrem) {
+          const met  = totalPrem >= goalPrem;
+          const pct  = totalPrem / goalPrem;
+          const col  = met ? 'var(--accent2)' : pct >= 0.8 ? '#ffa94d' : 'var(--text)';
+          const bord = met ? 'border-color:var(--accent2);' : pct >= 0.8 ? 'border-color:#ffa94d;' : '';
+          const rem  = Math.ceil(goalPrem - totalPrem);
+          const txt  = met ? `✓ Premium Goal${scopeLabel}!` : `$${fmtN(rem)} to premium goal${scopeLabel}`;
+          parts.push(pill(`<span style="color:${col};">${escHtml(txt)}</span> <strong style="color:${col};">$${fmtN(totalPrem)} / $${fmtN(goalPrem)}</strong>`, bord));
+        }
+        // Activity goals have no annual counterpart at all — only ever meaningful when
+        // viewing a single month, so grey out rather than compare a year's activity count
+        // against a monthly target.
+        if (loc.activity_goals && (Object.keys(loc.activity_goals).length > 0) && (_bonusLogEntries.length || _bonusLogCallTotals.length)) {
+          if (goalScope === 'year') {
+            parts.push(scopeNote('Activity goals are monthly-only — not shown in All Year view.'));
+          } else {
+            for (const [typeId, goalVal] of Object.entries(loc.activity_goals)) {
+              const actType = _activityTypes.find(a => a.id === typeId);
+              if (!actType) continue;
+              // Calculate total count for this activity type
+              let actCount = 0;
+              if (actType.source === 'call_log') {
+                actCount = _bonusLogCallTotals.filter(x => x.activity_type_id === typeId).reduce((s, x) => s + x.count, 0);
+              } else {
+                actCount = _bonusLogEntries.filter(x => x.activity_type_id === typeId).reduce((s, x) => s + x.count, 0);
+              }
+              const goal = parseFloat(goalVal);
+              if (!goal) continue;
+              const met  = actCount >= goal;
+              const pct  = actCount / goal;
+              const col  = met ? 'var(--accent2)' : pct >= 0.8 ? '#ffa94d' : 'var(--text)';
+              const bord = met ? 'border-color:var(--accent2);' : pct >= 0.8 ? 'border-color:#ffa94d;' : '';
+              const txt  = met ? `✓ ${actType.name}!` : `${actType.name}`;
+              parts.push(pill(`<span style="color:${col};">${escHtml(txt)}</span> <strong style="color:${col};">${actCount} / ${fmtN(goal)}</strong>`, bord));
+            }
+          }
         }
       }
     }
@@ -1047,49 +1074,60 @@ function _renderSlScorecard(rawEntries) {
     // "All Locations" — aggregate goals across all enabled locations
     const enabledLocs = (_salesLocations || []).filter(l => l.goals_enabled && l.active !== false);
     if (enabledLocs.length > 0) {
-      const totalCountGoal = enabledLocs.reduce((s, l) => s + (parseInt(l.goal_count) || 0), 0);
-      const totalPremGoal  = enabledLocs.reduce((s, l) => s + (parseFloat(l.goal_premium) || 0), 0);
+      if (goalScope === 'other') {
+        parts.push(scopeNote('Goal progress isn’t shown for quarterly/custom date ranges — switch to a single month or "All Year" to see it.'));
+      } else {
+        const countField = goalScope === 'year' ? 'goal_count_annual'   : 'goal_count';
+        const premField  = goalScope === 'year' ? 'goal_premium_annual' : 'goal_premium';
+        const scopeLabel = goalScope === 'year' ? ' (annual)' : '';
+        const totalCountGoal = enabledLocs.reduce((s, l) => s + (parseInt(l[countField]) || 0), 0);
+        const totalPremGoal  = enabledLocs.reduce((s, l) => s + (parseFloat(l[premField]) || 0), 0);
 
-      if (totalCountGoal > 0) {
-        // Weighted by sale_weight, same as every other pill in this function (and the
-        // Race tab's Sales-by-Agent tile) — entries.length double-counts a split sale's
-        // two 0.5-weight rows as 2 instead of 1. Was the source of a real, confirmed
-        // discrepancy against the Race tab (fixed 2026-09-09).
-        const actual = totalCount;
-        const pct    = totalCountGoal > 0 ? actual / totalCountGoal : 0;
-        const color  = pct >= 1 ? 'rgba(0,229,180,.4)' : pct >= 0.8 ? 'rgba(255,179,0,.4)' : 'rgba(255,255,255,.15)';
-        const textColor = pct >= 1 ? 'var(--accent2)' : pct >= 0.8 ? '#ffb300' : 'var(--muted)';
-        parts.push(pill(`All Offices: <strong>${actual}</strong><span style="font-size:10px;color:${textColor};display:block;">/ ${totalCountGoal} goal</span>`, `border-color:${color};`));
-      }
-      if (totalPremGoal > 0) {
-        const actualPrem = Object.values(prems).reduce((a,b)=>a+b,0);
-        const pct    = totalPremGoal > 0 ? actualPrem / totalPremGoal : 0;
-        const color  = pct >= 1 ? 'rgba(0,229,180,.4)' : pct >= 0.8 ? 'rgba(255,179,0,.4)' : 'rgba(255,255,255,.15)';
-        const textColor = pct >= 1 ? 'var(--accent2)' : pct >= 0.8 ? '#ffb300' : 'var(--muted)';
-        parts.push(pill(`Premium: <strong>$${fmtN(actualPrem)}</strong><span style="font-size:10px;color:${textColor};display:block;">/ $${fmtN(totalPremGoal)} goal</span>`, `border-color:${color};`));
-      }
-
-      // Activity goals aggregated across all enabled locations
-      if (_bonusLogEntries.length || _bonusLogCallTotals.length) {
-        const combinedActGoals = {};
-        for (const l of enabledLocs) {
-          for (const [typeId, goal] of Object.entries(l.activity_goals || {})) {
-            combinedActGoals[typeId] = (combinedActGoals[typeId] || 0) + parseFloat(goal);
-          }
-        }
-        for (const [typeId, goalVal] of Object.entries(combinedActGoals)) {
-          const actType = _activityTypes.find(t => t.id === typeId);
-          if (!actType || actType.active === false) continue;
-          let actual = 0;
-          if (actType.source === 'call_log') {
-            actual = _bonusLogCallTotals.filter(x => x.activity_type_id === typeId).reduce((s,r)=>s+r.count,0);
-          } else {
-            actual = _bonusLogEntries.filter(e => e.activity_type_id === typeId && (e.status === 'approved' || !e.status)).reduce((s,e)=>s+e.count,0);
-          }
-          const pct = goalVal > 0 ? actual / goalVal : 0;
-          const color = pct >= 1 ? 'rgba(0,229,180,.4)' : pct >= 0.8 ? 'rgba(255,179,0,.4)' : 'rgba(255,255,255,.15)';
+        if (totalCountGoal > 0) {
+          // Weighted by sale_weight, same as every other pill in this function (and the
+          // Race tab's Sales-by-Agent tile) — entries.length double-counts a split sale's
+          // two 0.5-weight rows as 2 instead of 1. Was the source of a real, confirmed
+          // discrepancy against the Race tab (fixed 2026-09-09).
+          const actual = totalCount;
+          const pct    = totalCountGoal > 0 ? actual / totalCountGoal : 0;
+          const color  = pct >= 1 ? 'rgba(0,229,180,.4)' : pct >= 0.8 ? 'rgba(255,179,0,.4)' : 'rgba(255,255,255,.15)';
           const textColor = pct >= 1 ? 'var(--accent2)' : pct >= 0.8 ? '#ffb300' : 'var(--muted)';
-          parts.push(pill(`${escHtml(actType.name)}: <strong>${actual}</strong><span style="font-size:10px;color:${textColor};display:block;">/ ${goalVal} goal</span>`, `border-color:${color};`));
+          parts.push(pill(`All Offices${scopeLabel}: <strong>${actual}</strong><span style="font-size:10px;color:${textColor};display:block;">/ ${totalCountGoal} goal</span>`, `border-color:${color};`));
+        }
+        if (totalPremGoal > 0) {
+          const actualPrem = Object.values(prems).reduce((a,b)=>a+b,0);
+          const pct    = totalPremGoal > 0 ? actualPrem / totalPremGoal : 0;
+          const color  = pct >= 1 ? 'rgba(0,229,180,.4)' : pct >= 0.8 ? 'rgba(255,179,0,.4)' : 'rgba(255,255,255,.15)';
+          const textColor = pct >= 1 ? 'var(--accent2)' : pct >= 0.8 ? '#ffb300' : 'var(--muted)';
+          parts.push(pill(`Premium${scopeLabel}: <strong>$${fmtN(actualPrem)}</strong><span style="font-size:10px;color:${textColor};display:block;">/ $${fmtN(totalPremGoal)} goal</span>`, `border-color:${color};`));
+        }
+
+        // Activity goals aggregated across all enabled locations — monthly-only, same as above
+        if (_bonusLogEntries.length || _bonusLogCallTotals.length) {
+          if (goalScope === 'year') {
+            parts.push(scopeNote('Activity goals are monthly-only — not shown in All Year view.'));
+          } else {
+            const combinedActGoals = {};
+            for (const l of enabledLocs) {
+              for (const [typeId, goal] of Object.entries(l.activity_goals || {})) {
+                combinedActGoals[typeId] = (combinedActGoals[typeId] || 0) + parseFloat(goal);
+              }
+            }
+            for (const [typeId, goalVal] of Object.entries(combinedActGoals)) {
+              const actType = _activityTypes.find(t => t.id === typeId);
+              if (!actType || actType.active === false) continue;
+              let actual = 0;
+              if (actType.source === 'call_log') {
+                actual = _bonusLogCallTotals.filter(x => x.activity_type_id === typeId).reduce((s,r)=>s+r.count,0);
+              } else {
+                actual = _bonusLogEntries.filter(e => e.activity_type_id === typeId && (e.status === 'approved' || !e.status)).reduce((s,e)=>s+e.count,0);
+              }
+              const pct = goalVal > 0 ? actual / goalVal : 0;
+              const color = pct >= 1 ? 'rgba(0,229,180,.4)' : pct >= 0.8 ? 'rgba(255,179,0,.4)' : 'rgba(255,255,255,.15)';
+              const textColor = pct >= 1 ? 'var(--accent2)' : pct >= 0.8 ? '#ffb300' : 'var(--muted)';
+              parts.push(pill(`${escHtml(actType.name)}: <strong>${actual}</strong><span style="font-size:10px;color:${textColor};display:block;">/ ${goalVal} goal</span>`, `border-color:${color};`));
+            }
+          }
         }
       }
     }
